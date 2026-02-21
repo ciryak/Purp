@@ -25,10 +25,24 @@ let refreshTimer     = null;
 let searchTimer      = null;
 let portfolioCount   = 0;
 let portfolioSymbols = new Set();
+let hideSensitiveValues = true;
 
 const $ = (id) => document.getElementById(id);
 const formatUSD = (v) =>
   new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(v ?? 0);
+const formatPct = (v) => `${v >= 0 ? '+' : ''}${(v || 0).toFixed(2)}%`;
+
+function applyVisibilityMask() {
+  document.querySelectorAll('.sensitive-value').forEach((el) => {
+    el.classList.toggle('is-hidden', hideSensitiveValues);
+  });
+}
+
+function updatePrivacyToggle() {
+  const icon = $('privacy-icon');
+  if (icon) icon.textContent = hideSensitiveValues ? '🙈' : '👁️';
+  applyVisibilityMask();
+}
 
 // ── TOAST ────────────────────────────────────────────────────────
 function toast(msg, type = 'info', duration = 3500) {
@@ -175,6 +189,7 @@ async function handleLogin() {
       fetchPortfolio();
       loadMainChart();
       startRefresh();
+      checkAIStatus();
     } else {
       const err = await res.json().catch(() => ({}));
       showError('login-error', err.detail || 'Incorrect username or password');
@@ -234,6 +249,7 @@ async function handleRegister() {
       fetchPortfolio();
       loadMainChart();
       startRefresh();
+      checkAIStatus();
       toast('Account created! 🎉', 'success', 5000);
     } else {
       // Show full error detail for debugging
@@ -344,7 +360,13 @@ function switchTab(id) {
   $(id)?.classList.add('active');
   $('nav-portfolio').classList.toggle('active', id === 'dashboard');
   $('nav-add').classList.toggle('active', id === 'add-asset');
-  if (id === 'dashboard') loadMainChart();
+  $('nav-transactions')?.classList.toggle('active', id === 'transactions-page');
+  if (id === 'dashboard') {
+    loadMainChart();
+  }
+  if (id === 'transactions-page') {
+    loadTransactions();
+  }
 }
 
 // ── MAIN CHART ───────────────────────────────────────────────────
@@ -386,6 +408,8 @@ async function loadMainChart(skipAnim = false) {
       scales: { x: { display: false }, y: { display: false } },
     },
   });
+
+  applyVisibilityMask();
 }
 
 // ── DETAIL CHART ─────────────────────────────────────────────────
@@ -423,6 +447,8 @@ async function loadDetailChart(symbol, period) {
       },
     },
   });
+
+  applyVisibilityMask();
 }
 
 // ── SPARKLINE ────────────────────────────────────────────────────
@@ -441,6 +467,8 @@ function renderSpark(canvasId, data, color) {
       animation: false,
     },
   });
+
+  applyVisibilityMask();
 }
 
 // ── SEARCH (autocomplete) ────────────────────────────────────────
@@ -496,6 +524,86 @@ async function performSearch(q) {
   }
 }
 
+async function loadBalancePerformance() {
+  if (!authToken) return;
+  const periods = ['1mo', '6mo', '1y'];
+  const updates = await Promise.all(periods.map(async (period) => {
+    const res = await apiFetch(`/portfolio/history?period=${period}&benchmark=%5EGSPC`, { headers: authHeaders() });
+    if (!res || !res.ok) return { period, value: null };
+    const data = await res.json();
+    const prices = data.portfolio || [];
+    if (prices.length < 2 || !prices[0]) return { period, value: 0 };
+    const perf = ((prices[prices.length - 1] - prices[0]) / prices[0]) * 100;
+    return { period, value: perf };
+  }));
+
+  updates.forEach(({ period, value }) => {
+    const pill = document.querySelector(`.perf-pill[data-period="${period}"]`);
+    if (!pill) return;
+    const label = period === '1mo' ? '1M' : period === '6mo' ? '6M' : '12M';
+    if (value == null || Number.isNaN(value)) {
+      pill.textContent = `${label}: —`;
+      pill.classList.remove('pos', 'neg');
+      return;
+    }
+    pill.textContent = `${label}: ${formatPct(value)}`;
+    pill.classList.toggle('pos', value > 0);
+    pill.classList.toggle('neg', value < 0);
+  });
+
+  applyVisibilityMask();
+}
+
+async function loadTransactions() {
+  if (!authToken) return;
+  const res = await apiFetch('/transactions', { headers: authHeaders() });
+  if (!res || !res.ok) return;
+  const txs = await res.json();
+
+  const list = $('transactions-list');
+  if (!list) return;
+  list.innerHTML = '';
+
+  if (!txs.length) {
+    list.innerHTML = `<div class="empty-state"><div class="empty-icon">🧾</div><div class="empty-title">No transactions yet</div><div class="empty-sub">Your buy and sell operations will appear here.</div></div>`;
+    return;
+  }
+
+  txs.forEach((tx) => {
+    const pnl = tx.realized_pnl;
+    const pnlClass = pnl == null ? '' : pnl >= 0 ? 'text-green' : 'text-red';
+    const pnlText = pnl == null ? '—' : `${pnl >= 0 ? '+' : ''}${formatUSD(pnl)}`;
+
+    const row = document.createElement('div');
+    row.className = 'tx-item';
+    row.innerHTML = `
+      <div class="tx-top">
+        <span class="tx-symbol">${tx.symbol}</span>
+        <span class="tx-type ${tx.type}">${tx.type}</span>
+      </div>
+      <div class="tx-meta">
+        <span>${tx.date}</span>
+        <span>${tx.amount} @ ${formatUSD(tx.price)}</span>
+      </div>
+      <div class="tx-meta" style="margin-top:6px;">
+        <span class="sensitive-value">Total: ${formatUSD(tx.total_usd)}</span>
+        <span class="${pnlClass}">P&L: ${pnlText}</span>
+      </div>`;
+    list.appendChild(row);
+  });
+
+  applyVisibilityMask();
+}
+
+async function checkAIStatus() {
+  const res = await apiFetch('/analysis/status');
+  if (!res || !res.ok) return;
+  const info = await res.json();
+  if (!info.enabled) {
+    toast('AI indisponível: configure GEMINI_API_KEY ou GOOGLE_API_KEY no backend.', 'warning', 5500);
+  }
+}
+
 // ── PORTFOLIO ────────────────────────────────────────────────────
 async function fetchPortfolio() {
   if (!authToken) return;
@@ -506,6 +614,7 @@ async function fetchPortfolio() {
   const data = await res.json();
 
   $('total-balance').textContent = formatUSD(data.total_balance_usd);
+  $('total-balance').classList.add('sensitive-value');
   portfolioCount   = (data.assets || []).length;
   portfolioSymbols = new Set(
     (data.assets || []).map((a) => (a.real_symbol || a.symbol || '').toUpperCase())
@@ -524,6 +633,8 @@ async function fetchPortfolio() {
       </div>`;
     return;
   }
+
+  await loadBalancePerformance();
 
   data.assets.forEach((asset) => {
     const profit   = asset.profit ?? 0;
@@ -552,15 +663,15 @@ async function fetchPortfolio() {
           <div>
             <div class="asset-name">${asset.symbol}</div>
             <div class="asset-price">
-              ${formatUSD(asset.current_price)}
+              <span class="sensitive-value">${formatUSD(asset.current_price)}</span>
               <span class="${isProfit ? 'text-green' : 'text-red'}">${pctTxt}</span>
             </div>
           </div>
         </div>
         <div class="asset-spark"><canvas id="spark-${asset.id}"></canvas></div>
         <div class="asset-values">
-          <div class="asset-val">${formatUSD(asset.position_value)}</div>
-          <div class="asset-profit ${isProfit ? 'text-green' : 'text-red'}">
+          <div class="asset-val sensitive-value">${formatUSD(asset.position_value)}</div>
+          <div class="asset-profit sensitive-value ${isProfit ? 'text-green' : 'text-red'}">
             ${isProfit ? '+' : ''}${formatUSD(profit)}
           </div>
         </div>
@@ -591,6 +702,8 @@ async function fetchPortfolio() {
     list.appendChild(wrapper);
     renderSpark(`spark-${asset.id}`, asset.history || [], isProfit ? '#10b981' : '#ef4444');
   });
+
+  applyVisibilityMask();
 }
 
 // ── DETAIL VIEW ──────────────────────────────────────────────────
@@ -600,6 +713,7 @@ function openDetail(asset) {
 
   $('detail-symbol').textContent = asset.symbol;
   $('detail-price').textContent  = formatUSD(asset.current_price);
+  $('detail-price').classList.add('sensitive-value');
   $('holding-badge').textContent = `${asset.days_held ?? 0} days held`;
 
   const imgEl = $('detail-icon-img');
@@ -652,10 +766,12 @@ function updateSellEstimate() {
   const isWin  = pnl >= 0;
 
   $('sell-estimate').innerHTML = `
-    ${formatUSD(total)}<br>
+    <span class="sensitive-value">${formatUSD(total)}</span><br>
     <span class="${isWin ? 'text-green' : 'text-red'}" style="font-size:13px;">
       ${isWin ? '+' : ''}${formatUSD(pnl)}
     </span>`;
+
+  applyVisibilityMask();
 }
 
 async function confirmSell() {
@@ -834,9 +950,12 @@ document.addEventListener('DOMContentLoaded', () => {
     fetchPortfolio();
     loadMainChart();
     startRefresh();
+    checkAIStatus();
   } else {
     showLoginScreen();
   }
+
+  updatePrivacyToggle();
 
   // ── Auth
   $('btn-login')?.addEventListener('click', handleLogin);
@@ -861,7 +980,13 @@ document.addEventListener('DOMContentLoaded', () => {
   // ── Nav
   $('nav-portfolio')?.addEventListener('click', () => { switchTab('dashboard'); closeMenu(); });
   $('nav-add')?.addEventListener('click',       () => { switchTab('add-asset'); closeMenu(); });
+  $('nav-transactions')?.addEventListener('click', () => { switchTab('transactions-page'); closeMenu(); });
   $('nav-logout')?.addEventListener('click',    () => { handleLogout(); });
+
+  $('btn-privacy-toggle')?.addEventListener('click', () => {
+    hideSensitiveValues = !hideSensitiveValues;
+    updatePrivacyToggle();
+  });
 
   // ── Upgrade
   $('btn-upgrade')?.addEventListener('click', () =>
