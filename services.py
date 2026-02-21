@@ -19,16 +19,19 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # ── Gemini ─────────────────────────────────────────────────────────────────────
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "") or os.getenv("GOOGLE_API_KEY", "")
 _gemini_client = None
+_gemini_status = "missing_api_key"
 
 try:
     if GEMINI_API_KEY and "YOUR_KEY" not in GEMINI_API_KEY and len(GEMINI_API_KEY) > 10:
         _gemini_client = genai.Client(api_key=GEMINI_API_KEY)
+        _gemini_status = "ok"
         print("✅ Gemini client initialized")
     else:
-        print("⚠️  GEMINI_API_KEY not set — AI features disabled")
+        print("⚠️  GEMINI_API_KEY/GOOGLE_API_KEY not set — AI features disabled")
 except Exception as e:
+    _gemini_status = f"init_error: {e}"
     print(f"⚠️  Gemini init error: {e}")
     _gemini_client = None
 
@@ -370,6 +373,16 @@ def search_symbols(query: str) -> list[dict]:
 
 
 # ── AI ────────────────────────────────────────────────────────────────────────
+
+
+def get_ai_status() -> dict:
+    return {
+        "enabled": _gemini_client is not None,
+        "provider": "gemini",
+        "status": _gemini_status,
+        "api_key_source": "GEMINI_API_KEY/GOOGLE_API_KEY",
+    }
+
 
 def _extract_gemini_text(res) -> str:
     """Safely extract text from Gemini response."""
