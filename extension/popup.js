@@ -109,7 +109,7 @@ async function apiFetch(path, opts = {}) {
   try {
     const res = await fetch(`${API_BASE}${path}`, opts);
 
-    if (res.status === 401 && authToken) {
+    if (res.status === 401) {
       clearSession();
       showLoginScreen();
       toast('Session expired — please sign in again', 'warning');
@@ -165,10 +165,7 @@ async function handleLogin() {
       body: JSON.stringify({ username, password }),
     });
 
-    if (!res) {
-      showError('login-error', 'Could not connect to server. Please try again.');
-      return;
-    }
+    if (!res) { return; }
 
     if (res.ok) {
       const data = await res.json();
@@ -180,10 +177,7 @@ async function handleLogin() {
       startRefresh();
     } else {
       const err = await res.json().catch(() => ({}));
-      const fallback = res.status >= 500
-        ? 'Server/database error while signing in. Please try again in a moment.'
-        : 'Incorrect username or password';
-      showError('login-error', err.detail || fallback);
+      showError('login-error', err.detail || 'Incorrect username or password');
     }
   } finally {
     btn.disabled   = false;
@@ -220,14 +214,15 @@ async function handleRegister() {
   btn.textContent = 'Creating account…';
 
   try {
-    const res = await apiFetch('/auth/register', {
-      method: 'POST',
-      headers: authHeaders(),
-      body: JSON.stringify({ username, email, password }),
-    });
-
-    if (!res) {
-      showError('register-error', 'Could not connect to server. Please try again.');
+    let res;
+    try {
+      res = await fetch(`${API_BASE}/auth/register`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, email, password }),
+      });
+    } catch (networkErr) {
+      showError('register-error', `Network error: ${networkErr.message}. Check your connection.`);
       return;
     }
 
@@ -239,13 +234,18 @@ async function handleRegister() {
       fetchPortfolio();
       loadMainChart();
       startRefresh();
-      toast('Account created! Check your email for a welcome message 🎉', 'success', 5000);
+      toast('Account created! 🎉', 'success', 5000);
     } else {
-      const err = await res.json().catch(() => ({}));
-      const fallback = res.status >= 500
-        ? 'Server/database error while creating account. Please try again in a moment.'
-        : 'Failed to create account';
-      showError('register-error', err.detail || fallback);
+      // Show full error detail for debugging
+      let errMsg = `HTTP ${res.status}`;
+      try {
+        const errBody = await res.json();
+        errMsg = errBody.detail || errBody.message || JSON.stringify(errBody);
+      } catch (e) {
+        try { errMsg = `HTTP ${res.status}: ${await res.text()}`; } catch {}
+      }
+      showError('register-error', errMsg);
+      console.error('Register error:', res.status, errMsg);
     }
   } finally {
     btn.disabled    = false;
