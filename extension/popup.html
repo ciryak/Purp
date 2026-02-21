@@ -99,6 +99,11 @@
   </nav>
 </header>
 
+<div class="top-tabs">
+  <button type="button" id="top-tab-dashboard" class="top-tab active">Dashboard</button>
+  <button type="button" id="top-tab-market" class="top-tab">Market Watch</button>
+</div>
+
 <!-- ═══ DASHBOARD ═══ -->
 <div id="dashboard" class="page active">
 
@@ -117,6 +122,11 @@
     <button type="button" id="btn-upgrade" class="btn-upgrade">⭐ Premium</button>
   </div>
 
+  <div class="quick-actions">
+    <button type="button" id="btn-quick-add" class="quick-btn">+ Add Asset</button>
+    <button type="button" id="btn-quick-transactions" class="quick-btn">Transactions</button>
+  </div>
+
   <!-- Balance Card -->
   <div class="balance-card">
     <div class="balance-label">TOTAL BALANCE</div>
@@ -127,6 +137,8 @@
       <span class="perf-pill" data-period="1y">12M: —</span>
     </div>
 
+    <div class="chart-controls">
+      <select id="benchmark-select" class="select-ctrl">
     <div class="chart-controls">
       <select id="benchmark-select" class="select-ctrl">
         <option value="^GSPC">S&P 500</option>
@@ -140,6 +152,7 @@
         <button class="pill" data-p="6mo">6M</button>
         <button class="pill" data-p="1y">1Y</button>
       </div>
+      <span id="benchmark-change" class="benchmark-badge">Benchmark: —</span>
     </div>
 
     <div class="main-chart-wrap"><canvas id="mainChart"></canvas></div>
@@ -165,6 +178,29 @@
     </div>
     <button type="button" id="btn-portfolio-ai" class="btn-ai">✨ Analyze Portfolio</button>
   </div>
+
+  <!-- Assets -->
+  <div class="section-heading-row">
+    <div class="section-heading">Your Assets</div>
+    <button type="button" id="btn-export-csv" class="btn-export-csv">Export CSV</button>
+  </div>
+  <div id="assets-list"></div>
+
+</div>
+
+<!-- ═══ MARKET WATCH ═══ -->
+<div id="market-watch" class="page">
+  <div class="page-header">
+    <div class="page-title">Market Watch</div>
+    <div class="page-sub">5 stocks and 5 cryptos in real time</div>
+  </div>
+
+  <div class="section-heading">Top Stocks</div>
+  <div id="market-stocks-list"></div>
+
+  <div class="section-heading" style="margin-top:12px;">Top Cryptos</div>
+  <div id="market-cryptos-list"></div>
+</div>
 
   <!-- Assets -->
   <div class="section-heading">Your Assets</div>

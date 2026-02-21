@@ -26,6 +26,10 @@ let searchTimer      = null;
 let portfolioCount   = 0;
 let portfolioSymbols = new Set();
 let hideSensitiveValues = true;
+let selectedAddAssetType = null;
+
+const FEATURED_STOCKS = ['AAPL', 'MSFT', 'NVDA', 'AMZN', 'TSLA'];
+const FEATURED_CRYPTOS = ['BTC', 'ETH', 'SOL', 'BNB', 'XRP'];
 
 const $ = (id) => document.getElementById(id);
 const formatUSD = (v) =>
@@ -141,6 +145,13 @@ async function apiFetch(path, opts = {}) {
 function startRefresh() {
   stopRefresh();
   refreshTimer = setInterval(() => {
+    if (authToken) {
+      fetchPortfolio();
+      loadMainChart(true);
+      if ($('market-watch')?.classList.contains('active')) {
+        loadMarketWatch();
+      }
+    }
     if (authToken) { fetchPortfolio(); loadMainChart(true); }
   }, REFRESH_MS);
 }
@@ -358,6 +369,8 @@ function closeMenu() {
 function switchTab(id) {
   document.querySelectorAll('.page').forEach((p) => p.classList.remove('active'));
   $(id)?.classList.add('active');
+  $('top-tab-dashboard')?.classList.toggle('active', ['dashboard', 'add-asset', 'transactions-page'].includes(id));
+  $('top-tab-market')?.classList.toggle('active', id === 'market-watch');
   $('nav-portfolio').classList.toggle('active', id === 'dashboard');
   $('nav-add').classList.toggle('active', id === 'add-asset');
   $('nav-transactions')?.classList.toggle('active', id === 'transactions-page');
@@ -367,6 +380,32 @@ function switchTab(id) {
   if (id === 'transactions-page') {
     loadTransactions();
   }
+  if (id === 'market-watch') {
+    loadMarketWatch();
+  }
+}
+
+function setAddAmountInputMode(type) {
+  const input = $('amount-input');
+  if (!input) return;
+  const isStock = (type || '').toLowerCase() === 'stock';
+  input.step = isStock ? '1' : 'any';
+  input.placeholder = isStock ? '1' : '0.5';
+}
+
+async function resolveSymbolType(symbol) {
+  const sym = (symbol || '').trim().toUpperCase();
+  if (!sym) return null;
+
+  const res = await apiFetch(`/search?q=${encodeURIComponent(sym)}`);
+  if (!res || !res.ok) return null;
+
+  const results = await res.json();
+  const exact = results.find((r) => (r.symbol || '').toUpperCase() === sym);
+  const t = (exact?.type || '').toUpperCase();
+  if (t.includes('CRYPTO')) return 'crypto';
+  if (t.includes('STOCK') || t.includes('EQUITY') || t.includes('ETF') || t.includes('INDEX')) return 'stock';
+  return null;
 }
 
 // ── MAIN CHART ───────────────────────────────────────────────────
@@ -391,6 +430,14 @@ async function loadMainChart(skipAnim = false) {
   const b0 = data.benchmark[0] || 1;
   const normP = data.portfolio.map((v) => ((v - s0) / (s0 || 1)) * 100);
   const normB = data.benchmark.map((v) => ((v - b0) / (b0 || 1)) * 100);
+
+  const benchChange = normB.length ? normB[normB.length - 1] : 0;
+  const benchEl = $('benchmark-change');
+  if (benchEl) {
+    benchEl.textContent = `Benchmark: ${formatPct(benchChange)}`;
+    benchEl.classList.toggle('pos', benchChange > 0);
+    benchEl.classList.toggle('neg', benchChange < 0);
+  }
 
   mainChart = new Chart(ctx, {
     type: 'line',
@@ -511,6 +558,8 @@ async function performSearch(q) {
 
       row.addEventListener('click', () => {
         $('symbol-input').value = item.symbol;
+        selectedAddAssetType = (item.type || '').toUpperCase().includes('CRYPTO') ? 'crypto' : 'stock';
+        setAddAmountInputMode(selectedAddAssetType);
         box.style.display = 'none';
       });
 
@@ -522,6 +571,54 @@ async function performSearch(q) {
     console.error('Search error:', e);
     box.style.display = 'none';
   }
+}
+
+async function fetchQuoteForSymbol(symbol) {
+  const res = await apiFetch(`/history/${encodeURIComponent(symbol)}?period=1d`);
+  if (!res || !res.ok) return null;
+  const data = await res.json();
+  const prices = data.prices || [];
+  if (!prices.length) return null;
+
+  const first = prices[0] || 0;
+  const last = prices[prices.length - 1] || 0;
+  const pct = first > 0 ? ((last - first) / first) * 100 : 0;
+  return { symbol, price: last, pct };
+}
+
+function renderMarketRows(containerId, rows) {
+  const root = $(containerId);
+  if (!root) return;
+  root.innerHTML = '';
+
+  if (!rows.length) {
+    root.innerHTML = '<div class="empty-sub">Unable to load quotes right now.</div>';
+    return;
+  }
+
+  rows.forEach((item) => {
+    const isUp = (item.pct || 0) >= 0;
+    const row = document.createElement('div');
+    row.className = 'market-row';
+    row.innerHTML = `
+      <span class="market-symbol">${item.symbol}</span>
+      <span class="market-price sensitive-value">${formatUSD(item.price)}</span>
+      <span class="market-change ${isUp ? 'text-green' : 'text-red'}">${formatPct(item.pct)}</span>
+    `;
+    root.appendChild(row);
+  });
+
+  applyVisibilityMask();
+}
+
+async function loadMarketWatch() {
+  const [stocks, cryptos] = await Promise.all([
+    Promise.all(FEATURED_STOCKS.map((s) => fetchQuoteForSymbol(s))),
+    Promise.all(FEATURED_CRYPTOS.map((s) => fetchQuoteForSymbol(s))),
+  ]);
+
+  renderMarketRows('market-stocks-list', stocks.filter(Boolean));
+  renderMarketRows('market-cryptos-list', cryptos.filter(Boolean));
 }
 
 async function loadBalancePerformance() {
@@ -602,6 +699,78 @@ async function checkAIStatus() {
   if (!info.enabled) {
     toast('AI indisponível: configure GEMINI_API_KEY ou GOOGLE_API_KEY no backend.', 'warning', 5500);
   }
+}
+
+function csvCell(v) {
+  const val = v == null ? '' : String(v);
+  if (/[",\n]/.test(val)) {
+    return `"${val.replace(/"/g, '""')}"`;
+  }
+  return val;
+}
+
+async function exportPortfolioCsv() {
+  if (!authToken) {
+    showLoginScreen();
+    return;
+  }
+
+  const [balanceRes, txRes] = await Promise.all([
+    apiFetch('/portfolio/balance', { headers: authHeaders() }),
+    apiFetch('/transactions', { headers: authHeaders() }),
+  ]);
+
+  if (!balanceRes || !balanceRes.ok) {
+    toast('Unable to export CSV right now.', 'error');
+    return;
+  }
+
+  const balance = await balanceRes.json();
+  const txs = (txRes && txRes.ok) ? await txRes.json() : [];
+  const rows = [];
+
+  rows.push(['Section', 'Symbol', 'Quantity', 'Avg Buy USD', 'Current USD', 'Position USD', 'P&L USD', 'Change %']);
+  (balance.assets || []).forEach((asset) => {
+    rows.push([
+      'asset',
+      asset.symbol,
+      asset.amount,
+      asset.purchase_price,
+      asset.current_price,
+      asset.position_value,
+      asset.profit,
+      asset.percent_change,
+    ]);
+  });
+
+  rows.push([]);
+  rows.push(['Section', 'Date', 'Symbol', 'Type', 'Amount', 'Price USD', 'Total USD', 'Realized P&L']);
+  txs.forEach((tx) => {
+    rows.push([
+      'transaction',
+      tx.date,
+      tx.symbol,
+      tx.type,
+      tx.amount,
+      tx.price,
+      tx.total_usd,
+      tx.realized_pnl,
+    ]);
+  });
+
+  const csv = rows.map((row) => row.map(csvCell).join(',')).join('\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const now = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
+
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `purp-portfolio-${now}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+  toast('CSV exported successfully.', 'success');
 }
 
 // ── PORTFOLIO ────────────────────────────────────────────────────
@@ -744,6 +913,7 @@ function openSellModal(asset) {
   const qty = $('sell-qty');
   qty.value = asset.amount;
   qty.max   = asset.amount;
+  qty.step  = (asset.type || '').toLowerCase() === 'stock' ? '1' : 'any';
   $('sell-info').textContent =
     `Held: ${asset.amount}  •  Avg cost: ${formatUSD(asset.purchase_price)}`;
   updateSellEstimate();
@@ -778,6 +948,10 @@ async function confirmSell() {
   if (!assetForSale || !authToken) return;
   const qty = parseFloat($('sell-qty').value);
   if (!qty || qty <= 0) { toast('Enter a valid amount to sell', 'warning'); return; }
+  if ((assetForSale.type || '').toLowerCase() === 'stock' && !Number.isInteger(qty)) {
+    toast('For stocks, sell quantity must be an integer.', 'warning');
+    return;
+  }
 
   const btn = $('btn-sell-confirm');
   btn.disabled    = true;
@@ -896,6 +1070,12 @@ async function handleAddAsset() {
   if (!amount || amount <= 0) { toast('Enter a valid quantity', 'warning'); return; }
   if (!price  || price  <= 0) { toast('Enter a valid price',    'warning'); return; }
 
+  const resolvedType = selectedAddAssetType || await resolveSymbolType(sym);
+  if (resolvedType === 'stock' && !Number.isInteger(amount)) {
+    toast('For stocks, quantity must be an integer.', 'warning');
+    return;
+  }
+
   // Free tier pre-check
   const isExisting = portfolioSymbols.has(sym);
   if (!isPremium() && portfolioCount >= FREE_ASSET_LIMIT && !isExisting) {
@@ -921,6 +1101,8 @@ async function handleAddAsset() {
       $('amount-input').value = '';
       $('price-input').value  = '';
       $('date-input').value   = '';
+      selectedAddAssetType = null;
+      setAddAmountInputMode(null);
       $('search-dropdown').style.display = 'none';
 
       switchTab('dashboard');
@@ -983,6 +1165,11 @@ document.addEventListener('DOMContentLoaded', () => {
   $('nav-transactions')?.addEventListener('click', () => { switchTab('transactions-page'); closeMenu(); });
   $('nav-logout')?.addEventListener('click',    () => { handleLogout(); });
 
+  $('top-tab-dashboard')?.addEventListener('click', () => switchTab('dashboard'));
+  $('top-tab-market')?.addEventListener('click', () => switchTab('market-watch'));
+  $('btn-quick-add')?.addEventListener('click', () => switchTab('add-asset'));
+  $('btn-quick-transactions')?.addEventListener('click', () => switchTab('transactions-page'));
+
   $('btn-privacy-toggle')?.addEventListener('click', () => {
     hideSensitiveValues = !hideSensitiveValues;
     updatePrivacyToggle();
@@ -994,6 +1181,7 @@ document.addEventListener('DOMContentLoaded', () => {
   );
   $('btn-upgrade-cancel')?.addEventListener('click', hideUpgradeModal);
   $('btn-upgrade-confirm')?.addEventListener('click', handleUpgrade);
+  $('btn-export-csv')?.addEventListener('click', exportPortfolioCsv);
 
   // ── Portfolio AI
   $('btn-portfolio-ai')?.addEventListener('click', handlePortfolioAI);
@@ -1026,6 +1214,8 @@ document.addEventListener('DOMContentLoaded', () => {
   $('symbol-input')?.addEventListener('input', (e) => {
     clearTimeout(searchTimer);
     const v = e.target.value.trim();
+    selectedAddAssetType = null;
+    setAddAmountInputMode(null);
     if (v.length < 2) { $('search-dropdown').style.display = 'none'; return; }
     searchTimer = setTimeout(() => performSearch(v), 380);
   });
@@ -1044,4 +1234,5 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   $('btn-sell-cancel')?.addEventListener('click', closeSellModal);
   $('btn-sell-confirm')?.addEventListener('click', confirmSell);
+});
 });

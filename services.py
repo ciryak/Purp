@@ -142,6 +142,23 @@ def _cg_find(symbol: str) -> dict | None:
 
 
 def _cg_price(coin_id: str) -> tuple[float | None, float | None]:
+    """Return (price_usd, change_24h_pct) with CoinGecko market precision."""
+    try:
+        r = requests.get(
+            "https://api.coingecko.com/api/v3/coins/markets",
+            params={
+                "vs_currency": "usd",
+                "ids": coin_id,
+                "precision": "full",
+                "price_change_percentage": "24h",
+            },
+            headers=_CG_HEADERS, timeout=6
+        )
+        r.raise_for_status()
+        payload = r.json() or []
+        d = payload[0] if payload else {}
+        p = d.get("current_price")
+        ch = d.get("price_change_percentage_24h")
     """Return (price_usd, change_24h_pct)."""
     try:
         r = requests.get(
@@ -175,6 +192,7 @@ def _cg_spark(coin_id: str, days: int = 1) -> list[float]:
         return []
 
 
+def _cg_history(coin_id: str, days: int, force_hourly: bool = False) -> dict:
 def _cg_history(coin_id: str, days: int) -> dict:
     """Return {"dates": [...], "prices": [...]}."""
     try:
@@ -185,6 +203,12 @@ def _cg_history(coin_id: str, days: int) -> dict:
         )
         r.raise_for_status()
         raw = r.json().get("prices", [])
+        if force_hourly and raw:
+            by_hour = {}
+            for ms, price in raw:
+                hour_key = int(ms // 3_600_000)
+                by_hour[hour_key] = (ms, price)
+            raw = [by_hour[k] for k in sorted(by_hour.keys())][-24:]
         is_intraday = days <= 5
         fmt = "%H:%M" if is_intraday else "%m/%d"
         dates, vals = [], []
@@ -213,6 +237,11 @@ def get_asset_data(symbol: str) -> dict | None:
     symbol = symbol.upper().strip()
     base = symbol.replace("-USD", "").strip()
 
+    def _pct_from_series(series: list[float]) -> float:
+        if len(series) < 2 or series[0] <= 0:
+            return 0.0
+        return ((series[-1] - series[0]) / series[0]) * 100
+
     # ── 1) Try CoinGecko for likely crypto
     if not _is_likely_stock(base):
         try:
@@ -220,11 +249,15 @@ def get_asset_data(symbol: str) -> dict | None:
             if coin and coin.get("id"):
                 price, change = _cg_price(coin["id"])
                 if price and price > 0:
+                    intraday = _cg_history(coin["id"], 1, force_hourly=True)
+                    spark = intraday["prices"]
+                    change_hourly = _pct_from_series(spark)
                     spark = _cg_spark(coin["id"], days=1)
                     return {
                         "symbol": base,
                         "real_symbol": base,
                         "current_price": price,
+                        "percent_change": change_hourly if spark else (change or 0.0),
                         "percent_change": change or 0.0,
                         "history": spark[-40:] if spark else [price],
                         "type": "crypto",
@@ -237,11 +270,14 @@ def get_asset_data(symbol: str) -> dict | None:
     for sym in [symbol, base, f"{base}-USD"]:
         try:
             ticker = yf.Ticker(sym)
+            hist = ticker.history(period="2d", interval="60m")
             hist = ticker.history(period="1d", interval="15m")
             if hist.empty:
                 continue
 
             price = float(hist["Close"].iloc[-1])
+            closes = [float(v) for v in hist["Close"].tolist() if v is not None][-24:]
+            change = _pct_from_series(closes)
             open_p = float(hist["Open"].iloc[0])
             change = ((price - open_p) / open_p * 100) if open_p > 0 else 0.0
 
@@ -269,6 +305,7 @@ def get_asset_data(symbol: str) -> dict | None:
                 "real_symbol": real_sym,
                 "current_price": price,
                 "percent_change": change,
+                "history": closes[-40:] if closes else [price],
                 "history": hist["Close"].tolist()[-40:],
                 "type": asset_type,
                 "icon": icon,
@@ -295,6 +332,7 @@ def get_historical_data(symbol: str, period: str = "1mo") -> dict:
             coin = _cg_find(base)
             if coin and coin.get("id"):
                 days = days_map.get(period, 30)
+                result = _cg_history(coin["id"], days, force_hourly=(period == "1d"))
                 result = _cg_history(coin["id"], days)
                 if result["prices"]:
                     return result
@@ -304,6 +342,8 @@ def get_historical_data(symbol: str, period: str = "1mo") -> dict:
     # Yahoo Finance fallback
     for sym in [symbol, base, f"{base}-USD"]:
         try:
+            interval = "60m" if period == "1d" else None
+            hist = yf.Ticker(sym).history(period=period, interval=interval) if interval else yf.Ticker(sym).history(period=period)
             hist = yf.Ticker(sym).history(period=period)
             if hist.empty:
                 continue
@@ -311,6 +351,9 @@ def get_historical_data(symbol: str, period: str = "1mo") -> dict:
             fmt = "%H:%M" if is_intraday else "%m/%d"
             dates = [d.strftime(fmt) for d in hist.index]
             prices = hist["Close"].tolist()
+            if period == "1d":
+                dates = dates[-24:]
+                prices = prices[-24:]
             return {"dates": dates, "prices": prices}
         except Exception as e:
             print(f"⚠️  yfinance history '{sym}': {e}")
@@ -451,4 +494,5 @@ def get_portfolio_ai_analysis(portfolio_change: float, assets: list[dict]) -> st
         return text or "Portfolio analysis temporarily unavailable."
     except Exception as e:
         print(f"❌ Gemini portfolio error: {e}")
+        return "Portfolio analysis temporarily unavailable."
         return "Portfolio analysis temporarily unavailable."
