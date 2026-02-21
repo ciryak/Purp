@@ -11,7 +11,7 @@ let lastDataUpdate = 0; // ⭐ Controla atualização de dados
 const REFRESH_INTERVAL_MS = 5000;
 const DATA_UPDATE_THRESHOLD = 1000; // Só atualiza dados se mudou após 1s
 
-const API_BASE = 'http://127.0.0.1:8000';
+const API_BASE = 'https://purp-backend.railway.app';
 const FREE_ASSET_LIMIT = 4;
 
 const formatMoney = (val) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(val);
@@ -936,3 +936,39 @@ function switchTab(t) {
     if (navAdicionar) navAdicionar.classList.toggle('active', t === 'add-asset');
     if (t === 'dashboard') loadMainChart();
 }
+
+chrome.notifications.create({
+    type: 'basic',
+    iconUrl: 'icon.png',
+    title: 'Alerta de Preco - Purp',
+    message: `${symbol} atingiu US$ ${price.toFixed(2)}`
+});
+
+async function exportCSV() {
+    const res = await fetch(`${API_BASE}/portfolio/balance`, {
+        headers: getAuthHeaders()
+    });
+    const data = await res.json();
+
+    let csv = 'Simbolo,Quantidade,Preco Compra,Preco Atual,Valor,Lucro/Prejuizo\n';
+    data.assets.forEach(a => {
+        csv += `${a.symbol},${a.amount},${a.purchase_price},${a.current_price},${a.position_value},${a.profit}\n`;
+    });
+
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'purp-carteira.csv';
+    a.click();
+}
+
+// Função para converter USD para BRL
+async function getExchangeRate(currency = 'BRL') {
+    const res = await fetch(`https://api.exchangerate-api.com/v4/latest/USD`);
+    const data = await res.json();
+    return data.rates[currency];
+}
+
+// Uso: multiplique qualquer valor USD pela taxa:
+const brlValue = usdValue * await getExchangeRate('BRL');
