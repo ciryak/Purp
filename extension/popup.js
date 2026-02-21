@@ -152,6 +152,7 @@ function startRefresh() {
         loadMarketWatch();
       }
     }
+    if (authToken) { fetchPortfolio(); loadMainChart(true); }
   }, REFRESH_MS);
 }
 
@@ -1233,4 +1234,5 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   $('btn-sell-cancel')?.addEventListener('click', closeSellModal);
   $('btn-sell-confirm')?.addEventListener('click', confirmSell);
+});
 });

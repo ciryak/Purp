@@ -159,6 +159,17 @@ def _cg_price(coin_id: str) -> tuple[float | None, float | None]:
         d = payload[0] if payload else {}
         p = d.get("current_price")
         ch = d.get("price_change_percentage_24h")
+    """Return (price_usd, change_24h_pct)."""
+    try:
+        r = requests.get(
+            "https://api.coingecko.com/api/v3/simple/price",
+            params={"ids": coin_id, "vs_currencies": "usd", "include_24hr_change": "true"},
+            headers=_CG_HEADERS, timeout=6
+        )
+        r.raise_for_status()
+        d = r.json().get(coin_id, {})
+        p = d.get("usd")
+        ch = d.get("usd_24h_change")
         return (float(p) if p else None, float(ch) if ch is not None else None)
     except Exception as e:
         print(f"⚠️  CoinGecko price '{coin_id}': {e}")
@@ -182,6 +193,7 @@ def _cg_spark(coin_id: str, days: int = 1) -> list[float]:
 
 
 def _cg_history(coin_id: str, days: int, force_hourly: bool = False) -> dict:
+def _cg_history(coin_id: str, days: int) -> dict:
     """Return {"dates": [...], "prices": [...]}."""
     try:
         r = requests.get(
@@ -240,11 +252,13 @@ def get_asset_data(symbol: str) -> dict | None:
                     intraday = _cg_history(coin["id"], 1, force_hourly=True)
                     spark = intraday["prices"]
                     change_hourly = _pct_from_series(spark)
+                    spark = _cg_spark(coin["id"], days=1)
                     return {
                         "symbol": base,
                         "real_symbol": base,
                         "current_price": price,
                         "percent_change": change_hourly if spark else (change or 0.0),
+                        "percent_change": change or 0.0,
                         "history": spark[-40:] if spark else [price],
                         "type": "crypto",
                         "icon": coin.get("thumb") or "",
@@ -257,12 +271,15 @@ def get_asset_data(symbol: str) -> dict | None:
         try:
             ticker = yf.Ticker(sym)
             hist = ticker.history(period="2d", interval="60m")
+            hist = ticker.history(period="1d", interval="15m")
             if hist.empty:
                 continue
 
             price = float(hist["Close"].iloc[-1])
             closes = [float(v) for v in hist["Close"].tolist() if v is not None][-24:]
             change = _pct_from_series(closes)
+            open_p = float(hist["Open"].iloc[0])
+            change = ((price - open_p) / open_p * 100) if open_p > 0 else 0.0
 
             info = {}
             try:
@@ -289,6 +306,7 @@ def get_asset_data(symbol: str) -> dict | None:
                 "current_price": price,
                 "percent_change": change,
                 "history": closes[-40:] if closes else [price],
+                "history": hist["Close"].tolist()[-40:],
                 "type": asset_type,
                 "icon": icon,
             }
@@ -315,6 +333,7 @@ def get_historical_data(symbol: str, period: str = "1mo") -> dict:
             if coin and coin.get("id"):
                 days = days_map.get(period, 30)
                 result = _cg_history(coin["id"], days, force_hourly=(period == "1d"))
+                result = _cg_history(coin["id"], days)
                 if result["prices"]:
                     return result
         except Exception as e:
@@ -325,6 +344,7 @@ def get_historical_data(symbol: str, period: str = "1mo") -> dict:
         try:
             interval = "60m" if period == "1d" else None
             hist = yf.Ticker(sym).history(period=period, interval=interval) if interval else yf.Ticker(sym).history(period=period)
+            hist = yf.Ticker(sym).history(period=period)
             if hist.empty:
                 continue
             is_intraday = period in ("1d", "5d")
@@ -474,4 +494,5 @@ def get_portfolio_ai_analysis(portfolio_change: float, assets: list[dict]) -> st
         return text or "Portfolio analysis temporarily unavailable."
     except Exception as e:
         print(f"❌ Gemini portfolio error: {e}")
+        return "Portfolio analysis temporarily unavailable."
         return "Portfolio analysis temporarily unavailable."
