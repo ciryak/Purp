@@ -19,6 +19,7 @@ from email.mime.multipart import MIMEMultipart
 from fastapi import FastAPI, HTTPException, Depends, Header, Request
 from fastapi.middleware.cors import CORSMiddleware
 from sqlmodel import Session, select, create_engine, SQLModel
+from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 from pydantic import BaseModel, EmailStr
 import bcrypt
@@ -44,7 +45,17 @@ stripe.api_key = os.getenv("STRIPE_SECRET_KEY", "")
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///database.db").replace(
     "postgres://", "postgresql://"
 )
-engine = create_engine(DATABASE_URL)
+
+def _build_engine():
+    is_postgres = DATABASE_URL.startswith("postgresql://")
+    connect_args = {"sslmode": "require"} if is_postgres and "sslmode=" not in DATABASE_URL else {}
+    return create_engine(
+        DATABASE_URL,
+        pool_pre_ping=True,
+        connect_args=connect_args,
+    )
+
+engine = _build_engine()
 
 FREE_ASSET_LIMIT = 4
 
@@ -742,4 +753,11 @@ def payment_cancelled():
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "timestamp": datetime.utcnow().isoformat()}
+    try:
+        with Session(engine) as s:
+            s.exec(text("SELECT 1"))
+        db_status = "ok"
+    except SQLAlchemyError:
+        raise HTTPException(503, "Database unavailable")
+
+    return {"status": "ok", "db": db_status, "timestamp": datetime.utcnow().isoformat()}
