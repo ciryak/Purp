@@ -1,19 +1,16 @@
 /* ═══════════════════════════════════════════════════════════════
-   Purp — Extension Frontend v2
-   Fixes:
-   - Toast system replaces all alert() calls
-   - Search dropdown correctly uses 'icon' field from API
-   - Form fields cleared by direct value reset (no <form> needed)
-   - Field validation before any fetch call
-   - 401 auto-logout on every fetch
-   - Autocomplete closes on outside click
-   - All strings in English
+   Purp — Extension Frontend v3
+   Bugs fixed:
+   - startRefresh: removed duplicate fetchPortfolio + loadMainChart calls in setInterval
+   - DOMContentLoaded: removed spurious extra closing `});` at end of file
+   - total-balance now correctly has sensitive-value class via JS
+   - loadMarketWatch: added to refresh cycle
    ════════════════════════════════════════════════════════════════ */
 
 // ── Config ───────────────────────────────────────────────────────
 const API_BASE          = 'https://purp-production.up.railway.app';
 const FREE_ASSET_LIMIT  = 4;
-const REFRESH_MS        = 60_000; // 60 s
+const REFRESH_MS        = 60_000;
 
 // ── State ────────────────────────────────────────────────────────
 let authToken        = null;
@@ -28,7 +25,7 @@ let portfolioSymbols = new Set();
 let hideSensitiveValues = true;
 let selectedAddAssetType = null;
 
-const FEATURED_STOCKS = ['AAPL', 'MSFT', 'NVDA', 'AMZN', 'TSLA'];
+const FEATURED_STOCKS  = ['AAPL', 'MSFT', 'NVDA', 'AMZN', 'TSLA'];
 const FEATURED_CRYPTOS = ['BTC', 'ETH', 'SOL', 'BNB', 'XRP'];
 
 const $ = (id) => document.getElementById(id);
@@ -90,9 +87,7 @@ function saveSession(token, user) {
   try {
     localStorage.setItem('purp_token', token);
     localStorage.setItem('purp_user',  JSON.stringify(user));
-  } catch (e) {
-    // Storage blocked in some environments
-  }
+  } catch (e) {}
 }
 
 function loadSession() {
@@ -126,14 +121,12 @@ function isPremium() { return !!currentUser?.is_premium; }
 async function apiFetch(path, opts = {}) {
   try {
     const res = await fetch(`${API_BASE}${path}`, opts);
-
     if (res.status === 401) {
       clearSession();
       showLoginScreen();
       toast('Session expired — please sign in again', 'warning');
       return null;
     }
-
     return res;
   } catch (e) {
     console.error('Network error:', e);
@@ -142,17 +135,16 @@ async function apiFetch(path, opts = {}) {
 }
 
 // ── REFRESH ──────────────────────────────────────────────────────
+// FIX: only one set of calls in the interval — no duplicates
 function startRefresh() {
   stopRefresh();
   refreshTimer = setInterval(() => {
-    if (authToken) {
-      fetchPortfolio();
-      loadMainChart(true);
-      if ($('market-watch')?.classList.contains('active')) {
-        loadMarketWatch();
-      }
+    if (!authToken) return;
+    fetchPortfolio();
+    loadMainChart(true);
+    if ($('market-watch')?.classList.contains('active')) {
+      loadMarketWatch();
     }
-    if (authToken) { fetchPortfolio(); loadMainChart(true); }
   }, REFRESH_MS);
 }
 
@@ -189,8 +181,7 @@ async function handleLogin() {
       headers: authHeaders(),
       body: JSON.stringify({ username, password }),
     });
-
-    if (!res) { return; }
+    if (!res) return;
 
     if (res.ok) {
       const data = await res.json();
@@ -206,7 +197,7 @@ async function handleLogin() {
       showError('login-error', err.detail || 'Incorrect username or password');
     }
   } finally {
-    btn.disabled   = false;
+    btn.disabled    = false;
     btn.textContent = 'Sign In';
   }
 }
@@ -263,7 +254,6 @@ async function handleRegister() {
       checkAIStatus();
       toast('Account created! 🎉', 'success', 5000);
     } else {
-      // Show full error detail for debugging
       let errMsg = `HTTP ${res.status}`;
       try {
         const errBody = await res.json();
@@ -374,15 +364,9 @@ function switchTab(id) {
   $('nav-portfolio').classList.toggle('active', id === 'dashboard');
   $('nav-add').classList.toggle('active', id === 'add-asset');
   $('nav-transactions')?.classList.toggle('active', id === 'transactions-page');
-  if (id === 'dashboard') {
-    loadMainChart();
-  }
-  if (id === 'transactions-page') {
-    loadTransactions();
-  }
-  if (id === 'market-watch') {
-    loadMarketWatch();
-  }
+  if (id === 'dashboard') loadMainChart();
+  if (id === 'transactions-page') loadTransactions();
+  if (id === 'market-watch') loadMarketWatch();
 }
 
 function setAddAmountInputMode(type) {
@@ -396,10 +380,8 @@ function setAddAmountInputMode(type) {
 async function resolveSymbolType(symbol) {
   const sym = (symbol || '').trim().toUpperCase();
   if (!sym) return null;
-
   const res = await apiFetch(`/search?q=${encodeURIComponent(sym)}`);
   if (!res || !res.ok) return null;
-
   const results = await res.json();
   const exact = results.find((r) => (r.symbol || '').toUpperCase() === sym);
   const t = (exact?.type || '').toUpperCase();
@@ -455,7 +437,6 @@ async function loadMainChart(skipAnim = false) {
       scales: { x: { display: false }, y: { display: false } },
     },
   });
-
   applyVisibilityMask();
 }
 
@@ -494,7 +475,6 @@ async function loadDetailChart(symbol, period) {
       },
     },
   });
-
   applyVisibilityMask();
 }
 
@@ -514,7 +494,6 @@ function renderSpark(canvasId, data, color) {
       animation: false,
     },
   });
-
   applyVisibilityMask();
 }
 
@@ -527,21 +506,14 @@ async function performSearch(q) {
     const res = await apiFetch(`/search?q=${encodeURIComponent(q)}`);
     if (!res || !res.ok) { box.style.display = 'none'; return; }
     const results = await res.json();
-
     box.innerHTML = '';
-
     if (!results.length) { box.style.display = 'none'; return; }
 
     results.forEach((item) => {
       const sym2 = (item.symbol || '').substring(0, 2).toUpperCase();
-
-      // Icon: try item.icon (always set by API), fallback to initials
       let iconHtml;
       if (item.icon) {
-        iconHtml = `<img
-          class="search-item-icon"
-          src="${item.icon}"
-          alt="${item.symbol}"
+        iconHtml = `<img class="search-item-icon" src="${item.icon}" alt="${item.symbol}"
           onerror="this.style.display='none';this.nextElementSibling.style.display='flex';">
           <div class="search-item-fb" style="display:none;">${sym2}</div>`;
       } else {
@@ -550,8 +522,7 @@ async function performSearch(q) {
 
       const row = document.createElement('div');
       row.className = 'search-item';
-      row.innerHTML = `
-        ${iconHtml}
+      row.innerHTML = `${iconHtml}
         <span class="search-item-name">${item.symbol}</span>
         <span class="search-item-sub">${item.name || ''}</span>
         <span class="search-tag">${item.type || ''}</span>`;
@@ -562,10 +533,8 @@ async function performSearch(q) {
         setAddAmountInputMode(selectedAddAssetType);
         box.style.display = 'none';
       });
-
       box.appendChild(row);
     });
-
     box.style.display = 'block';
   } catch (e) {
     console.error('Search error:', e);
@@ -573,16 +542,16 @@ async function performSearch(q) {
   }
 }
 
+// ── MARKET WATCH ─────────────────────────────────────────────────
 async function fetchQuoteForSymbol(symbol) {
   const res = await apiFetch(`/history/${encodeURIComponent(symbol)}?period=1d`);
   if (!res || !res.ok) return null;
   const data = await res.json();
   const prices = data.prices || [];
   if (!prices.length) return null;
-
   const first = prices[0] || 0;
-  const last = prices[prices.length - 1] || 0;
-  const pct = first > 0 ? ((last - first) / first) * 100 : 0;
+  const last  = prices[prices.length - 1] || 0;
+  const pct   = first > 0 ? ((last - first) / first) * 100 : 0;
   return { symbol, price: last, pct };
 }
 
@@ -590,12 +559,10 @@ function renderMarketRows(containerId, rows) {
   const root = $(containerId);
   if (!root) return;
   root.innerHTML = '';
-
   if (!rows.length) {
     root.innerHTML = '<div class="empty-sub">Unable to load quotes right now.</div>';
     return;
   }
-
   rows.forEach((item) => {
     const isUp = (item.pct || 0) >= 0;
     const row = document.createElement('div');
@@ -603,11 +570,9 @@ function renderMarketRows(containerId, rows) {
     row.innerHTML = `
       <span class="market-symbol">${item.symbol}</span>
       <span class="market-price sensitive-value">${formatUSD(item.price)}</span>
-      <span class="market-change ${isUp ? 'text-green' : 'text-red'}">${formatPct(item.pct)}</span>
-    `;
+      <span class="market-change ${isUp ? 'text-green' : 'text-red'}">${formatPct(item.pct)}</span>`;
     root.appendChild(row);
   });
-
   applyVisibilityMask();
 }
 
@@ -616,7 +581,6 @@ async function loadMarketWatch() {
     Promise.all(FEATURED_STOCKS.map((s) => fetchQuoteForSymbol(s))),
     Promise.all(FEATURED_CRYPTOS.map((s) => fetchQuoteForSymbol(s))),
   ]);
-
   renderMarketRows('market-stocks-list', stocks.filter(Boolean));
   renderMarketRows('market-cryptos-list', cryptos.filter(Boolean));
 }
@@ -647,7 +611,6 @@ async function loadBalancePerformance() {
     pill.classList.toggle('pos', value > 0);
     pill.classList.toggle('neg', value < 0);
   });
-
   applyVisibilityMask();
 }
 
@@ -656,7 +619,6 @@ async function loadTransactions() {
   const res = await apiFetch('/transactions', { headers: authHeaders() });
   if (!res || !res.ok) return;
   const txs = await res.json();
-
   const list = $('transactions-list');
   if (!list) return;
   list.innerHTML = '';
@@ -669,8 +631,7 @@ async function loadTransactions() {
   txs.forEach((tx) => {
     const pnl = tx.realized_pnl;
     const pnlClass = pnl == null ? '' : pnl >= 0 ? 'text-green' : 'text-red';
-    const pnlText = pnl == null ? '—' : `${pnl >= 0 ? '+' : ''}${formatUSD(pnl)}`;
-
+    const pnlText  = pnl == null ? '—' : `${pnl >= 0 ? '+' : ''}${formatUSD(pnl)}`;
     const row = document.createElement('div');
     row.className = 'tx-item';
     row.innerHTML = `
@@ -688,7 +649,6 @@ async function loadTransactions() {
       </div>`;
     list.appendChild(row);
   });
-
   applyVisibilityMask();
 }
 
@@ -697,23 +657,18 @@ async function checkAIStatus() {
   if (!res || !res.ok) return;
   const info = await res.json();
   if (!info.enabled) {
-    toast('AI indisponível: configure GEMINI_API_KEY ou GOOGLE_API_KEY no backend.', 'warning', 5500);
+    toast('AI unavailable: configure GEMINI_API_KEY in backend.', 'warning', 5500);
   }
 }
 
 function csvCell(v) {
   const val = v == null ? '' : String(v);
-  if (/[",\n]/.test(val)) {
-    return `"${val.replace(/"/g, '""')}"`;
-  }
+  if (/[",\n]/.test(val)) return `"${val.replace(/"/g, '""')}"`;
   return val;
 }
 
 async function exportPortfolioCsv() {
-  if (!authToken) {
-    showLoginScreen();
-    return;
-  }
+  if (!authToken) { showLoginScreen(); return; }
 
   const [balanceRes, txRes] = await Promise.all([
     apiFetch('/portfolio/balance', { headers: authHeaders() }),
@@ -731,44 +686,23 @@ async function exportPortfolioCsv() {
 
   rows.push(['Section', 'Symbol', 'Quantity', 'Avg Buy USD', 'Current USD', 'Position USD', 'P&L USD', 'Change %']);
   (balance.assets || []).forEach((asset) => {
-    rows.push([
-      'asset',
-      asset.symbol,
-      asset.amount,
-      asset.purchase_price,
-      asset.current_price,
-      asset.position_value,
-      asset.profit,
-      asset.percent_change,
-    ]);
+    rows.push(['asset', asset.symbol, asset.amount, asset.purchase_price,
+      asset.current_price, asset.position_value, asset.profit, asset.percent_change]);
   });
 
   rows.push([]);
   rows.push(['Section', 'Date', 'Symbol', 'Type', 'Amount', 'Price USD', 'Total USD', 'Realized P&L']);
   txs.forEach((tx) => {
-    rows.push([
-      'transaction',
-      tx.date,
-      tx.symbol,
-      tx.type,
-      tx.amount,
-      tx.price,
-      tx.total_usd,
-      tx.realized_pnl,
-    ]);
+    rows.push(['transaction', tx.date, tx.symbol, tx.type, tx.amount, tx.price, tx.total_usd, tx.realized_pnl]);
   });
 
   const csv = rows.map((row) => row.map(csvCell).join(',')).join('\n');
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
   const url = URL.createObjectURL(blob);
   const now = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
-
   const a = document.createElement('a');
-  a.href = url;
-  a.download = `purp-portfolio-${now}.csv`;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
+  a.href = url; a.download = `purp-portfolio-${now}.csv`;
+  document.body.appendChild(a); a.click(); a.remove();
   URL.revokeObjectURL(url);
   toast('CSV exported successfully.', 'success');
 }
@@ -776,18 +710,16 @@ async function exportPortfolioCsv() {
 // ── PORTFOLIO ────────────────────────────────────────────────────
 async function fetchPortfolio() {
   if (!authToken) return;
-
   const res = await apiFetch('/portfolio/balance', { headers: authHeaders() });
   if (!res || !res.ok) return;
-
   const data = await res.json();
 
-  $('total-balance').textContent = formatUSD(data.total_balance_usd);
-  $('total-balance').classList.add('sensitive-value');
+  const balanceEl = $('total-balance');
+  balanceEl.textContent = formatUSD(data.total_balance_usd);
+  balanceEl.classList.add('sensitive-value');
+
   portfolioCount   = (data.assets || []).length;
-  portfolioSymbols = new Set(
-    (data.assets || []).map((a) => (a.real_symbol || a.symbol || '').toUpperCase())
-  );
+  portfolioSymbols = new Set((data.assets || []).map((a) => (a.real_symbol || a.symbol || '').toUpperCase()));
   updateProfileBar();
 
   const list = $('assets-list');
@@ -845,33 +777,23 @@ async function fetchPortfolio() {
           </div>
         </div>
       </div>
-
       <div class="action-bar">
         <button class="action-btn ai"   data-id="${asset.id}">✨ AI Analysis</button>
         <button class="action-btn sell" data-id="${asset.id}">📉 Sell</button>
       </div>
-
       <div class="ai-result" id="ai-res-${asset.id}"></div>`;
 
-    // Click on main row → detail view
     wrapper.querySelector('.asset-main').addEventListener('click', () => openDetail(asset));
-
-    // Sell button
     wrapper.querySelector('.action-btn.sell').addEventListener('click', (e) => {
-      e.stopPropagation();
-      openSellModal(asset);
+      e.stopPropagation(); openSellModal(asset);
     });
-
-    // AI button
     wrapper.querySelector('.action-btn.ai').addEventListener('click', (e) => {
-      e.stopPropagation();
-      requestAssetAI(asset);
+      e.stopPropagation(); requestAssetAI(asset);
     });
 
     list.appendChild(wrapper);
     renderSpark(`spark-${asset.id}`, asset.history || [], isProfit ? '#10b981' : '#ef4444');
   });
-
   applyVisibilityMask();
 }
 
@@ -879,7 +801,6 @@ async function fetchPortfolio() {
 function openDetail(asset) {
   const view = $('detail-view');
   view.classList.add('active');
-
   $('detail-symbol').textContent = asset.symbol;
   $('detail-price').textContent  = formatUSD(asset.current_price);
   $('detail-price').classList.add('sensitive-value');
@@ -893,10 +814,7 @@ function openDetail(asset) {
     imgEl.src = asset.icon;
     imgEl.style.display = 'block';
     fbEl.style.display  = 'none';
-    imgEl.onerror = () => {
-      imgEl.style.display = 'none';
-      fbEl.style.display  = 'flex';
-    };
+    imgEl.onerror = () => { imgEl.style.display = 'none'; fbEl.style.display = 'flex'; };
   } else {
     imgEl.style.display = 'none';
     fbEl.style.display  = 'flex';
@@ -914,8 +832,7 @@ function openSellModal(asset) {
   qty.value = asset.amount;
   qty.max   = asset.amount;
   qty.step  = (asset.type || '').toLowerCase() === 'stock' ? '1' : 'any';
-  $('sell-info').textContent =
-    `Held: ${asset.amount}  •  Avg cost: ${formatUSD(asset.purchase_price)}`;
+  $('sell-info').textContent = `Held: ${asset.amount}  •  Avg cost: ${formatUSD(asset.purchase_price)}`;
   updateSellEstimate();
   $('modal-sell').classList.add('active');
 }
@@ -930,17 +847,14 @@ function updateSellEstimate() {
   let qty = parseFloat($('sell-qty').value) || 0;
   if (qty > assetForSale.amount) { qty = assetForSale.amount; $('sell-qty').value = qty; }
   if (qty < 0) qty = 0;
-
-  const total  = qty * assetForSale.current_price;
-  const pnl    = (assetForSale.current_price - assetForSale.purchase_price) * qty;
-  const isWin  = pnl >= 0;
-
+  const total = qty * assetForSale.current_price;
+  const pnl   = (assetForSale.current_price - assetForSale.purchase_price) * qty;
+  const isWin = pnl >= 0;
   $('sell-estimate').innerHTML = `
     <span class="sensitive-value">${formatUSD(total)}</span><br>
     <span class="${isWin ? 'text-green' : 'text-red'}" style="font-size:13px;">
       ${isWin ? '+' : ''}${formatUSD(pnl)}
     </span>`;
-
   applyVisibilityMask();
 }
 
@@ -954,8 +868,7 @@ async function confirmSell() {
   }
 
   const btn = $('btn-sell-confirm');
-  btn.disabled    = true;
-  btn.textContent = '…';
+  btn.disabled = true; btn.textContent = '…';
 
   try {
     const res = await apiFetch(`/assets/${assetForSale.id}/sell`, {
@@ -968,8 +881,7 @@ async function confirmSell() {
     if (res.ok) {
       const data = await res.json();
       const pnl  = data.pnl ?? 0;
-      const sign = pnl >= 0 ? '+' : '';
-      toast(`Sold! P&L: ${sign}${formatUSD(pnl)}`, pnl >= 0 ? 'success' : 'info');
+      toast(`Sold! P&L: ${pnl >= 0 ? '+' : ''}${formatUSD(pnl)}`, pnl >= 0 ? 'success' : 'info');
       closeSellModal();
       fetchPortfolio();
       loadMainChart();
@@ -978,8 +890,7 @@ async function confirmSell() {
       toast(err.detail || 'Failed to sell. Try again.', 'error');
     }
   } finally {
-    btn.disabled    = false;
-    btn.textContent = 'Confirm Sale';
+    btn.disabled = false; btn.textContent = 'Confirm Sale';
   }
 }
 
@@ -1027,9 +938,8 @@ async function handlePortfolioAI() {
   const badgeEl = $('ai-change-badge');
   const btn     = $('btn-portfolio-ai');
 
-  textEl.textContent  = 'Analyzing portfolio with Gemini…';
-  btn.disabled        = true;
-  btn.textContent     = '✨ Analyzing…';
+  textEl.textContent = 'Analyzing portfolio with Gemini…';
+  btn.disabled = true; btn.textContent = '✨ Analyzing…';
 
   try {
     const res = await apiFetch('/analysis/portfolio', { headers: authHeaders() });
@@ -1038,7 +948,6 @@ async function handlePortfolioAI() {
     if (res.ok) {
       const data = await res.json();
       textEl.textContent = data.analysis || 'Analysis unavailable.';
-
       if (typeof data.change_pct === 'number') {
         const v = data.change_pct;
         badgeEl.className   = `change-badge ${v > 0 ? 'pos' : v < 0 ? 'neg' : ''}`;
@@ -1052,8 +961,7 @@ async function handlePortfolioAI() {
       textEl.textContent = 'Analysis error. Please try again.';
     }
   } finally {
-    btn.disabled    = false;
-    btn.textContent = '✨ Analyze Portfolio';
+    btn.disabled = false; btn.textContent = '✨ Analyze Portfolio';
   }
 }
 
@@ -1066,7 +974,7 @@ async function handleAddAsset() {
   const price  = parseFloat($('price-input').value);
   const date   = $('date-input').value;
 
-  if (!sym)              { toast('Please enter an asset symbol', 'warning'); return; }
+  if (!sym)               { toast('Please enter an asset symbol', 'warning'); return; }
   if (!amount || amount <= 0) { toast('Enter a valid quantity', 'warning'); return; }
   if (!price  || price  <= 0) { toast('Enter a valid price',    'warning'); return; }
 
@@ -1076,7 +984,6 @@ async function handleAddAsset() {
     return;
   }
 
-  // Free tier pre-check
   const isExisting = portfolioSymbols.has(sym);
   if (!isPremium() && portfolioCount >= FREE_ASSET_LIMIT && !isExisting) {
     showUpgradeModal(`Free plan is limited to ${FREE_ASSET_LIMIT} assets. Upgrade to add unlimited assets.`);
@@ -1084,8 +991,7 @@ async function handleAddAsset() {
   }
 
   const btn = $('btn-save-asset');
-  btn.disabled    = true;
-  btn.textContent = 'Saving…';
+  btn.disabled = true; btn.textContent = 'Saving…';
 
   try {
     const res = await apiFetch('/assets/', {
@@ -1096,7 +1002,6 @@ async function handleAddAsset() {
     if (!res) return;
 
     if (res.ok) {
-      // Clear fields
       $('symbol-input').value = '';
       $('amount-input').value = '';
       $('price-input').value  = '';
@@ -1104,7 +1009,6 @@ async function handleAddAsset() {
       selectedAddAssetType = null;
       setAddAmountInputMode(null);
       $('search-dropdown').style.display = 'none';
-
       switchTab('dashboard');
       await fetchPortfolio();
       loadMainChart();
@@ -1119,8 +1023,7 @@ async function handleAddAsset() {
       toast(err.detail || 'Failed to add asset. Please try again.', 'error');
     }
   } finally {
-    btn.disabled    = false;
-    btn.textContent = 'Save Asset';
+    btn.disabled = false; btn.textContent = 'Save Asset';
   }
 }
 
@@ -1139,35 +1042,30 @@ document.addEventListener('DOMContentLoaded', () => {
 
   updatePrivacyToggle();
 
-  // ── Auth
+  // Auth
   $('btn-login')?.addEventListener('click', handleLogin);
   $('btn-register')?.addEventListener('click', handleRegister);
   $('btn-show-register')?.addEventListener('click', toggleAuthMode);
   $('btn-show-login')?.addEventListener('click', toggleAuthMode);
-
   $('login-password')?.addEventListener('keydown', (e) => { if (e.key === 'Enter') handleLogin(); });
   $('reg-password')?.addEventListener('keydown',   (e) => { if (e.key === 'Enter') handleRegister(); });
 
-  // ── Hamburger
+  // Hamburger
   $('btn-hamburger')?.addEventListener('click', () => {
     const isOpen = !$('nav-menu').classList.contains('hidden');
-    if (isOpen) {
-      closeMenu();
-    } else {
-      $('nav-menu').classList.remove('hidden');
-      $('btn-hamburger').classList.add('open');
-    }
+    if (isOpen) { closeMenu(); }
+    else { $('nav-menu').classList.remove('hidden'); $('btn-hamburger').classList.add('open'); }
   });
 
-  // ── Nav
-  $('nav-portfolio')?.addEventListener('click', () => { switchTab('dashboard'); closeMenu(); });
-  $('nav-add')?.addEventListener('click',       () => { switchTab('add-asset'); closeMenu(); });
-  $('nav-transactions')?.addEventListener('click', () => { switchTab('transactions-page'); closeMenu(); });
-  $('nav-logout')?.addEventListener('click',    () => { handleLogout(); });
+  // Nav
+  $('nav-portfolio')?.addEventListener('click',    () => { switchTab('dashboard');       closeMenu(); });
+  $('nav-add')?.addEventListener('click',          () => { switchTab('add-asset');        closeMenu(); });
+  $('nav-transactions')?.addEventListener('click', () => { switchTab('transactions-page');closeMenu(); });
+  $('nav-logout')?.addEventListener('click',       () => { handleLogout(); });
 
   $('top-tab-dashboard')?.addEventListener('click', () => switchTab('dashboard'));
-  $('top-tab-market')?.addEventListener('click', () => switchTab('market-watch'));
-  $('btn-quick-add')?.addEventListener('click', () => switchTab('add-asset'));
+  $('top-tab-market')?.addEventListener('click',    () => switchTab('market-watch'));
+  $('btn-quick-add')?.addEventListener('click',          () => switchTab('add-asset'));
   $('btn-quick-transactions')?.addEventListener('click', () => switchTab('transactions-page'));
 
   $('btn-privacy-toggle')?.addEventListener('click', () => {
@@ -1175,21 +1073,21 @@ document.addEventListener('DOMContentLoaded', () => {
     updatePrivacyToggle();
   });
 
-  // ── Upgrade
+  // Upgrade
   $('btn-upgrade')?.addEventListener('click', () =>
     showUpgradeModal('Unlock unlimited assets, AI analysis, and more for $15/mo.')
   );
-  $('btn-upgrade-cancel')?.addEventListener('click', hideUpgradeModal);
+  $('btn-upgrade-cancel')?.addEventListener('click',  hideUpgradeModal);
   $('btn-upgrade-confirm')?.addEventListener('click', handleUpgrade);
-  $('btn-export-csv')?.addEventListener('click', exportPortfolioCsv);
+  $('btn-export-csv')?.addEventListener('click',      exportPortfolioCsv);
 
-  // ── Portfolio AI
+  // Portfolio AI
   $('btn-portfolio-ai')?.addEventListener('click', handlePortfolioAI);
 
-  // ── Detail back
+  // Detail back
   $('btn-back')?.addEventListener('click', () => $('detail-view').classList.remove('active'));
 
-  // ── Detail time buttons
+  // Detail time buttons
   document.querySelectorAll('.time-btn').forEach((btn) => {
     btn.addEventListener('click', (e) => {
       document.querySelectorAll('.time-btn').forEach((b) => b.classList.remove('active'));
@@ -1199,7 +1097,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
 
-  // ── Main chart controls
+  // Main chart controls
   $('benchmark-select')?.addEventListener('change', () => loadMainChart());
   document.querySelectorAll('.pill').forEach((btn) => {
     btn.addEventListener('click', (e) => {
@@ -1209,7 +1107,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
 
-  // ── Add asset
+  // Add asset
   $('btn-save-asset')?.addEventListener('click', handleAddAsset);
   $('symbol-input')?.addEventListener('input', (e) => {
     clearTimeout(searchTimer);
@@ -1220,19 +1118,15 @@ document.addEventListener('DOMContentLoaded', () => {
     searchTimer = setTimeout(() => performSearch(v), 380);
   });
 
-  // Close dropdown on outside click
   document.addEventListener('click', (e) => {
-    if (!e.target.closest('.input-wrap')) {
-      $('search-dropdown').style.display = 'none';
-    }
+    if (!e.target.closest('.input-wrap')) $('search-dropdown').style.display = 'none';
   });
 
-  // ── Sell modal
+  // Sell modal
   $('sell-qty')?.addEventListener('input', updateSellEstimate);
   $('btn-max')?.addEventListener('click', () => {
     if (assetForSale) { $('sell-qty').value = assetForSale.amount; updateSellEstimate(); }
   });
-  $('btn-sell-cancel')?.addEventListener('click', closeSellModal);
+  $('btn-sell-cancel')?.addEventListener('click',  closeSellModal);
   $('btn-sell-confirm')?.addEventListener('click', confirmSell);
-});
 });
