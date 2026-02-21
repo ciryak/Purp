@@ -19,6 +19,8 @@ from email.mime.multipart import MIMEMultipart
 from fastapi import FastAPI, HTTPException, Depends, Header, Request
 from fastapi.middleware.cors import CORSMiddleware
 from sqlmodel import Session, select, create_engine, SQLModel
+from sqlalchemy import text
+from sqlalchemy.exc import SQLAlchemyError
 from pydantic import BaseModel, EmailStr
 import bcrypt
 import stripe
@@ -43,7 +45,17 @@ stripe.api_key = os.getenv("STRIPE_SECRET_KEY", "")
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///database.db").replace(
     "postgres://", "postgresql://"
 )
-engine = create_engine(DATABASE_URL)
+
+def _build_engine():
+    is_postgres = DATABASE_URL.startswith("postgresql://")
+    connect_args = {"sslmode": "require"} if is_postgres and "sslmode=" not in DATABASE_URL else {}
+    return create_engine(
+        DATABASE_URL,
+        pool_pre_ping=True,
+        connect_args=connect_args,
+    )
+
+engine = _build_engine()
 
 FREE_ASSET_LIMIT = 4
 
@@ -250,23 +262,27 @@ def register(data: RegisterInput, session: Session = Depends(get_session)):
     if len(data.password) < 4:
         raise HTTPException(400, "Password must be at least 4 characters")
 
-    if session.exec(select(User).where(User.username == uname)).first():
-        raise HTTPException(400, "Username already taken")
+    try:
+        if session.exec(select(User).where(User.username == uname)).first():
+            raise HTTPException(400, "Username already taken")
 
-    email_norm = str(data.email).strip().lower()
-    if session.exec(select(User).where(User.email == email_norm)).first():
-        raise HTTPException(400, "Email already registered")
+        email_norm = str(data.email).strip().lower()
+        if session.exec(select(User).where(User.email == email_norm)).first():
+            raise HTTPException(400, "Email already registered")
 
-    user = User(
-        username=uname,
-        password_hash=hash_pw(data.password),
-        email=email_norm,
-        is_premium=False,
-        created_at=str(date.today()),
-    )
-    session.add(user)
-    session.commit()
-    session.refresh(user)
+        user = User(
+            username=uname,
+            password_hash=hash_pw(data.password),
+            email=email_norm,
+            is_premium=False,
+            created_at=str(date.today()),
+        )
+        session.add(user)
+        session.commit()
+        session.refresh(user)
+    except SQLAlchemyError:
+        session.rollback()
+        raise HTTPException(503, "Database unavailable — please try again")
 
     if user.id is None:
         raise HTTPException(500, "Failed to create user — please try again")
@@ -281,7 +297,10 @@ def register(data: RegisterInput, session: Session = Depends(get_session)):
 
 @app.post("/auth/login")
 def login(data: LoginInput, session: Session = Depends(get_session)):
-    user = session.exec(select(User).where(User.username == data.username.strip())).first()
+    try:
+        user = session.exec(select(User).where(User.username == data.username.strip())).first()
+    except SQLAlchemyError:
+        raise HTTPException(503, "Database unavailable — please try again")
     if not user or not verify_pw(data.password, user.password_hash):
         raise HTTPException(401, "Incorrect username or password")
 
@@ -734,4 +753,11 @@ def payment_cancelled():
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "timestamp": datetime.utcnow().isoformat()}
+    try:
+        with Session(engine) as s:
+            s.exec(text("SELECT 1"))
+        db_status = "ok"
+    except SQLAlchemyError:
+        raise HTTPException(503, "Database unavailable")
+
+    return {"status": "ok", "db": db_status, "timestamp": datetime.utcnow().isoformat()}
