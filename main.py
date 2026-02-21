@@ -31,6 +31,7 @@ from services import (
     get_historical_data,
     search_symbols,
     get_portfolio_ai_analysis,
+    get_ai_status,
 )
 
 # ── Config ─────────────────────────────────────────────────────────────────────
@@ -646,6 +647,12 @@ def ai_portfolio(
         text = f"Analysis temporarily unavailable. ({e})"
 
     return {"analysis": text, "change_pct": weighted}
+
+
+@app.get("/analysis/status")
+def ai_status():
+    """Diagnostics for AI integration."""
+    return get_ai_status()
 
 
 @app.get("/analysis/{symbol}")
