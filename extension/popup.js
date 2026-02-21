@@ -1,923 +1,910 @@
-// ===== ESTADO GLOBAL =====
-let detailChart = null;
-let mainChart = null;
-let searchTimeout = null;
-let assetForSale = null;
-let authToken = null;
-let currentUser = null;
-let portfolioAssetsCount = 0;
-let portfolioSymbolSet = new Set();
-let refreshIntervalId = null;
-let lastDataUpdate = 0;
+/* ═══════════════════════════════════════════════════════════════
+   Purp — Extension Frontend v2
+   Fixes:
+   - Toast system replaces all alert() calls
+   - Search dropdown correctly uses 'icon' field from API
+   - Form fields cleared by direct value reset (no <form> needed)
+   - Field validation before any fetch call
+   - 401 auto-logout on every fetch
+   - Autocomplete closes on outside click
+   - All strings in English
+   ════════════════════════════════════════════════════════════════ */
 
-const REFRESH_INTERVAL_MS = 30000; // 30s — não sobrecarrega o backend
-const API_BASE = 'https://purp-backend.railway.app';
-const FREE_ASSET_LIMIT = 4;
+// ── Config ───────────────────────────────────────────────────────
+const API_BASE          = 'https://purp-backend.railway.app';
+const FREE_ASSET_LIMIT  = 4;
+const REFRESH_MS        = 60_000; // 60 s
 
-const formatMoney = (val) =>
-    new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(val ?? 0);
+// ── State ────────────────────────────────────────────────────────
+let authToken        = null;
+let currentUser      = null;
+let assetForSale     = null;
+let mainChart        = null;
+let detailChart      = null;
+let refreshTimer     = null;
+let searchTimer      = null;
+let portfolioCount   = 0;
+let portfolioSymbols = new Set();
 
-// ===== AUTH HELPERS =====
+const $ = (id) => document.getElementById(id);
+const formatUSD = (v) =>
+  new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(v ?? 0);
 
-function getAuthHeaders() {
-    return authToken ? { 'X-Auth-Token': authToken } : {};
+// ── TOAST ────────────────────────────────────────────────────────
+function toast(msg, type = 'info', duration = 3500) {
+  const icons = { success: '✓', error: '✕', warning: '⚠', info: 'ℹ' };
+  const el = document.createElement('div');
+  el.className = `toast ${type}`;
+  el.innerHTML = `<span class="toast-icon">${icons[type] || 'ℹ'}</span><span>${msg}</span>`;
+  $('toast-container').appendChild(el);
+  setTimeout(() => {
+    el.style.animation = 'toastOut 0.3s ease forwards';
+    setTimeout(() => el.remove(), 300);
+  }, duration);
 }
 
-function saveAuth(token, user) {
-    authToken = token;
-    currentUser = user;
-    localStorage.setItem('authToken', token);
-    localStorage.setItem('currentUser', JSON.stringify(user));
+// ── ERROR PILL ───────────────────────────────────────────────────
+function showError(elId, msg) {
+  const el = $(elId);
+  if (!el) return;
+  el.textContent = msg;
+  el.classList.remove('hidden');
+}
+function clearError(elId) {
+  const el = $(elId);
+  if (!el) return;
+  el.textContent = '';
+  el.classList.add('hidden');
 }
 
-function loadAuth() {
-    const token = localStorage.getItem('authToken');
-    const userStr = localStorage.getItem('currentUser');
-    if (token && userStr) {
-        try {
-            authToken = token;
-            currentUser = JSON.parse(userStr);
-            return true;
-        } catch (e) { return false; }
+// ── AUTH HELPERS ─────────────────────────────────────────────────
+function authHeaders(extra = {}) {
+  return {
+    'Content-Type': 'application/json',
+    ...(authToken ? { 'X-Auth-Token': authToken } : {}),
+    ...extra,
+  };
+}
+
+function saveSession(token, user) {
+  authToken   = token;
+  currentUser = user;
+  try {
+    localStorage.setItem('purp_token', token);
+    localStorage.setItem('purp_user',  JSON.stringify(user));
+  } catch (e) {
+    // Storage blocked in some environments
+  }
+}
+
+function loadSession() {
+  try {
+    const t = localStorage.getItem('purp_token');
+    const u = localStorage.getItem('purp_user');
+    if (t && u) {
+      authToken   = t;
+      currentUser = JSON.parse(u);
+      return true;
     }
-    return false;
+  } catch (e) {}
+  return false;
 }
 
-function clearAuth() {
-    authToken = null;
-    currentUser = null;
-    portfolioAssetsCount = 0;
-    portfolioSymbolSet = new Set();
-    stopAutoRefresh();
-    localStorage.removeItem('authToken');
-    localStorage.removeItem('currentUser');
+function clearSession() {
+  authToken   = null;
+  currentUser = null;
+  portfolioCount   = 0;
+  portfolioSymbols = new Set();
+  stopRefresh();
+  try {
+    localStorage.removeItem('purp_token');
+    localStorage.removeItem('purp_user');
+  } catch (e) {}
 }
 
-function isPremium() {
-    return !!currentUser?.is_premium;
-}
+function isPremium() { return !!currentUser?.is_premium; }
 
-function normSymbolForCompare(sym) {
-    return (sym || '').toString().trim().toUpperCase().replace('-USD', '');
-}
+// ── SAFE FETCH ───────────────────────────────────────────────────
+async function apiFetch(path, opts = {}) {
+  try {
+    const res = await fetch(`${API_BASE}${path}`, opts);
 
-// ===== REFRESH =====
-
-function startAutoRefresh() {
-    stopAutoRefresh();
-    refreshIntervalId = setInterval(() => {
-        if (!authToken) return;
-        const now = Date.now();
-        if (now - lastDataUpdate >= REFRESH_INTERVAL_MS) {
-            lastDataUpdate = now;
-            fetchPortfolio();
-            loadMainChart(true);
-        }
-    }, REFRESH_INTERVAL_MS);
-}
-
-function stopAutoRefresh() {
-    if (refreshIntervalId) {
-        clearInterval(refreshIntervalId);
-        refreshIntervalId = null;
+    if (res.status === 401) {
+      clearSession();
+      showLoginScreen();
+      toast('Session expired — please sign in again', 'warning');
+      return null;
     }
+
+    return res;
+  } catch (e) {
+    console.error('Network error:', e);
+    return null;
+  }
 }
 
-// ===== LOGIN / REGISTER / LOGOUT =====
+// ── REFRESH ──────────────────────────────────────────────────────
+function startRefresh() {
+  stopRefresh();
+  refreshTimer = setInterval(() => {
+    if (authToken) { fetchPortfolio(); loadMainChart(true); }
+  }, REFRESH_MS);
+}
 
+function stopRefresh() {
+  if (refreshTimer) { clearInterval(refreshTimer); refreshTimer = null; }
+}
+
+// ── SCREENS ──────────────────────────────────────────────────────
 function showLoginScreen() {
-    document.getElementById('login-screen').classList.remove('hidden');
+  $('login-screen').classList.remove('hidden');
 }
-
 function hideLoginScreen() {
-    document.getElementById('login-screen').classList.add('hidden');
+  $('login-screen').classList.add('hidden');
 }
 
+// ── LOGIN ────────────────────────────────────────────────────────
 async function handleLogin() {
-    const username = document.getElementById('login-username').value.trim();
-    const password = document.getElementById('login-password').value;
-    const errorEl = document.getElementById('login-error');
+  const username = $('login-username').value.trim();
+  const password = $('login-password').value;
+  clearError('login-error');
 
-    if (!username || !password) {
-        errorEl.textContent = 'Preencha usuário e senha';
-        return;
-    }
+  if (!username || !password) {
+    showError('login-error', 'Please fill in username and password');
+    return;
+  }
 
-    try {
-        const res = await fetch(`${API_BASE}/auth/login`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ username, password })
-        });
+  const btn = $('btn-login');
+  btn.disabled = true;
+  btn.textContent = 'Signing in…';
 
-        if (res.ok) {
-            const data = await res.json();
-            saveAuth(data.token, data.user);
-            hideLoginScreen();
-            updateProfileBar();
-            fetchPortfolio();
-            loadMainChart();
-            startAutoRefresh();
-            errorEl.textContent = '';
-        } else {
-            const err = await res.json().catch(() => ({}));
-            errorEl.textContent = err.detail || 'Usuário ou senha incorretos';
-        }
-    } catch (e) {
-        errorEl.textContent = 'Erro de conexão';
-    }
-}
+  try {
+    const res = await apiFetch('/auth/login', {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify({ username, password }),
+    });
 
-async function handleRegister() {
-    const username = document.getElementById('register-username').value.trim();
-    const password = document.getElementById('register-password').value;
-    const email = document.getElementById('register-email').value.trim();
-    const errorEl = document.getElementById('register-error');
+    if (!res) { return; }
 
-    if (!username || !email || !password || password.length < 4) {
-        errorEl.textContent = 'Preencha todos os campos (senha mín. 4 caracteres)';
-        return;
-    }
-
-    try {
-        const res = await fetch(`${API_BASE}/auth/register`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ username, password, email })
-        });
-
-        if (res.ok) {
-            const data = await res.json();
-            saveAuth(data.token, data.user);
-            hideLoginScreen();
-            updateProfileBar();
-            fetchPortfolio();
-            loadMainChart();
-            startAutoRefresh();
-            errorEl.textContent = '';
-        } else {
-            const err = await res.json().catch(() => ({}));
-            errorEl.textContent = err.detail || 'Erro ao criar conta';
-        }
-    } catch (e) {
-        errorEl.textContent = 'Erro de conexão';
-    }
-}
-
-async function handleLogout() {
-    try {
-        await fetch(`${API_BASE}/auth/logout`, {
-            method: 'POST',
-            headers: getAuthHeaders()
-        });
-    } catch (e) {}
-    clearAuth();
-    showLoginScreen();
-}
-
-function toggleLoginRegister() {
-    const loginForm = document.getElementById('login-form');
-    const registerForm = document.getElementById('register-form');
-    const isLogin = loginForm.style.display !== 'none';
-    loginForm.style.display = isLogin ? 'none' : 'block';
-    registerForm.style.display = isLogin ? 'block' : 'none';
-    document.getElementById('login-error').textContent = '';
-    document.getElementById('register-error').textContent = '';
-}
-
-// ===== PROFILE BAR =====
-
-function updateProfileBar() {
-    const nameEl = document.getElementById('profile-username');
-    const planEl = document.getElementById('profile-plan');
-    const limitEl = document.getElementById('profile-assets-limit');
-    const upgradeBtn = document.getElementById('btn-upgrade');
-    const avatarEl = document.getElementById('profile-avatar-letter');
-
-    const username = currentUser?.username || '...';
-    if (nameEl) nameEl.innerText = username;
-    if (avatarEl) avatarEl.innerText = username.charAt(0).toUpperCase();
-
-    if (planEl) {
-        planEl.innerText = isPremium() ? 'Premium' : 'Grátis';
-        planEl.className = isPremium() ? 'plan-badge premium' : 'plan-badge';
-    }
-
-    if (limitEl) {
-        limitEl.innerText = isPremium()
-            ? `${portfolioAssetsCount} ativos`
-            : `${portfolioAssetsCount}/${FREE_ASSET_LIMIT} ativos`;
-    }
-
-    if (upgradeBtn) {
-        upgradeBtn.style.display = isPremium() ? 'none' : '';
-    }
-}
-
-// ===== UPGRADE MODAL =====
-
-function showUpgradeModal(reason) {
-    const reasonEl = document.getElementById('upgrade-reason');
-    if (reasonEl) reasonEl.innerText = reason || 'Desbloqueie recursos avançados.';
-    document.getElementById('modal-upgrade')?.classList.add('active');
-}
-
-function hideUpgradeModal() {
-    document.getElementById('modal-upgrade')?.classList.remove('active');
-}
-
-async function handleUpgrade() {
-    try {
-        const res = await fetch(`${API_BASE}/stripe/create-checkout`, {
-            method: 'POST',
-            headers: getAuthHeaders()
-        });
-        const data = await res.json();
-        if (data.checkout_url) {
-            chrome.tabs.create({ url: data.checkout_url });
-        }
-    } catch (e) {
-        alert('Erro ao iniciar pagamento. Tente novamente.');
-    }
-}
-
-// Expõe globalmente para uso inline se necessário
-window.handleUpgrade = handleUpgrade;
-
-// ===== MENU =====
-
-function closeMenu() {
-    const navMenu = document.getElementById('nav-menu');
-    const btnHamburger = document.getElementById('btn-hamburger');
-    navMenu?.classList.add('hidden');
-    btnHamburger?.classList.remove('active');
-}
-
-// ===== INICIALIZAÇÃO =====
-
-document.addEventListener('DOMContentLoaded', () => {
-    if (loadAuth()) {
-        hideLoginScreen();
-        updateProfileBar();
-        fetchPortfolio();
-        loadMainChart();
-        startAutoRefresh();
+    if (res.ok) {
+      const data = await res.json();
+      saveSession(data.token, data.user);
+      hideLoginScreen();
+      updateProfileBar();
+      fetchPortfolio();
+      loadMainChart();
+      startRefresh();
     } else {
-        showLoginScreen();
+      const err = await res.json().catch(() => ({}));
+      showError('login-error', err.detail || 'Incorrect username or password');
     }
-    setupListeners();
-    document.getElementById('nav-carteira')?.classList.add('active');
-});
+  } finally {
+    btn.disabled   = false;
+    btn.textContent = 'Sign In';
+  }
+}
 
-function setupListeners() {
-    // Auth
-    document.getElementById('btn-login').onclick = handleLogin;
-    document.getElementById('btn-register').onclick = handleRegister;
-    document.getElementById('btn-show-register').onclick = toggleLoginRegister;
-    document.getElementById('btn-show-login').onclick = toggleLoginRegister;
+// ── REGISTER ─────────────────────────────────────────────────────
+async function handleRegister() {
+  const username = $('reg-username').value.trim();
+  const email    = $('reg-email').value.trim();
+  const password = $('reg-password').value;
+  clearError('register-error');
 
-    document.getElementById('login-password').onkeypress = (e) => {
-        if (e.key === 'Enter') handleLogin();
-    };
-    document.getElementById('register-password').onkeypress = (e) => {
-        if (e.key === 'Enter') handleRegister();
-    };
+  if (!username || !email || !password) {
+    showError('register-error', 'All fields are required');
+    return;
+  }
+  if (username.length < 3) {
+    showError('register-error', 'Username must be at least 3 characters');
+    return;
+  }
+  if (password.length < 4) {
+    showError('register-error', 'Password must be at least 4 characters');
+    return;
+  }
+  if (!email.includes('@')) {
+    showError('register-error', 'Enter a valid email address');
+    return;
+  }
 
-    // Hamburger
-    const btnHamburger = document.getElementById('btn-hamburger');
-    const navMenu = document.getElementById('nav-menu');
-    if (btnHamburger && navMenu) {
-        btnHamburger.onclick = () => {
-            const isOpen = !navMenu.classList.contains('hidden');
-            if (isOpen) {
-                closeMenu();
-            } else {
-                navMenu.classList.remove('hidden');
-                btnHamburger.classList.add('active');
-            }
-        };
-    }
+  const btn = $('btn-register');
+  btn.disabled = true;
+  btn.textContent = 'Creating account…';
 
-    // Nav items
-    document.getElementById('nav-carteira').onclick = () => { switchTab('dashboard'); closeMenu(); };
-    document.getElementById('nav-adicionar').onclick = () => { switchTab('add-asset'); closeMenu(); };
-    document.getElementById('nav-sair').onclick = () => { closeMenu(); handleLogout(); };
-
-    // IA Portfolio
-    document.getElementById('btn-portfolio-ai')?.addEventListener('click', handlePortfolioAI);
-
-    // Upgrade
-    document.getElementById('btn-upgrade').onclick = () =>
-        showUpgradeModal('Desbloqueie IA e acompanhe ativos ilimitados por US$ 15/mês.');
-    document.getElementById('upgrade-cancel').onclick = hideUpgradeModal;
-    document.getElementById('upgrade-confirm').onclick = () => {
-        hideUpgradeModal();
-        handleUpgrade();
-    };
-
-    // Back
-    document.getElementById('btn-back').onclick = () =>
-        document.getElementById('detail-view').classList.remove('active');
-
-    // Main chart controls
-    document.getElementById('main-benchmark').onchange = () => loadMainChart();
-    document.querySelectorAll('.pill').forEach(btn => {
-        btn.onclick = (e) => {
-            document.querySelectorAll('.pill').forEach(b => b.classList.remove('active'));
-            e.target.classList.add('active');
-            loadMainChart();
-        };
+  try {
+    const res = await apiFetch('/auth/register', {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify({ username, email, password }),
     });
 
-    // Save asset
-    document.getElementById('btn-save').onclick = handleAddAsset;
+    if (!res) return;
 
-    // Modal sell
-    document.getElementById('modal-cancel').onclick = closeModal;
-    document.getElementById('modal-confirm').onclick = confirmSell;
-    document.getElementById('sell-amount-input').oninput = updateSellCalc;
-    document.getElementById('btn-max').onclick = () => {
-        if (assetForSale) {
-            document.getElementById('sell-amount-input').value = assetForSale.amount;
-            updateSellCalc();
-        }
-    };
+    if (res.ok) {
+      const data = await res.json();
+      saveSession(data.token, data.user);
+      hideLoginScreen();
+      updateProfileBar();
+      fetchPortfolio();
+      loadMainChart();
+      startRefresh();
+      toast('Account created! Check your email for a welcome message 🎉', 'success', 5000);
+    } else {
+      const err = await res.json().catch(() => ({}));
+      showError('register-error', err.detail || 'Failed to create account');
+    }
+  } finally {
+    btn.disabled    = false;
+    btn.textContent = 'Create Account';
+  }
+}
 
-    // Search
-    document.getElementById('symbol').oninput = (e) => {
-        clearTimeout(searchTimeout);
-        const val = e.target.value.trim();
-        if (val.length < 2) {
-            document.getElementById('search-results').style.display = 'none';
-            return;
-        }
-        searchTimeout = setTimeout(() => performSearch(val), 400);
-    };
+// ── LOGOUT ───────────────────────────────────────────────────────
+async function handleLogout() {
+  closeMenu();
+  try {
+    await apiFetch('/auth/logout', { method: 'POST', headers: authHeaders() });
+  } catch (e) {}
+  clearSession();
+  showLoginScreen();
+}
 
-    // Time detail chart
-    document.querySelectorAll('.time-btn').forEach(btn => {
-        btn.onclick = (e) => {
-            document.querySelectorAll('.time-btn').forEach(b => b.classList.remove('active'));
-            e.target.classList.add('active');
-            const sym = document.getElementById('detail-symbol').innerText;
-            if (sym && sym !== '—') fetchHistoryAndRender(sym, e.target.getAttribute('data-period'));
-        };
+// ── TOGGLE LOGIN/REGISTER ────────────────────────────────────────
+function toggleAuthMode() {
+  const loginEl = $('login-form');
+  const regEl   = $('register-form');
+  const showingLogin = loginEl.style.display !== 'none';
+  loginEl.style.display = showingLogin ? 'none'  : 'block';
+  regEl.style.display   = showingLogin ? 'block' : 'none';
+  clearError('login-error');
+  clearError('register-error');
+}
+
+// ── PROFILE BAR ──────────────────────────────────────────────────
+function updateProfileBar() {
+  const name = currentUser?.username || '—';
+  $('profile-username').textContent = name;
+  $('profile-avatar').textContent   = name.charAt(0).toUpperCase();
+
+  const planEl = $('profile-plan');
+  if (isPremium()) {
+    planEl.textContent = 'Premium';
+    planEl.className   = 'plan-badge premium';
+  } else {
+    planEl.textContent = 'Free';
+    planEl.className   = 'plan-badge';
+  }
+
+  $('profile-count').textContent = isPremium()
+    ? `${portfolioCount} assets`
+    : `${portfolioCount}/${FREE_ASSET_LIMIT} assets`;
+
+  $('btn-upgrade').style.display = isPremium() ? 'none' : '';
+}
+
+// ── UPGRADE MODAL ────────────────────────────────────────────────
+function showUpgradeModal(reason) {
+  $('upgrade-reason').textContent = reason || 'Unlock advanced features.';
+  $('modal-upgrade').classList.add('active');
+}
+function hideUpgradeModal() {
+  $('modal-upgrade').classList.remove('active');
+}
+async function handleUpgrade() {
+  hideUpgradeModal();
+  const btn = $('btn-upgrade-confirm');
+  btn.disabled = true;
+  btn.textContent = 'Loading…';
+
+  try {
+    const res = await apiFetch('/stripe/create-checkout', {
+      method: 'POST',
+      headers: authHeaders(),
     });
-}
+    if (!res) return;
 
-// ===== GRÁFICO PRINCIPAL =====
-
-async function loadMainChart(skipAnimation = false) {
-    if (!authToken) return;
-
-    const ctx = document.getElementById('mainChart')?.getContext('2d');
-    if (!ctx) return;
-
-    if (mainChart) { mainChart.destroy(); mainChart = null; }
-
-    const period = document.querySelector('.pill.active')?.dataset.p || '1mo';
-    const bench = document.getElementById('main-benchmark')?.value || '^GSPC';
-
-    try {
-        const res = await fetch(`${API_BASE}/portfolio/history?period=${period}&benchmark=${bench}`, {
-            headers: getAuthHeaders()
-        });
-
-        if (!res.ok) {
-            if (res.status === 401) { clearAuth(); showLoginScreen(); }
-            return;
-        }
-
-        const data = await res.json();
-        if (!data.portfolio || data.portfolio.length === 0) return;
-
-        const startPort = data.portfolio[0];
-        const startBench = data.benchmark[0] || 1;
-
-        const normPort = data.portfolio.map(v => ((v - startPort) / startPort) * 100);
-        const normBench = data.benchmark.map(v => ((v - startBench) / startBench) * 100);
-
-        mainChart = new Chart(ctx, {
-            type: 'line',
-            data: {
-                labels: data.dates,
-                datasets: [
-                    {
-                        label: 'Carteira',
-                        data: normPort,
-                        borderColor: '#a78bfa',
-                        borderWidth: 2,
-                        pointRadius: 0,
-                        tension: 0.4
-                    },
-                    {
-                        label: bench,
-                        data: normBench,
-                        borderColor: '#444',
-                        borderWidth: 1,
-                        borderDash: [4, 4],
-                        pointRadius: 0,
-                        tension: 0.4
-                    }
-                ]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                animation: skipAnimation ? false : { duration: 400, easing: 'easeOutQuart' },
-                plugins: { legend: { display: false }, tooltip: { mode: 'index', intersect: false } },
-                scales: { x: { display: false }, y: { display: false } }
-            }
-        });
-    } catch (e) {
-        console.error('Erro chart principal:', e);
+    if (res.ok) {
+      const data = await res.json();
+      if (data.checkout_url) {
+        chrome.tabs.create({ url: data.checkout_url });
+      }
+    } else {
+      const err = await res.json().catch(() => ({}));
+      toast(err.detail || 'Could not initiate payment. Try again.', 'error');
     }
+  } finally {
+    btn.disabled    = false;
+    btn.textContent = 'Get Premium';
+  }
 }
 
-// ===== HISTÓRICO DETALHE =====
-
-async function fetchHistoryAndRender(symbol, period) {
-    const ctx = document.getElementById('detailChart')?.getContext('2d');
-    if (!ctx) return;
-    if (detailChart) { detailChart.destroy(); detailChart = null; }
-
-    try {
-        const res = await fetch(`${API_BASE}/history/${symbol}?period=${period}`);
-        const data = await res.json();
-
-        if (!data.prices || data.prices.length === 0) return;
-
-        const grad = ctx.createLinearGradient(0, 0, 0, 280);
-        grad.addColorStop(0, 'rgba(124,58,237,0.4)');
-        grad.addColorStop(1, 'rgba(124,58,237,0)');
-
-        detailChart = new Chart(ctx, {
-            type: 'line',
-            data: {
-                labels: data.dates || [],
-                datasets: [{
-                    data: data.prices,
-                    borderColor: '#7c3aed',
-                    backgroundColor: grad,
-                    borderWidth: 2,
-                    pointRadius: 0,
-                    pointHoverRadius: 5,
-                    fill: true,
-                    tension: 0.4
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                animation: { duration: 300, easing: 'easeOutQuart' },
-                interaction: { mode: 'index', intersect: false },
-                plugins: { legend: { display: false } },
-                scales: {
-                    x: { display: false },
-                    y: {
-                        display: true,
-                        position: 'right',
-                        grid: { color: 'rgba(255,255,255,0.04)' },
-                        ticks: { color: 'rgba(255,255,255,0.3)', font: { family: 'DM Mono', size: 9 } }
-                    }
-                }
-            }
-        });
-    } catch (e) {
-        console.error('Erro histórico:', e);
-    }
+// ── MENU ─────────────────────────────────────────────────────────
+function closeMenu() {
+  $('nav-menu').classList.add('hidden');
+  $('btn-hamburger').classList.remove('open');
 }
 
-// ===== BUSCA =====
+// ── TABS ─────────────────────────────────────────────────────────
+function switchTab(id) {
+  document.querySelectorAll('.page').forEach((p) => p.classList.remove('active'));
+  $(id)?.classList.add('active');
+  $('nav-portfolio').classList.toggle('active', id === 'dashboard');
+  $('nav-add').classList.toggle('active', id === 'add-asset');
+  if (id === 'dashboard') loadMainChart();
+}
 
+// ── MAIN CHART ───────────────────────────────────────────────────
+async function loadMainChart(skipAnim = false) {
+  if (!authToken) return;
+  const ctx = $('mainChart')?.getContext('2d');
+  if (!ctx) return;
+  if (mainChart) { mainChart.destroy(); mainChart = null; }
+
+  const period = document.querySelector('.pill.active')?.dataset.p || '1mo';
+  const bench  = $('benchmark-select')?.value || '^GSPC';
+
+  const res = await apiFetch(
+    `/portfolio/history?period=${period}&benchmark=${encodeURIComponent(bench)}`,
+    { headers: authHeaders() }
+  );
+  if (!res || !res.ok) return;
+  const data = await res.json();
+  if (!data.portfolio?.length) return;
+
+  const s0 = data.portfolio[0];
+  const b0 = data.benchmark[0] || 1;
+  const normP = data.portfolio.map((v) => ((v - s0) / (s0 || 1)) * 100);
+  const normB = data.benchmark.map((v) => ((v - b0) / (b0 || 1)) * 100);
+
+  mainChart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: data.dates,
+      datasets: [
+        { label: 'Portfolio', data: normP, borderColor: '#a78bfa', borderWidth: 2, pointRadius: 0, tension: 0.4 },
+        { label: bench,       data: normB, borderColor: '#444',    borderWidth: 1, borderDash: [4,4], pointRadius: 0, tension: 0.4 },
+      ],
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      animation: skipAnim ? false : { duration: 400 },
+      plugins: { legend: { display: false }, tooltip: { mode: 'index', intersect: false } },
+      scales: { x: { display: false }, y: { display: false } },
+    },
+  });
+}
+
+// ── DETAIL CHART ─────────────────────────────────────────────────
+async function loadDetailChart(symbol, period) {
+  const ctx = $('detailChart')?.getContext('2d');
+  if (!ctx) return;
+  if (detailChart) { detailChart.destroy(); detailChart = null; }
+
+  const res = await apiFetch(`/history/${encodeURIComponent(symbol)}?period=${period}`);
+  if (!res || !res.ok) return;
+  const data = await res.json();
+  if (!data.prices?.length) return;
+
+  const grad = ctx.createLinearGradient(0, 0, 0, 260);
+  grad.addColorStop(0, 'rgba(124,58,237,0.4)');
+  grad.addColorStop(1, 'rgba(124,58,237,0)');
+
+  detailChart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: data.dates || [],
+      datasets: [{ data: data.prices, borderColor: '#7c3aed', backgroundColor: grad,
+        borderWidth: 2, pointRadius: 0, pointHoverRadius: 5, fill: true, tension: 0.4 }],
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      animation: { duration: 300 },
+      interaction: { mode: 'index', intersect: false },
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { display: false },
+        y: { display: true, position: 'right',
+          grid: { color: 'rgba(255,255,255,0.04)' },
+          ticks: { color: 'rgba(255,255,255,0.3)', font: { family: 'DM Mono', size: 9 } } },
+      },
+    },
+  });
+}
+
+// ── SPARKLINE ────────────────────────────────────────────────────
+function renderSpark(canvasId, data, color) {
+  const ctx = $(canvasId)?.getContext('2d');
+  if (!ctx || !data?.length) return;
+  new Chart(ctx, {
+    type: 'line',
+    data: { labels: data.map((_, i) => i), datasets: [
+      { data, borderColor: color, borderWidth: 1.5, pointRadius: 0, tension: 0.4, fill: false },
+    ]},
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false }, tooltip: { enabled: false } },
+      scales:  { x: { display: false }, y: { display: false } },
+      animation: false,
+    },
+  });
+}
+
+// ── SEARCH (autocomplete) ────────────────────────────────────────
 async function performSearch(q) {
-    try {
-        const res = await fetch(`${API_BASE}/search?q=${encodeURIComponent(q)}`);
-        const data = await res.json();
-        const box = document.getElementById('search-results');
-        box.innerHTML = '';
+  const box = $('search-dropdown');
+  if (!q || q.length < 2) { box.style.display = 'none'; return; }
 
-        if (data.length > 0) {
-            box.style.display = 'block';
-            data.forEach(item => {
-                const imgHtml = item.icon
-                    ? `<img src="${item.icon}" alt="${item.symbol}" onerror="this.style.display='none'">`
-                    : '';
-                const div = document.createElement('div');
-                div.className = 'search-item';
-                div.innerHTML = `${imgHtml}<strong>${item.symbol}</strong><span style="font-size:11px;color:var(--text-2)">${item.name || ''}</span><span class="search-tag">${item.type}</span>`;
-                div.onclick = () => {
-                    document.getElementById('symbol').value = item.symbol;
-                    box.style.display = 'none';
-                };
-                box.appendChild(div);
-            });
-        } else {
-            box.style.display = 'none';
-        }
-    } catch (e) {
-        console.error('Erro busca:', e);
-    }
+  try {
+    const res = await apiFetch(`/search?q=${encodeURIComponent(q)}`);
+    if (!res || !res.ok) { box.style.display = 'none'; return; }
+    const results = await res.json();
+
+    box.innerHTML = '';
+
+    if (!results.length) { box.style.display = 'none'; return; }
+
+    results.forEach((item) => {
+      const sym2 = (item.symbol || '').substring(0, 2).toUpperCase();
+
+      // Icon: try item.icon (always set by API), fallback to initials
+      let iconHtml;
+      if (item.icon) {
+        iconHtml = `<img
+          class="search-item-icon"
+          src="${item.icon}"
+          alt="${item.symbol}"
+          onerror="this.style.display='none';this.nextElementSibling.style.display='flex';">
+          <div class="search-item-fb" style="display:none;">${sym2}</div>`;
+      } else {
+        iconHtml = `<div class="search-item-fb">${sym2}</div>`;
+      }
+
+      const row = document.createElement('div');
+      row.className = 'search-item';
+      row.innerHTML = `
+        ${iconHtml}
+        <span class="search-item-name">${item.symbol}</span>
+        <span class="search-item-sub">${item.name || ''}</span>
+        <span class="search-tag">${item.type || ''}</span>`;
+
+      row.addEventListener('click', () => {
+        $('symbol-input').value = item.symbol;
+        box.style.display = 'none';
+      });
+
+      box.appendChild(row);
+    });
+
+    box.style.display = 'block';
+  } catch (e) {
+    console.error('Search error:', e);
+    box.style.display = 'none';
+  }
 }
 
-// ===== CARTEIRA =====
-
+// ── PORTFOLIO ────────────────────────────────────────────────────
 async function fetchPortfolio() {
-    if (!authToken) return;
+  if (!authToken) return;
 
-    try {
-        const res = await fetch(`${API_BASE}/portfolio/balance`, {
-            headers: getAuthHeaders()
-        });
+  const res = await apiFetch('/portfolio/balance', { headers: authHeaders() });
+  if (!res || !res.ok) return;
 
-        if (!res.ok) {
-            if (res.status === 401) { clearAuth(); showLoginScreen(); }
-            return;
-        }
+  const data = await res.json();
 
-        const data = await res.json();
-        document.getElementById('total-balance').innerText = formatMoney(data.total_balance_usd);
-        portfolioAssetsCount = (data.assets || []).length;
-        portfolioSymbolSet = new Set((data.assets || []).map(a => normSymbolForCompare(a.real_symbol || a.symbol)));
-        updateProfileBar();
+  $('total-balance').textContent = formatUSD(data.total_balance_usd);
+  portfolioCount   = (data.assets || []).length;
+  portfolioSymbols = new Set(
+    (data.assets || []).map((a) => (a.real_symbol || a.symbol || '').toUpperCase())
+  );
+  updateProfileBar();
 
-        const list = document.getElementById('assets-list');
-        list.innerHTML = '';
+  const list = $('assets-list');
+  list.innerHTML = '';
 
-        if (data.assets.length === 0) {
-            list.innerHTML = `
-                <div class="empty-state">
-                    <div class="empty-icon">📭</div>
-                    <div class="empty-title">Carteira vazia</div>
-                    <div class="empty-sub">Adicione seu primeiro ativo para começar a acompanhar seu portfólio.</div>
-                </div>`;
-            return;
-        }
+  if (!data.assets?.length) {
+    list.innerHTML = `
+      <div class="empty-state">
+        <div class="empty-icon">📭</div>
+        <div class="empty-title">Portfolio is empty</div>
+        <div class="empty-sub">Add your first asset using the menu above to start tracking your investments.</div>
+      </div>`;
+    return;
+  }
 
-        data.assets.forEach(asset => {
-            const div = document.createElement('div');
-            div.className = 'asset-wrapper';
-            const profit = asset.profit || 0;
-            const isProfit = profit >= 0;
-            const colorClass = isProfit ? 'text-green' : 'text-red';
-            const profitSign = isProfit ? '+' : '';
-            const pct = asset.percent_change ? `${asset.percent_change >= 0 ? '+' : ''}${asset.percent_change.toFixed(2)}%` : '';
+  data.assets.forEach((asset) => {
+    const profit   = asset.profit ?? 0;
+    const isProfit = profit >= 0;
+    const pctTxt   = asset.percent_change != null
+      ? `${asset.percent_change >= 0 ? '+' : ''}${asset.percent_change.toFixed(2)}%`
+      : '';
 
-            const sym2 = (asset.symbol || '').substring(0, 2).toUpperCase();
-            const iconHtml = asset.icon
-                ? `<img src="${asset.icon}" class="asset-icon" alt="${asset.symbol}" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
-                   <div class="asset-icon-fallback" style="display:none;">${sym2}</div>`
-                : `<div class="asset-icon-fallback">${sym2}</div>`;
-
-            div.innerHTML = `
-                <div class="asset-main">
-                    <div class="asset-left">
-                        <div style="position:relative;width:34px;height:34px;flex-shrink:0;">
-                            ${iconHtml}
-                        </div>
-                        <div>
-                            <div class="asset-name">${asset.symbol}</div>
-                            <div class="asset-price">${formatMoney(asset.current_price)} <span class="${colorClass}">${pct}</span></div>
-                        </div>
-                    </div>
-                    <div class="asset-spark"><canvas id="c-${asset.id}"></canvas></div>
-                    <div class="asset-values">
-                        <div class="asset-value">${formatMoney(asset.position_value)}</div>
-                        <div class="asset-profit ${colorClass}">${profitSign}${formatMoney(profit)}</div>
-                    </div>
-                </div>
-                <div class="action-bar">
-                    <button class="icon-btn ai-btn" data-id="${asset.id}">✨ Análise IA</button>
-                    <button class="icon-btn sell-btn" data-id="${asset.id}">📉 Vender</button>
-                </div>
-                <div id="ai-${asset.id}" class="ai-analysis-text"></div>
-            `;
-
-            div.querySelector('.asset-main').onclick = () => openDetail(asset);
-            div.querySelector('.sell-btn').onclick = (e) => { e.stopPropagation(); openSellModal(asset); };
-            div.querySelector('.ai-btn').onclick = (e) => { e.stopPropagation(); askAI(asset); };
-
-            list.appendChild(div);
-            renderSpark(`c-${asset.id}`, asset.history || [], isProfit ? '#10b981' : '#ef4444');
-        });
-    } catch (e) {
-        console.error('Erro fetchPortfolio:', e);
+    const sym2 = (asset.symbol || '').substring(0, 2).toUpperCase();
+    let iconHtml;
+    if (asset.icon) {
+      iconHtml = `
+        <img class="asset-icon-img" src="${asset.icon}" alt="${asset.symbol}"
+             onerror="this.style.display='none';this.nextElementSibling.style.display='flex';">
+        <div class="asset-icon-fb" style="display:none;">${sym2}</div>`;
+    } else {
+      iconHtml = `<div class="asset-icon-fb">${sym2}</div>`;
     }
+
+    const wrapper = document.createElement('div');
+    wrapper.className = 'asset-wrapper';
+    wrapper.innerHTML = `
+      <div class="asset-main">
+        <div class="asset-left">
+          <div class="asset-icon-wrap">${iconHtml}</div>
+          <div>
+            <div class="asset-name">${asset.symbol}</div>
+            <div class="asset-price">
+              ${formatUSD(asset.current_price)}
+              <span class="${isProfit ? 'text-green' : 'text-red'}">${pctTxt}</span>
+            </div>
+          </div>
+        </div>
+        <div class="asset-spark"><canvas id="spark-${asset.id}"></canvas></div>
+        <div class="asset-values">
+          <div class="asset-val">${formatUSD(asset.position_value)}</div>
+          <div class="asset-profit ${isProfit ? 'text-green' : 'text-red'}">
+            ${isProfit ? '+' : ''}${formatUSD(profit)}
+          </div>
+        </div>
+      </div>
+
+      <div class="action-bar">
+        <button class="action-btn ai"   data-id="${asset.id}">✨ AI Analysis</button>
+        <button class="action-btn sell" data-id="${asset.id}">📉 Sell</button>
+      </div>
+
+      <div class="ai-result" id="ai-res-${asset.id}"></div>`;
+
+    // Click on main row → detail view
+    wrapper.querySelector('.asset-main').addEventListener('click', () => openDetail(asset));
+
+    // Sell button
+    wrapper.querySelector('.action-btn.sell').addEventListener('click', (e) => {
+      e.stopPropagation();
+      openSellModal(asset);
+    });
+
+    // AI button
+    wrapper.querySelector('.action-btn.ai').addEventListener('click', (e) => {
+      e.stopPropagation();
+      requestAssetAI(asset);
+    });
+
+    list.appendChild(wrapper);
+    renderSpark(`spark-${asset.id}`, asset.history || [], isProfit ? '#10b981' : '#ef4444');
+  });
 }
 
-// ===== MODAL VENDA =====
+// ── DETAIL VIEW ──────────────────────────────────────────────────
+function openDetail(asset) {
+  const view = $('detail-view');
+  view.classList.add('active');
 
+  $('detail-symbol').textContent = asset.symbol;
+  $('detail-price').textContent  = formatUSD(asset.current_price);
+  $('holding-badge').textContent = `${asset.days_held ?? 0} days held`;
+
+  const imgEl = $('detail-icon-img');
+  const fbEl  = $('detail-icon-fb');
+  fbEl.textContent = (asset.symbol || '').substring(0, 2).toUpperCase();
+
+  if (asset.icon) {
+    imgEl.src = asset.icon;
+    imgEl.style.display = 'block';
+    fbEl.style.display  = 'none';
+    imgEl.onerror = () => {
+      imgEl.style.display = 'none';
+      fbEl.style.display  = 'flex';
+    };
+  } else {
+    imgEl.style.display = 'none';
+    fbEl.style.display  = 'flex';
+  }
+
+  document.querySelectorAll('.time-btn').forEach((b) => b.classList.remove('active'));
+  document.querySelector('.time-btn[data-period="1mo"]')?.classList.add('active');
+  loadDetailChart(asset.real_symbol || asset.symbol, '1mo');
+}
+
+// ── SELL MODAL ───────────────────────────────────────────────────
 function openSellModal(asset) {
-    assetForSale = asset;
-    document.getElementById('modal-sell').classList.add('active');
-
-    const input = document.getElementById('sell-amount-input');
-    input.value = asset.amount;
-    input.max = asset.amount;
-
-    document.getElementById('modal-sell-info').innerText =
-        `Qtd atual: ${asset.amount} • Preço médio: ${formatMoney(asset.purchase_price)}`;
-    updateSellCalc();
+  assetForSale = asset;
+  const qty = $('sell-qty');
+  qty.value = asset.amount;
+  qty.max   = asset.amount;
+  $('sell-info').textContent =
+    `Held: ${asset.amount}  •  Avg cost: ${formatUSD(asset.purchase_price)}`;
+  updateSellEstimate();
+  $('modal-sell').classList.add('active');
 }
 
-function updateSellCalc() {
-    if (!assetForSale) return;
-    const input = document.getElementById('sell-amount-input');
-    let qty = parseFloat(input.value) || 0;
+function closeSellModal() {
+  $('modal-sell').classList.remove('active');
+  assetForSale = null;
+}
 
-    if (qty > assetForSale.amount) { qty = assetForSale.amount; input.value = qty; }
-    if (qty < 0) qty = 0;
+function updateSellEstimate() {
+  if (!assetForSale) return;
+  let qty = parseFloat($('sell-qty').value) || 0;
+  if (qty > assetForSale.amount) { qty = assetForSale.amount; $('sell-qty').value = qty; }
+  if (qty < 0) qty = 0;
 
-    const total = qty * assetForSale.current_price;
-    const profit = (assetForSale.current_price - assetForSale.purchase_price) * qty;
-    const isWin = profit >= 0;
+  const total  = qty * assetForSale.current_price;
+  const pnl    = (assetForSale.current_price - assetForSale.purchase_price) * qty;
+  const isWin  = pnl >= 0;
 
-    document.getElementById('sell-profit-estimate').innerHTML =
-        `${formatMoney(total)}<br><span class="${isWin ? 'text-green' : 'text-red'}" style="font-size:13px;">
-            ${isWin ? '+' : ''}${formatMoney(profit)}
-        </span>`;
+  $('sell-estimate').innerHTML = `
+    ${formatUSD(total)}<br>
+    <span class="${isWin ? 'text-green' : 'text-red'}" style="font-size:13px;">
+      ${isWin ? '+' : ''}${formatUSD(pnl)}
+    </span>`;
 }
 
 async function confirmSell() {
-    if (!assetForSale || !authToken) return;
-    const qty = parseFloat(document.getElementById('sell-amount-input').value);
-    if (!qty || qty <= 0) return;
+  if (!assetForSale || !authToken) return;
+  const qty = parseFloat($('sell-qty').value);
+  if (!qty || qty <= 0) { toast('Enter a valid amount to sell', 'warning'); return; }
 
-    const btn = document.getElementById('modal-confirm');
-    btn.innerText = '...';
-    btn.disabled = true;
+  const btn = $('btn-sell-confirm');
+  btn.disabled    = true;
+  btn.textContent = '…';
 
-    try {
-        const res = await fetch(`${API_BASE}/assets/${assetForSale.id}/sell`, {
-            method: 'POST',
-            headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
-            body: JSON.stringify({ amount: qty })
-        });
-
-        if (res.ok) {
-            closeModal();
-            fetchPortfolio();
-            loadMainChart();
-        } else if (res.status === 401) {
-            clearAuth();
-            showLoginScreen();
-        } else {
-            const err = await res.json().catch(() => ({}));
-            alert(err.detail || 'Erro ao vender');
-        }
-    } catch (e) {
-        alert('Erro de conexão');
-    } finally {
-        btn.innerText = 'Confirmar Venda';
-        btn.disabled = false;
-    }
-}
-
-function closeModal() {
-    document.getElementById('modal-sell').classList.remove('active');
-    assetForSale = null;
-}
-
-// ===== DETALHE =====
-
-function openDetail(asset) {
-    const detailView = document.getElementById('detail-view');
-    detailView.classList.add('active');
-
-    document.getElementById('detail-symbol').innerText = asset.symbol;
-    document.getElementById('detail-price').innerText = formatMoney(asset.current_price);
-    document.getElementById('days-held-badge').innerText = `Holding: ${asset.days_held || 0} dias`;
-
-    // Ícone com fallback
-    const iconEl = document.getElementById('detail-icon');
-    const fallbackEl = document.getElementById('detail-icon-fallback');
-    if (asset.icon) {
-        iconEl.src = asset.icon;
-        iconEl.style.display = 'block';
-        fallbackEl.style.display = 'none';
-        iconEl.onerror = () => {
-            iconEl.style.display = 'none';
-            fallbackEl.style.display = 'flex';
-            fallbackEl.innerText = asset.symbol.substring(0, 2).toUpperCase();
-        };
-    } else {
-        iconEl.style.display = 'none';
-        fallbackEl.style.display = 'flex';
-        fallbackEl.innerText = asset.symbol.substring(0, 2).toUpperCase();
-    }
-
-    document.querySelectorAll('.time-btn').forEach(b => b.classList.remove('active'));
-    document.querySelector('[data-period="1mo"]')?.classList.add('active');
-    fetchHistoryAndRender(asset.real_symbol || asset.symbol, '1mo');
-}
-
-// ===== IA INDIVIDUAL =====
-
-async function askAI(asset) {
-    if (!authToken) return;
-
-    if (!isPremium()) {
-        showUpgradeModal('Análise IA individual disponível apenas no plano Premium.');
-        return;
-    }
-
-    const div = document.getElementById(`ai-${asset.id}`);
-    if (!div) return;
-    div.style.display = 'block';
-    div.innerHTML = '<span style="color:var(--text-3)">Analisando...</span>';
-
-    try {
-        const res = await fetch(
-            `${API_BASE}/analysis/${encodeURIComponent(asset.symbol)}?change=${asset.percent_change || 0}`,
-            { headers: getAuthHeaders() }
-        );
-
-        if (res.ok) {
-            const data = await res.json();
-            div.innerHTML = `<strong style="color:var(--accent-light)">IA:</strong> ${data.analysis}`;
-        } else if (res.status === 402) {
-            div.style.display = 'none';
-            const err = await res.json().catch(() => ({}));
-            showUpgradeModal(err.detail || 'Recurso Premium.');
-        } else {
-            div.style.display = 'none';
-        }
-    } catch (e) {
-        div.style.display = 'none';
-    }
-}
-
-// ===== IA PORTFOLIO =====
-
-async function handlePortfolioAI() {
-    if (!authToken) { showLoginScreen(); return; }
-
-    if (!isPremium()) {
-        showUpgradeModal('Análise consolidada da carteira disponível apenas no plano Premium.');
-        return;
-    }
-
-    const box = document.getElementById('ai-portfolio-text');
-    const badge = document.getElementById('ai-portfolio-change');
-    if (!box || !badge) return;
-
-    box.innerText = 'Gerando análise...';
-
-    try {
-        const res = await fetch(`${API_BASE}/analysis/portfolio`, {
-            headers: getAuthHeaders()
-        });
-
-        if (res.ok) {
-            const data = await res.json();
-            box.innerText = data.analysis || 'Análise indisponível no momento.';
-
-            if (typeof data.change_pct === 'number') {
-                const v = data.change_pct;
-                badge.classList.remove('positive', 'negative');
-                badge.innerText = `${v >= 0 ? '+' : ''}${v.toFixed(2)}%`;
-                badge.classList.add(v > 0 ? 'positive' : v < 0 ? 'negative' : '');
-            }
-        } else if (res.status === 402) {
-            const err = await res.json().catch(() => ({}));
-            showUpgradeModal(err.detail || 'Recurso Premium.');
-            box.innerText = 'Disponível apenas no plano Premium.';
-        } else {
-            box.innerText = 'Erro ao buscar análise.';
-        }
-    } catch (e) {
-        box.innerText = 'Erro de conexão com o servidor.';
-    }
-}
-
-// ===== SPARKLINE =====
-
-function renderSpark(id, data, color) {
-    const ctx = document.getElementById(id)?.getContext('2d');
-    if (!ctx || !data || data.length === 0) return;
-
-    new Chart(ctx, {
-        type: 'line',
-        data: {
-            labels: data.map((_, i) => i),
-            datasets: [{
-                data,
-                borderColor: color,
-                borderWidth: 1.5,
-                pointRadius: 0,
-                tension: 0.4,
-                fill: false
-            }]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: { legend: { display: false }, tooltip: { enabled: false } },
-            scales: { x: { display: false }, y: { display: false } }
-        }
+  try {
+    const res = await apiFetch(`/assets/${assetForSale.id}/sell`, {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify({ amount: qty }),
     });
+    if (!res) return;
+
+    if (res.ok) {
+      const data = await res.json();
+      const pnl  = data.pnl ?? 0;
+      const sign = pnl >= 0 ? '+' : '';
+      toast(`Sold! P&L: ${sign}${formatUSD(pnl)}`, pnl >= 0 ? 'success' : 'info');
+      closeSellModal();
+      fetchPortfolio();
+      loadMainChart();
+    } else {
+      const err = await res.json().catch(() => ({}));
+      toast(err.detail || 'Failed to sell. Try again.', 'error');
+    }
+  } finally {
+    btn.disabled    = false;
+    btn.textContent = 'Confirm Sale';
+  }
 }
 
-// ===== TABS =====
+// ── AI — SINGLE ASSET ────────────────────────────────────────────
+async function requestAssetAI(asset) {
+  if (!authToken) return;
+  if (!isPremium()) {
+    showUpgradeModal('AI analysis per asset is a Premium feature.');
+    return;
+  }
 
-function switchTab(t) {
-    document.querySelectorAll('.container').forEach(e => e.classList.remove('active'));
-    document.getElementById(t)?.classList.add('active');
+  const el = $(`ai-res-${asset.id}`);
+  if (!el) return;
+  el.style.display = 'block';
+  el.textContent   = 'Analyzing with Gemini…';
 
-    document.getElementById('nav-carteira')?.classList.toggle('active', t === 'dashboard');
-    document.getElementById('nav-adicionar')?.classList.toggle('active', t === 'add-asset');
+  const res = await apiFetch(
+    `/analysis/${encodeURIComponent(asset.symbol)}?change=${asset.percent_change ?? 0}`,
+    { headers: authHeaders() }
+  );
+  if (!res) { el.style.display = 'none'; return; }
 
-    if (t === 'dashboard') loadMainChart();
+  if (res.ok) {
+    const data = await res.json();
+    el.innerHTML = `<strong style="color:var(--accent-l)">AI:</strong> ${data.analysis}`;
+  } else if (res.status === 402) {
+    el.style.display = 'none';
+    const err = await res.json().catch(() => ({}));
+    showUpgradeModal(err.detail || 'Premium feature.');
+  } else {
+    el.style.display = 'none';
+    toast('AI analysis temporarily unavailable', 'warning');
+  }
 }
 
-// ===== ADD ASSET =====
+// ── AI — PORTFOLIO ───────────────────────────────────────────────
+async function handlePortfolioAI() {
+  if (!authToken) { showLoginScreen(); return; }
+  if (!isPremium()) {
+    showUpgradeModal('Portfolio AI analysis is a Premium feature. Upgrade for unlimited insights.');
+    return;
+  }
 
+  const textEl  = $('ai-portfolio-text');
+  const badgeEl = $('ai-change-badge');
+  const btn     = $('btn-portfolio-ai');
+
+  textEl.textContent  = 'Analyzing portfolio with Gemini…';
+  btn.disabled        = true;
+  btn.textContent     = '✨ Analyzing…';
+
+  try {
+    const res = await apiFetch('/analysis/portfolio', { headers: authHeaders() });
+    if (!res) { textEl.textContent = 'Connection error. Try again.'; return; }
+
+    if (res.ok) {
+      const data = await res.json();
+      textEl.textContent = data.analysis || 'Analysis unavailable.';
+
+      if (typeof data.change_pct === 'number') {
+        const v = data.change_pct;
+        badgeEl.className   = `change-badge ${v > 0 ? 'pos' : v < 0 ? 'neg' : ''}`;
+        badgeEl.textContent = `${v >= 0 ? '+' : ''}${v.toFixed(2)}%`;
+      }
+    } else if (res.status === 402) {
+      const err = await res.json().catch(() => ({}));
+      showUpgradeModal(err.detail || 'Premium feature.');
+      textEl.textContent = 'Available on Premium plan.';
+    } else {
+      textEl.textContent = 'Analysis error. Please try again.';
+    }
+  } finally {
+    btn.disabled    = false;
+    btn.textContent = '✨ Analyze Portfolio';
+  }
+}
+
+// ── ADD ASSET ────────────────────────────────────────────────────
 async function handleAddAsset() {
-    if (!authToken) { showLoginScreen(); return; }
+  if (!authToken) { showLoginScreen(); return; }
 
-    const symRaw = document.getElementById('symbol').value.trim();
-    const inputSymNorm = normSymbolForCompare(symRaw);
-    const isExisting = portfolioSymbolSet.has(inputSymNorm);
+  const sym    = $('symbol-input').value.trim().toUpperCase();
+  const amount = parseFloat($('amount-input').value);
+  const price  = parseFloat($('price-input').value);
+  const date   = $('date-input').value;
 
-    if (!isPremium() && portfolioAssetsCount >= FREE_ASSET_LIMIT && !isExisting) {
-        showUpgradeModal(`Limite de ${FREE_ASSET_LIMIT} ativos atingido. Vire Premium para ilimitados.`);
-        return;
+  if (!sym)              { toast('Please enter an asset symbol', 'warning'); return; }
+  if (!amount || amount <= 0) { toast('Enter a valid quantity', 'warning'); return; }
+  if (!price  || price  <= 0) { toast('Enter a valid price',    'warning'); return; }
+
+  // Free tier pre-check
+  const isExisting = portfolioSymbols.has(sym);
+  if (!isPremium() && portfolioCount >= FREE_ASSET_LIMIT && !isExisting) {
+    showUpgradeModal(`Free plan is limited to ${FREE_ASSET_LIMIT} assets. Upgrade to add unlimited assets.`);
+    return;
+  }
+
+  const btn = $('btn-save-asset');
+  btn.disabled    = true;
+  btn.textContent = 'Saving…';
+
+  try {
+    const res = await apiFetch('/assets/', {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify({ symbol: sym, amount, purchase_price: price, purchase_date: date || null }),
+    });
+    if (!res) return;
+
+    if (res.ok) {
+      // Clear fields
+      $('symbol-input').value = '';
+      $('amount-input').value = '';
+      $('price-input').value  = '';
+      $('date-input').value   = '';
+      $('search-dropdown').style.display = 'none';
+
+      switchTab('dashboard');
+      await fetchPortfolio();
+      loadMainChart();
+      toast(`${sym} added to your portfolio ✓`, 'success');
+    } else if (res.status === 402) {
+      const err = await res.json().catch(() => ({}));
+      showUpgradeModal(err.detail || 'Upgrade to Premium for more assets.');
+    } else if (res.status === 404) {
+      toast(`Asset '${sym}' not found. Check the symbol and try again.`, 'error');
+    } else {
+      const err = await res.json().catch(() => ({}));
+      toast(err.detail || 'Failed to add asset. Please try again.', 'error');
     }
-
-    const amount = document.getElementById('amount').value;
-    const price = document.getElementById('price').value;
-    const purchaseDate = document.getElementById('date').value;
-
-    if (!symRaw || !amount || !price) {
-        alert('Preencha símbolo, quantidade e preço.');
-        return;
-    }
-
-    const btn = document.getElementById('btn-save');
-    btn.innerText = '...';
-    btn.disabled = true;
-
-    try {
-        const res = await fetch(`${API_BASE}/assets/`, {
-            method: 'POST',
-            headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                symbol: symRaw,
-                amount: parseFloat(amount),
-                purchase_price: parseFloat(price),
-                purchase_date: purchaseDate || ''
-            })
-        });
-
-        if (res.ok) {
-            document.getElementById('add-form')?.reset();
-            document.getElementById('symbol').value = '';
-            document.getElementById('amount').value = '';
-            document.getElementById('price').value = '';
-            document.getElementById('date').value = '';
-            switchTab('dashboard');
-            fetchPortfolio();
-            loadMainChart();
-        } else if (res.status === 401) {
-            clearAuth();
-            showLoginScreen();
-        } else if (res.status === 402) {
-            const err = await res.json().catch(() => ({}));
-            showUpgradeModal(err.detail || 'Recurso Premium.');
-        } else if (res.status === 404) {
-            alert('Ativo não encontrado. Verifique o símbolo.');
-        } else {
-            alert('Erro ao salvar ativo.');
-        }
-    } catch (e) {
-        alert('Erro de conexão.');
-    } finally {
-        btn.innerText = 'Salvar Ativo';
-        btn.disabled = false;
-    }
+  } finally {
+    btn.disabled    = false;
+    btn.textContent = 'Save Asset';
+  }
 }
 
-// ===== EXPORT CSV =====
+// ── INIT & LISTENERS ─────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', () => {
+  if (loadSession()) {
+    hideLoginScreen();
+    updateProfileBar();
+    fetchPortfolio();
+    loadMainChart();
+    startRefresh();
+  } else {
+    showLoginScreen();
+  }
 
-async function exportCSV() {
-    if (!authToken) return;
-    try {
-        const res = await fetch(`${API_BASE}/portfolio/balance`, { headers: getAuthHeaders() });
-        const data = await res.json();
+  // ── Auth
+  $('btn-login')?.addEventListener('click', handleLogin);
+  $('btn-register')?.addEventListener('click', handleRegister);
+  $('btn-show-register')?.addEventListener('click', toggleAuthMode);
+  $('btn-show-login')?.addEventListener('click', toggleAuthMode);
 
-        let csv = 'Simbolo,Quantidade,Preco Compra,Preco Atual,Valor,Lucro/Prejuizo\n';
-        (data.assets || []).forEach(a => {
-            csv += `${a.symbol},${a.amount},${a.purchase_price},${a.current_price},${a.position_value},${a.profit}\n`;
-        });
+  $('login-password')?.addEventListener('keydown', (e) => { if (e.key === 'Enter') handleLogin(); });
+  $('reg-password')?.addEventListener('keydown',   (e) => { if (e.key === 'Enter') handleRegister(); });
 
-        const blob = new Blob([csv], { type: 'text/csv' });
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.href = url;
-        link.download = 'purp-carteira.csv';
-        link.click();
-        URL.revokeObjectURL(url);
-    } catch (e) {
-        console.error('Erro ao exportar CSV:', e);
+  // ── Hamburger
+  $('btn-hamburger')?.addEventListener('click', () => {
+    const isOpen = !$('nav-menu').classList.contains('hidden');
+    if (isOpen) {
+      closeMenu();
+    } else {
+      $('nav-menu').classList.remove('hidden');
+      $('btn-hamburger').classList.add('open');
     }
-}
+  });
+
+  // ── Nav
+  $('nav-portfolio')?.addEventListener('click', () => { switchTab('dashboard'); closeMenu(); });
+  $('nav-add')?.addEventListener('click',       () => { switchTab('add-asset'); closeMenu(); });
+  $('nav-logout')?.addEventListener('click',    () => { handleLogout(); });
+
+  // ── Upgrade
+  $('btn-upgrade')?.addEventListener('click', () =>
+    showUpgradeModal('Unlock unlimited assets, AI analysis, and more for $15/mo.')
+  );
+  $('btn-upgrade-cancel')?.addEventListener('click', hideUpgradeModal);
+  $('btn-upgrade-confirm')?.addEventListener('click', handleUpgrade);
+
+  // ── Portfolio AI
+  $('btn-portfolio-ai')?.addEventListener('click', handlePortfolioAI);
+
+  // ── Detail back
+  $('btn-back')?.addEventListener('click', () => $('detail-view').classList.remove('active'));
+
+  // ── Detail time buttons
+  document.querySelectorAll('.time-btn').forEach((btn) => {
+    btn.addEventListener('click', (e) => {
+      document.querySelectorAll('.time-btn').forEach((b) => b.classList.remove('active'));
+      e.target.classList.add('active');
+      const sym = $('detail-symbol').textContent;
+      if (sym && sym !== '—') loadDetailChart(sym, e.target.dataset.period);
+    });
+  });
+
+  // ── Main chart controls
+  $('benchmark-select')?.addEventListener('change', () => loadMainChart());
+  document.querySelectorAll('.pill').forEach((btn) => {
+    btn.addEventListener('click', (e) => {
+      document.querySelectorAll('.pill').forEach((b) => b.classList.remove('active'));
+      e.target.classList.add('active');
+      loadMainChart();
+    });
+  });
+
+  // ── Add asset
+  $('btn-save-asset')?.addEventListener('click', handleAddAsset);
+  $('symbol-input')?.addEventListener('input', (e) => {
+    clearTimeout(searchTimer);
+    const v = e.target.value.trim();
+    if (v.length < 2) { $('search-dropdown').style.display = 'none'; return; }
+    searchTimer = setTimeout(() => performSearch(v), 380);
+  });
+
+  // Close dropdown on outside click
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('.input-wrap')) {
+      $('search-dropdown').style.display = 'none';
+    }
+  });
+
+  // ── Sell modal
+  $('sell-qty')?.addEventListener('input', updateSellEstimate);
+  $('btn-max')?.addEventListener('click', () => {
+    if (assetForSale) { $('sell-qty').value = assetForSale.amount; updateSellEstimate(); }
+  });
+  $('btn-sell-cancel')?.addEventListener('click', closeSellModal);
+  $('btn-sell-confirm')?.addEventListener('click', confirmSell);
+});
