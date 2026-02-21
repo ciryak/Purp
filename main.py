@@ -23,7 +23,12 @@ stripe.api_key = os.getenv('STRIPE_SECRET_KEY')
 
 
 sqlite_file_name = "database.db"
-engine = create_engine(f"sqlite:///{sqlite_file_name}", connect_args={"check_same_thread": False})
+
+database_url = os.getenv('DATABASE_URL', f'sqlite:///{sqlite_file_name}')
+# Railway usa postgres:// mas SQLAlchemy precisa de postgresql://
+database_url = database_url.replace('postgres://', 'postgresql://')
+engine = create_engine(database_url)
+
 
 # Armazena tokens de sessão (em produção, usar Redis ou JWT)
 active_sessions: dict[str, int] = {}  # token -> user_id
