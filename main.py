@@ -281,23 +281,32 @@ def register(data: RegisterInput, session: Session = Depends(get_session)):
     if len(data.password) < 4:
         raise HTTPException(400, "Password must be at least 4 characters")
 
-    if session.exec(select(User).where(User.username == uname)).first():
-        raise HTTPException(400, "Username already taken")
+    try:
+        if session.exec(select(User).where(User.username == uname)).first():
+            raise HTTPException(400, "Username already taken")
 
-    email_norm = str(data.email).strip().lower()
-    if session.exec(select(User).where(User.email == email_norm)).first():
-        raise HTTPException(400, "Email already registered")
+        email_norm = str(data.email).strip().lower()
+        if session.exec(select(User).where(User.email == email_norm)).first():
+            raise HTTPException(400, "Email already registered")
 
-    user = User(
-        username=uname,
-        password_hash=hash_pw(data.password),
-        email=email_norm,
-        is_premium=False,
-        created_at=str(date.today()),
-    )
-    session.add(user)
-    session.commit()
-    session.refresh(user)
+        user = User(
+            username=uname,
+            password_hash=hash_pw(data.password),
+            email=email_norm,
+            is_premium=False,
+            created_at=str(date.today()),
+        )
+        session.add(user)
+        session.commit()
+        session.refresh(user)
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        session.rollback()
+        err_str = str(e)
+        print(f"❌ Register DB error: {err_str}")
+        raise HTTPException(503, f"Database error during registration: {err_str}")
 
     if user.id is None:
         raise HTTPException(500, "Failed to create user — please try again")
@@ -762,6 +771,42 @@ def payment_cancelled():
 # ═══════════════════════════════════════════════════════════════════════════════
 # HEALTH
 # ═══════════════════════════════════════════════════════════════════════════════
+
+
+@app.get("/debug")
+def debug_db():
+    """Diagnostic endpoint — test DB connection and table existence."""
+    from sqlalchemy import text as sa_text
+    result = {
+        "db_url_prefix": DATABASE_URL[:40],
+        "is_postgres": _is_postgres,
+        "tables": [],
+        "user_count": None,
+        "error": None,
+    }
+    try:
+        with engine.connect() as conn:
+            if _is_postgres:
+                rows = conn.execute(sa_text(
+                    "SELECT tablename FROM pg_tables WHERE schemaname='public'"
+                )).fetchall()
+                result["tables"] = [r[0] for r in rows]
+            else:
+                rows = conn.execute(sa_text(
+                    "SELECT name FROM sqlite_master WHERE type='table'"
+                )).fetchall()
+                result["tables"] = [r[0] for r in rows]
+    except Exception as e:
+        result["error"] = str(e)
+        return result
+
+    try:
+        with Session(engine) as s:
+            result["user_count"] = s.exec(select(User)).all().__len__()
+    except Exception as e:
+        result["error"] = str(e)
+
+    return result
 
 @app.get("/health")
 def health():
