@@ -1,12 +1,11 @@
 """
-Purp — FastAPI backend.
-Fixes:
-  - stripe_webhook: proper Request type annotation (was crashing)
-  - Welcome email sent in background thread on register
-  - /analysis/portfolio route defined BEFORE /analysis/{symbol}
-  - All error messages in English
-  - Stripe error handling wrapped in try/except
-  - health endpoint added
+Purp — FastAPI backend v3.
+Bugs fixed:
+  - /health: removed duplicate return statement
+  - stripe create-checkout: added already-premium guard, fixed URLs
+  - /analysis/portfolio MUST be before /analysis/{symbol}
+  - Transaction also recorded on position averaging-in
+  - portfolio/balance now returns asset type field
 """
 import os
 import smtplib
@@ -37,18 +36,16 @@ from services import (
 # ── Config ─────────────────────────────────────────────────────────────────────
 SECRET_KEY   = os.getenv("SECRET_KEY", "change-me-in-production-please")
 ALGORITHM    = os.getenv("ALGORITHM", "HS256")
-TOKEN_EXPIRE = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", 10080))  # 7 days
+TOKEN_EXPIRE = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", 10080))
 
 stripe.api_key = os.getenv("STRIPE_SECRET_KEY", "")
 
 _raw_db_url = os.getenv("DATABASE_URL", "sqlite:///database.db")
 DATABASE_URL = _raw_db_url.replace("postgres://", "postgresql://")
-
 _is_postgres = DATABASE_URL.startswith("postgresql://")
 
 def _build_engine():
     if _is_postgres:
-        # Railway PostgreSQL requires SSL; pool_pre_ping avoids stale connections
         connect_args = {}
         if "sslmode=" not in DATABASE_URL:
             connect_args = {"sslmode": "require"}
@@ -59,14 +56,12 @@ def _build_engine():
             max_overflow=10,
             connect_args=connect_args,
         )
-    # SQLite (local dev)
     return create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
 
 engine = _build_engine()
-
 FREE_ASSET_LIMIT = 4
 
-# ── SMTP / Email ───────────────────────────────────────────────────────────────
+# ── SMTP ───────────────────────────────────────────────────────────────────────
 SMTP_HOST  = os.getenv("SMTP_HOST", "smtp.gmail.com")
 SMTP_PORT  = int(os.getenv("SMTP_PORT", 587))
 SMTP_USER  = os.getenv("SMTP_USER", "")
@@ -75,7 +70,6 @@ FROM_EMAIL = os.getenv("FROM_EMAIL", SMTP_USER)
 
 
 def _send_welcome_email(to_email: str, username: str) -> None:
-    """Best-effort welcome email — runs in background thread."""
     if not SMTP_USER or not SMTP_PASS:
         print("⚠️  SMTP not configured — skipping welcome email")
         return
@@ -105,31 +99,26 @@ def _send_welcome_email(to_email: str, username: str) -> None:
             Your account is ready. You can track up to <strong style="color:#fff;">4 assets for free</strong> —
             crypto, stocks and ETFs — all in one place with real-time prices.
           </p>
-
           <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:16px;">
             <tr><td style="background:rgba(124,58,237,.1);border:1px solid rgba(124,58,237,.25);
                             border-radius:12px;padding:18px;">
-              <p style="margin:0 0 10px;color:#a78bfa;font-size:10px;font-weight:700;
-                         letter-spacing:1px;text-transform:uppercase;">Free Plan Includes</p>
+              <p style="margin:0 0 10px;color:#a78bfa;font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;">Free Plan</p>
               <p style="margin:3px 0;color:rgba(241,240,245,.8);font-size:12px;">✓ Up to 4 assets</p>
               <p style="margin:3px 0;color:rgba(241,240,245,.8);font-size:12px;">✓ Real-time prices (CoinGecko + Yahoo Finance)</p>
               <p style="margin:3px 0;color:rgba(241,240,245,.8);font-size:12px;">✓ Portfolio performance vs benchmark chart</p>
               <p style="margin:3px 0;color:rgba(241,240,245,.8);font-size:12px;">✓ Buy / sell tracking with P&amp;L</p>
             </td></tr>
           </table>
-
           <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:24px;">
             <tr><td style="background:rgba(245,158,11,.07);border:1px solid rgba(245,158,11,.2);
                             border-radius:12px;padding:18px;">
-              <p style="margin:0 0 10px;color:#fbbf24;font-size:10px;font-weight:700;
-                         letter-spacing:1px;text-transform:uppercase;">⭐ Upgrade to Premium — $15/mo</p>
+              <p style="margin:0 0 10px;color:#fbbf24;font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;">⭐ Premium — $15/mo</p>
               <p style="margin:3px 0;color:rgba(241,240,245,.8);font-size:12px;">✓ Unlimited assets</p>
               <p style="margin:3px 0;color:rgba(241,240,245,.8);font-size:12px;">✓ AI analysis per asset</p>
               <p style="margin:3px 0;color:rgba(241,240,245,.8);font-size:12px;">✓ AI portfolio summary</p>
               <p style="margin:3px 0;color:rgba(241,240,245,.8);font-size:12px;">✓ Full transaction history</p>
             </td></tr>
           </table>
-
           <p style="color:rgba(241,240,245,.35);font-size:11px;margin:0;text-align:center;">
             Questions? Just reply to this email &nbsp;·&nbsp; Purp team
           </p>
@@ -149,9 +138,7 @@ def _send_welcome_email(to_email: str, username: str) -> None:
 
     try:
         with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=10) as s:
-            s.ehlo()
-            s.starttls()
-            s.login(SMTP_USER, SMTP_PASS)
+            s.ehlo(); s.starttls(); s.login(SMTP_USER, SMTP_PASS)
             s.sendmail(FROM_EMAIL, to_email, msg.as_string())
         print(f"✅ Welcome email sent → {to_email}")
     except Exception as e:
@@ -159,12 +146,7 @@ def _send_welcome_email(to_email: str, username: str) -> None:
 
 
 def send_welcome_email_async(to_email: str, username: str) -> None:
-    """Fire-and-forget welcome email."""
-    threading.Thread(
-        target=_send_welcome_email,
-        args=(to_email, username),
-        daemon=True,
-    ).start()
+    threading.Thread(target=_send_welcome_email, args=(to_email, username), daemon=True).start()
 
 
 # ── DB ─────────────────────────────────────────────────────────────────────────
@@ -175,44 +157,30 @@ def create_db() -> None:
         print("✅ Tables OK")
     except Exception as e:
         print(f"❌ FATAL table creation failed: {e}")
-        raise  # surface the real error in Railway logs
+        raise
 
-    # Unique index on email — PostgreSQL requires quoted "user" (reserved word)
     try:
         with engine.connect() as conn:
             if _is_postgres:
-                conn.exec_driver_sql(
-                    'CREATE UNIQUE INDEX IF NOT EXISTS ix_user_email_unique ON "user"(email)'
-                )
+                conn.exec_driver_sql('CREATE UNIQUE INDEX IF NOT EXISTS ix_user_email_unique ON "user"(email)')
             else:
-                conn.exec_driver_sql(
-                    "CREATE UNIQUE INDEX IF NOT EXISTS ix_user_email_unique ON user(email)"
-                )
+                conn.exec_driver_sql("CREATE UNIQUE INDEX IF NOT EXISTS ix_user_email_unique ON user(email)")
             conn.commit()
     except Exception as e:
-        print(f"⚠️  Email index already exists or skipped: {e}")
+        print(f"⚠️  Email index: {e}")
 
-    # Ensure first user (owner) is always premium
     try:
         with Session(engine) as s:
             u = s.get(User, 1)
             if u and not u.is_premium:
-                u.is_premium = True
-                s.add(u)
-                s.commit()
+                u.is_premium = True; s.add(u); s.commit()
     except Exception as e:
-        print(f"⚠️  Owner premium check skipped: {e}")
+        print(f"⚠️  Owner premium check: {e}")
 
 
 # ── App ────────────────────────────────────────────────────────────────────────
-app = FastAPI(title="Purp API", version="2.0", on_startup=[create_db])
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+app = FastAPI(title="Purp API", version="3.0", on_startup=[create_db])
+app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 
 def get_session():
@@ -220,7 +188,6 @@ def get_session():
         yield s
 
 
-# ── Auth ───────────────────────────────────────────────────────────────────────
 def create_token(user_id: int) -> str:
     exp = datetime.utcnow() + timedelta(minutes=TOKEN_EXPIRE)
     return jwt.encode({"sub": str(user_id), "exp": exp}, SECRET_KEY, algorithm=ALGORITHM)
@@ -253,18 +220,15 @@ class RegisterInput(BaseModel):
     password: str
     email: EmailStr
 
-
 class LoginInput(BaseModel):
     username: str
     password: str
-
 
 class AssetInput(BaseModel):
     symbol: str
     amount: float
     purchase_price: float
     purchase_date: str | None = None
-
 
 class SellInput(BaseModel):
     amount: float
@@ -285,7 +249,6 @@ def register(data: RegisterInput, session: Session = Depends(get_session)):
     try:
         if session.exec(select(User).where(User.username == uname)).first():
             raise HTTPException(400, "Username already taken")
-
         email_norm = str(data.email).strip().lower()
         if session.exec(select(User).where(User.email == email_norm)).first():
             raise HTTPException(400, "Email already registered")
@@ -300,7 +263,6 @@ def register(data: RegisterInput, session: Session = Depends(get_session)):
         session.add(user)
         session.commit()
         session.refresh(user)
-
     except HTTPException:
         raise
     except Exception as e:
@@ -313,7 +275,6 @@ def register(data: RegisterInput, session: Session = Depends(get_session)):
         raise HTTPException(500, "Failed to create user — please try again")
 
     send_welcome_email_async(email_norm, uname)
-
     return {
         "token": create_token(user.id),
         "user":  {"id": user.id, "username": user.username, "is_premium": user.is_premium},
@@ -325,7 +286,6 @@ def login(data: LoginInput, session: Session = Depends(get_session)):
     user = session.exec(select(User).where(User.username == data.username.strip())).first()
     if not user or not verify_pw(data.password, user.password_hash):
         raise HTTPException(401, "Incorrect username or password")
-
     return {
         "token": create_token(user.id),
         "user":  {"id": user.id, "username": user.username, "is_premium": user.is_premium},
@@ -350,11 +310,7 @@ def logout():
 # ═══════════════════════════════════════════════════════════════════════════════
 
 @app.post("/assets/")
-def create_asset(
-    data: AssetInput,
-    user_id: int = Depends(get_current_user),
-    session: Session = Depends(get_session),
-):
+def create_asset(data: AssetInput, user_id: int = Depends(get_current_user), session: Session = Depends(get_session)):
     sym = data.symbol.strip().upper()
     if not sym:
         raise HTTPException(400, "Symbol is required")
@@ -368,27 +324,28 @@ def create_asset(
         raise HTTPException(404, f"Asset '{sym}' not found. Check the symbol and try again.")
 
     real_sym = m["real_symbol"]
-    p_date = (
-        data.purchase_date
-        if data.purchase_date and len(data.purchase_date) >= 10
-        else str(date.today())
-    )
+    p_date = data.purchase_date if data.purchase_date and len(data.purchase_date) >= 10 else str(date.today())
 
     # If already in portfolio → average the position
-    existing = session.exec(
-        select(Asset).where(Asset.symbol == real_sym, Asset.user_id == user_id)
-    ).first()
+    existing = session.exec(select(Asset).where(Asset.symbol == real_sym, Asset.user_id == user_id)).first()
     if existing:
-        total_cost  = existing.amount * existing.purchase_price + data.amount * data.purchase_price
-        total_qty   = existing.amount + data.amount
-        existing.amount         = total_qty
+        total_cost = existing.amount * existing.purchase_price + data.amount * data.purchase_price
+        total_qty  = existing.amount + data.amount
+        existing.amount = total_qty
         existing.purchase_price = total_cost / total_qty
         session.add(existing)
+        session.commit()
+        # Record buy transaction even for averaging-in
+        session.add(Transaction(
+            user_id=user_id, symbol=real_sym, type="buy",
+            amount=data.amount, price=data.purchase_price,
+            total_usd=data.amount * data.purchase_price,
+            date=p_date, created_at=str(date.today()),
+        ))
         session.commit()
         session.refresh(existing)
         return existing
 
-    # New asset — check free tier
     user = session.get(User, user_id)
     if not user:
         raise HTTPException(404, "User not found")
@@ -396,32 +353,20 @@ def create_asset(
     if not user.is_premium:
         count = len(session.exec(select(Asset).where(Asset.user_id == user_id)).all())
         if count >= FREE_ASSET_LIMIT:
-            raise HTTPException(
-                402,
-                f"Free plan limit reached ({FREE_ASSET_LIMIT} assets). "
-                "Upgrade to Premium for unlimited assets.",
-            )
+            raise HTTPException(402, f"Free plan limit reached ({FREE_ASSET_LIMIT} assets). Upgrade to Premium for unlimited assets.")
 
     asset = Asset(
-        symbol=real_sym,
-        amount=data.amount,
-        type=m["type"],
-        purchase_price=data.purchase_price,
-        purchase_date=p_date,
-        user_id=user_id,
+        symbol=real_sym, amount=data.amount, type=m["type"],
+        purchase_price=data.purchase_price, purchase_date=p_date, user_id=user_id,
     )
     session.add(asset)
     session.commit()
 
     session.add(Transaction(
-        user_id=user_id,
-        symbol=real_sym,
-        type="buy",
-        amount=data.amount,
-        price=data.purchase_price,
+        user_id=user_id, symbol=real_sym, type="buy",
+        amount=data.amount, price=data.purchase_price,
         total_usd=data.amount * data.purchase_price,
-        date=p_date,
-        created_at=str(date.today()),
+        date=p_date, created_at=str(date.today()),
     ))
     session.commit()
     session.refresh(asset)
@@ -429,11 +374,7 @@ def create_asset(
 
 
 @app.delete("/assets/{asset_id}")
-def delete_asset(
-    asset_id: int,
-    user_id: int = Depends(get_current_user),
-    session: Session = Depends(get_session),
-):
+def delete_asset(asset_id: int, user_id: int = Depends(get_current_user), session: Session = Depends(get_session)):
     asset = session.get(Asset, asset_id)
     if asset and asset.user_id == user_id:
         session.delete(asset)
@@ -442,12 +383,7 @@ def delete_asset(
 
 
 @app.post("/assets/{asset_id}/sell")
-def sell_asset(
-    asset_id: int,
-    data: SellInput,
-    user_id: int = Depends(get_current_user),
-    session: Session = Depends(get_session),
-):
+def sell_asset(asset_id: int, data: SellInput, user_id: int = Depends(get_current_user), session: Session = Depends(get_session)):
     asset = session.get(Asset, asset_id)
     if not asset:
         raise HTTPException(404, "Asset not found")
@@ -460,10 +396,9 @@ def sell_asset(
 
     m = get_asset_data(asset.symbol)
     current_price = m["current_price"] if m else asset.purchase_price
-
     sell_total = data.amount * current_price
-    pnl        = sell_total - data.amount * asset.purchase_price
-    new_amt    = round(asset.amount - data.amount, 8)
+    pnl = sell_total - data.amount * asset.purchase_price
+    new_amt = round(asset.amount - data.amount, 8)
 
     if new_amt <= 1e-9:
         session.delete(asset)
@@ -474,15 +409,9 @@ def sell_asset(
         status = "partial"
 
     session.add(Transaction(
-        user_id=user_id,
-        symbol=asset.symbol,
-        type="sell",
-        amount=data.amount,
-        price=current_price,
-        total_usd=sell_total,
-        realized_pnl=pnl,
-        date=str(date.today()),
-        created_at=str(date.today()),
+        user_id=user_id, symbol=asset.symbol, type="sell",
+        amount=data.amount, price=current_price, total_usd=sell_total,
+        realized_pnl=pnl, date=str(date.today()), created_at=str(date.today()),
     ))
     session.commit()
     return {"status": status, "remaining": max(new_amt, 0), "pnl": pnl}
@@ -493,10 +422,7 @@ def sell_asset(
 # ═══════════════════════════════════════════════════════════════════════════════
 
 @app.get("/portfolio/balance")
-def portfolio_balance(
-    user_id: int = Depends(get_current_user),
-    session: Session = Depends(get_session),
-):
+def portfolio_balance(user_id: int = Depends(get_current_user), session: Session = Depends(get_session)):
     assets = session.exec(select(Asset).where(Asset.user_id == user_id)).all()
     if not assets:
         return {"total_balance_usd": 0.0, "assets": []}
@@ -537,6 +463,7 @@ def portfolio_balance(
             "history":        m["history"],
             "icon":           m.get("icon", ""),
             "days_held":      days,
+            "type":           m.get("type", "stock"),
         })
 
     return {"total_balance_usd": total, "assets": details}
@@ -563,14 +490,31 @@ def portfolio_history(
             series, final_dates = scaled, h["dates"]
         else:
             n = min(len(series), len(scaled))
-            series      = [series[i] + scaled[i] for i in range(n)]
+            series = [series[i] + scaled[i] for i in range(n)]
             final_dates = final_dates[:n]
 
     bench = get_historical_data(benchmark, period)
     return {
         "dates":     final_dates if series else [],
         "portfolio": series or [],
-        "benchmark": bench["prices"][: len(final_dates)] if series else [],
+        "benchmark": bench["prices"][:len(final_dates)] if series else [],
+    }
+
+
+@app.get("/portfolio/summary")
+def portfolio_summary(user_id: int = Depends(get_current_user), session: Session = Depends(get_session)):
+    """Quick portfolio stats without fetching live prices (from DB only)."""
+    assets = session.exec(select(Asset).where(Asset.user_id == user_id)).all()
+    txs = session.exec(select(Transaction).where(Transaction.user_id == user_id)).all()
+
+    total_invested = sum(a.amount * a.purchase_price for a in assets)
+    realized_pnl = sum(t.realized_pnl for t in txs if t.realized_pnl is not None)
+
+    return {
+        "asset_count": len(assets),
+        "total_invested": total_invested,
+        "realized_pnl": realized_pnl,
+        "transaction_count": len(txs),
     }
 
 
@@ -591,15 +535,11 @@ def history(symbol: str, period: str = "1mo"):
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# AI ANALYSIS — /analysis/portfolio MUST be before /analysis/{symbol}
+# AI ANALYSIS — /analysis/portfolio MUST be BEFORE /analysis/{symbol}
 # ═══════════════════════════════════════════════════════════════════════════════
 
 @app.get("/analysis/portfolio")
-def ai_portfolio(
-    user_id: int = Depends(get_current_user),
-    session: Session = Depends(get_session),
-):
-    """Portfolio AI analysis (Premium only). Defined before /analysis/{symbol}."""
+def ai_portfolio(user_id: int = Depends(get_current_user), session: Session = Depends(get_session)):
     user = session.get(User, user_id)
     if not user:
         raise HTTPException(404, "User not found")
@@ -624,10 +564,7 @@ def ai_portfolio(
         a, m = r
         val = m["current_price"] * a.amount
         total_val += val
-        enriched.append({
-            "symbol": m["symbol"], "type": m["type"],
-            "value": val, "change_pct": m["percent_change"],
-        })
+        enriched.append({"symbol": m["symbol"], "type": m["type"], "value": val, "change_pct": m["percent_change"]})
 
     if not enriched or total_val <= 0:
         return {"analysis": "Could not compute portfolio performance.", "change_pct": 0.0}
@@ -636,10 +573,7 @@ def ai_portfolio(
     for item in enriched:
         w = item["value"] / total_val
         weighted += w * item["change_pct"]
-        ai_assets.append({
-            "symbol": item["symbol"], "type": item["type"],
-            "allocation_pct": w * 100, "change_pct": item["change_pct"],
-        })
+        ai_assets.append({"symbol": item["symbol"], "type": item["type"], "allocation_pct": w * 100, "change_pct": item["change_pct"]})
 
     try:
         text = get_portfolio_ai_analysis(weighted, ai_assets)
@@ -651,18 +585,11 @@ def ai_portfolio(
 
 @app.get("/analysis/status")
 def ai_status():
-    """Diagnostics for AI integration."""
     return get_ai_status()
 
 
 @app.get("/analysis/{symbol}")
-def ai_asset(
-    symbol: str,
-    change: float = 0.0,
-    user_id: int = Depends(get_current_user),
-    session: Session = Depends(get_session),
-):
-    """Single-asset AI analysis (Premium only)."""
+def ai_asset(symbol: str, change: float = 0.0, user_id: int = Depends(get_current_user), session: Session = Depends(get_session)):
     user = session.get(User, user_id)
     if not user:
         raise HTTPException(404, "User not found")
@@ -676,10 +603,7 @@ def ai_asset(
 # ═══════════════════════════════════════════════════════════════════════════════
 
 @app.get("/transactions")
-def list_transactions(
-    user_id: int = Depends(get_current_user),
-    session: Session = Depends(get_session),
-):
+def list_transactions(user_id: int = Depends(get_current_user), session: Session = Depends(get_session)):
     txs = session.exec(
         select(Transaction)
         .where(Transaction.user_id == user_id)
@@ -688,14 +612,9 @@ def list_transactions(
     ).all()
     return [
         {
-            "id":           t.id,
-            "symbol":       t.symbol,
-            "type":         t.type,
-            "amount":       t.amount,
-            "price":        t.price,
-            "total_usd":    t.total_usd,
-            "realized_pnl": t.realized_pnl,
-            "date":         t.date,
+            "id": t.id, "symbol": t.symbol, "type": t.type,
+            "amount": t.amount, "price": t.price, "total_usd": t.total_usd,
+            "realized_pnl": t.realized_pnl, "date": t.date,
         }
         for t in txs
     ]
@@ -706,20 +625,19 @@ def list_transactions(
 # ═══════════════════════════════════════════════════════════════════════════════
 
 @app.post("/stripe/create-checkout")
-def create_checkout(
-    user_id: int = Depends(get_current_user),
-    session: Session = Depends(get_session),
-):
+def create_checkout(user_id: int = Depends(get_current_user), session: Session = Depends(get_session)):
     user = session.get(User, user_id)
     if not user:
         raise HTTPException(404, "User not found")
+    if user.is_premium:
+        raise HTTPException(400, "You are already a Premium member.")
 
     price_id = os.getenv("STRIPE_PRICE_ID", "")
     if not price_id:
         raise HTTPException(500, "Stripe not configured (missing STRIPE_PRICE_ID)")
 
-    success_url = os.getenv("STRIPE_SUCCESS_URL", "https://purp-backend.railway.app/success")
-    cancel_url  = os.getenv("STRIPE_CANCEL_URL",  "https://purp-backend.railway.app/cancelled")
+    success_url = os.getenv("STRIPE_SUCCESS_URL", "https://purp-production.up.railway.app/success")
+    cancel_url  = os.getenv("STRIPE_CANCEL_URL",  "https://purp-production.up.railway.app/cancelled")
 
     try:
         session_obj = stripe.checkout.Session.create(
@@ -739,7 +657,6 @@ def create_checkout(
 
 @app.post("/stripe/webhook")
 async def stripe_webhook(request: Request, session: Session = Depends(get_session)):
-    """Stripe webhook — activates premium after successful payment."""
     payload    = await request.body()
     sig_header = request.headers.get("stripe-signature", "")
     secret     = os.getenv("STRIPE_WEBHOOK_SECRET", "")
@@ -776,46 +693,33 @@ def payment_cancelled():
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# HEALTH
+# HEALTH & DEBUG
 # ═══════════════════════════════════════════════════════════════════════════════
+
+@app.get("/health")
+def health():
+    return {"status": "ok", "timestamp": datetime.utcnow().isoformat()}
 
 
 @app.get("/debug")
 def debug_db():
-    """Diagnostic endpoint — test DB connection and table existence."""
     from sqlalchemy import text as sa_text
-    result = {
-        "db_url_prefix": DATABASE_URL[:40],
-        "is_postgres": _is_postgres,
-        "tables": [],
-        "user_count": None,
-        "error": None,
-    }
+    result = {"db_url_prefix": DATABASE_URL[:40], "is_postgres": _is_postgres, "tables": [], "user_count": None, "error": None}
     try:
         with engine.connect() as conn:
             if _is_postgres:
-                rows = conn.execute(sa_text(
-                    "SELECT tablename FROM pg_tables WHERE schemaname='public'"
-                )).fetchall()
-                result["tables"] = [r[0] for r in rows]
+                rows = conn.execute(sa_text("SELECT tablename FROM pg_tables WHERE schemaname='public'")).fetchall()
             else:
-                rows = conn.execute(sa_text(
-                    "SELECT name FROM sqlite_master WHERE type='table'"
-                )).fetchall()
-                result["tables"] = [r[0] for r in rows]
+                rows = conn.execute(sa_text("SELECT name FROM sqlite_master WHERE type='table'")).fetchall()
+            result["tables"] = [r[0] for r in rows]
     except Exception as e:
         result["error"] = str(e)
         return result
 
     try:
         with Session(engine) as s:
-            result["user_count"] = s.exec(select(User)).all().__len__()
+            result["user_count"] = len(s.exec(select(User)).all())
     except Exception as e:
         result["error"] = str(e)
 
     return result
-
-@app.get("/health")
-def health():
-    return {"status": "ok", "timestamp": datetime.utcnow().isoformat()}
-    return {"status": "ok", "timestamp": datetime.utcnow().isoformat()}
