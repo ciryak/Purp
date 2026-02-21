@@ -1,0 +1,16 @@
+{
+  "manifest_version": 3,
+  "name": "Purp - Portfolio com IA",
+  "version": "1.0",
+  "description": "Rastreamento financeiro com Gemini AI.",
+  "permissions": ["storage"], 
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Abrir Purp"
+  },
+  "icons": {
+    "16": "icon.png",
+    "48": "icon.png", 
+    "128": "icon.png" 
+  }
+}
