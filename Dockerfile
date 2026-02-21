@@ -1,0 +1,34 @@
+FROM python:3.11-slim
+
+# Evita prompts interativos durante apt
+ENV DEBIAN_FRONTEND=noninteractive
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+
+WORKDIR /app
+
+# Dependências do sistema (psycopg2-binary precisa de libpq)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libpq-dev \
+    gcc \
+    && rm -rf /var/lib/apt/lists/*
+
+# Instala dependências Python primeiro (cache layer)
+COPY requirements.txt .
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt
+
+# Copia o código
+COPY main.py .
+COPY models.py .
+COPY services.py .
+
+# Porta exposta
+EXPOSE 8080
+
+# Health check interno do Docker
+HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')"
+
+# Comando de start — usa $PORT do Railway ou 8080 como fallback
+CMD uvicorn main:app --host 0.0.0.0 --port ${PORT:-8080}
