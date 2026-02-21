@@ -109,7 +109,7 @@ async function apiFetch(path, opts = {}) {
   try {
     const res = await fetch(`${API_BASE}${path}`, opts);
 
-    if (res.status === 401) {
+    if (res.status === 401 && authToken) {
       clearSession();
       showLoginScreen();
       toast('Session expired — please sign in again', 'warning');
@@ -165,7 +165,10 @@ async function handleLogin() {
       body: JSON.stringify({ username, password }),
     });
 
-    if (!res) { return; }
+    if (!res) {
+      showError('login-error', 'Could not connect to server. Please try again.');
+      return;
+    }
 
     if (res.ok) {
       const data = await res.json();
@@ -177,7 +180,10 @@ async function handleLogin() {
       startRefresh();
     } else {
       const err = await res.json().catch(() => ({}));
-      showError('login-error', err.detail || 'Incorrect username or password');
+      const fallback = res.status >= 500
+        ? 'Server/database error while signing in. Please try again in a moment.'
+        : 'Incorrect username or password';
+      showError('login-error', err.detail || fallback);
     }
   } finally {
     btn.disabled   = false;
@@ -220,7 +226,10 @@ async function handleRegister() {
       body: JSON.stringify({ username, email, password }),
     });
 
-    if (!res) return;
+    if (!res) {
+      showError('register-error', 'Could not connect to server. Please try again.');
+      return;
+    }
 
     if (res.ok) {
       const data = await res.json();
@@ -233,7 +242,10 @@ async function handleRegister() {
       toast('Account created! Check your email for a welcome message 🎉', 'success', 5000);
     } else {
       const err = await res.json().catch(() => ({}));
-      showError('register-error', err.detail || 'Failed to create account');
+      const fallback = res.status >= 500
+        ? 'Server/database error while creating account. Please try again in a moment.'
+        : 'Failed to create account';
+      showError('register-error', err.detail || fallback);
     }
   } finally {
     btn.disabled    = false;
