@@ -31,3 +31,11 @@ class Transaction(SQLModel, table=True):
     realized_pnl: Optional[float] = None  # lucro/prejuizo realizado (so em vendas)
     date: str          # data da operacao (YYYY-MM-DD)
     created_at: Optional[str] = None
+
+class PriceAlert(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    user_id: int = Field(foreign_key='user.id')
+    symbol: str
+    target_price: float
+    direction: str   # 'above' ou 'below'
+    triggered: bool = Field(default=False)
