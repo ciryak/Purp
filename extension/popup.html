@@ -3,202 +3,270 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="style.css">
     <script src="chart.js"></script>
-    <title>Painel da Carteira</title>
+    <title>Purp — Portfolio</title>
 </head>
 <body>
 
-    <!-- Tela de Login -->
+    <!-- ===== TELA DE LOGIN ===== -->
     <div id="login-screen" class="hidden">
+        <div class="login-bg-glow"></div>
         <div class="login-container">
-            <div class="login-title">Purp</div>
-            <div class="login-subtitle">Gerencie sua carteira de investimentos</div>
-            
-            <div id="login-form">
-                <label style="font-size:12px; color:#aaa; display:block; margin-bottom:5px;">Usuário</label>
-                <input type="text" id="login-username" placeholder="Digite seu usuário" autocomplete="username">
-                
-                <label style="font-size:12px; color:#aaa; display:block; margin-top:15px; margin-bottom:5px;">Senha</label>
-                <input type="password" id="login-password" placeholder="Digite sua senha" autocomplete="current-password">
-                
-                <button type="button" id="btn-login" class="btn-confirm" style="margin-top:20px;">Entrar</button>
-                
-                <div style="text-align:center; margin-top:15px;">
-                    <button type="button" id="btn-show-register" class="btn-cancel" style="text-decoration:underline; border:none; background:none; padding:0;">Criar conta</button>
-                </div>
-                
-                <div id="login-error" style="color:var(--danger); font-size:11px; margin-top:10px; text-align:center; display:none;"></div>
+            <div class="login-logo">
+                <div class="login-logo-icon">P</div>
+                <div class="login-logo-name">Purp</div>
             </div>
-            
-            <div id="register-form" style="display:none;">
-                <label style="font-size:12px; color:#aaa; display:block; margin-bottom:5px;">Usuário</label>
-                <input type="text" id="register-username" placeholder="Escolha um usuário" autocomplete="username">
-                
-                <label style="font-size:12px; color:#aaa; display:block; margin-top:15px; margin-bottom:5px;">Email</label>
-                <input type="email" id="register-email" placeholder="seu@email.com" autocomplete="email" required>
-                
-                <label style="font-size:12px; color:#aaa; display:block; margin-top:15px; margin-bottom:5px;">Senha</label>
-                <input type="password" id="register-password" placeholder="Mínimo 4 caracteres" autocomplete="new-password">
-                
-                <button type="button" id="btn-register" class="btn-confirm" style="margin-top:20px;">Criar Conta</button>
-                
-                <div style="text-align:center; margin-top:15px;">
-                    <button type="button" id="btn-show-login" class="btn-cancel" style="text-decoration:underline; border:none; background:none; padding:0;">Já tenho conta</button>
+            <div class="login-subtitle">Seu portfólio inteligente</div>
+
+            <div id="login-form">
+                <div class="field-group">
+                    <label class="field-label">Usuário</label>
+                    <input type="text" id="login-username" placeholder="seu usuário" autocomplete="username">
                 </div>
-                
-                <div id="register-error" style="color:var(--danger); font-size:11px; margin-top:10px; text-align:center; display:none;"></div>
+                <div class="field-group">
+                    <label class="field-label">Senha</label>
+                    <input type="password" id="login-password" placeholder="••••••••" autocomplete="current-password">
+                </div>
+                <button type="button" id="btn-login" class="btn-primary">Entrar</button>
+                <div class="auth-switch">
+                    Não tem conta?
+                    <button type="button" id="btn-show-register" class="btn-link">Criar agora</button>
+                </div>
+                <div id="login-error" class="error-msg"></div>
+            </div>
+
+            <div id="register-form" style="display:none;">
+                <div class="field-group">
+                    <label class="field-label">Usuário</label>
+                    <input type="text" id="register-username" placeholder="escolha um usuário" autocomplete="username">
+                </div>
+                <div class="field-group">
+                    <label class="field-label">Email</label>
+                    <input type="email" id="register-email" placeholder="seu@email.com" autocomplete="email">
+                </div>
+                <div class="field-group">
+                    <label class="field-label">Senha</label>
+                    <input type="password" id="register-password" placeholder="mínimo 4 caracteres" autocomplete="new-password">
+                </div>
+                <button type="button" id="btn-register" class="btn-primary">Criar Conta</button>
+                <div class="auth-switch">
+                    Já tem conta?
+                    <button type="button" id="btn-show-login" class="btn-link">Entrar</button>
+                </div>
+                <div id="register-error" class="error-msg"></div>
             </div>
         </div>
     </div>
 
+    <!-- ===== HEADER ===== -->
     <header class="app-header">
-        <button type="button" id="btn-hamburger" class="hamburger-btn" aria-label="Menu">☰</button>
+        <button type="button" id="btn-hamburger" class="hamburger-btn" aria-label="Menu">
+            <span></span><span></span><span></span>
+        </button>
         <span class="app-title">Purp</span>
         <div class="header-spacer"></div>
         <div id="nav-menu" class="nav-menu hidden">
-            <button type="button" id="nav-carteira" class="nav-item">Carteira</button>
-            <button type="button" id="nav-adicionar" class="nav-item">Adicionar</button>
-            <button type="button" id="nav-sair" class="nav-item">Sair</button>
+            <button type="button" id="nav-carteira" class="nav-item">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+                Carteira
+            </button>
+            <button type="button" id="nav-adicionar" class="nav-item">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 8v8M8 12h8"/></svg>
+                Adicionar
+            </button>
+            <button type="button" id="nav-sair" class="nav-item nav-item-danger">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9"/></svg>
+                Sair
+            </button>
         </div>
     </header>
 
+    <!-- ===== DASHBOARD ===== -->
     <div id="dashboard" class="container active">
+
+        <!-- Profile Bar -->
         <div class="profile-bar">
             <div class="profile-left">
-                <div class="profile-name" id="profile-username">...</div>
-                <div class="profile-meta">
-                    <span id="profile-plan">Plano: ...</span>
-                    <span class="dot">•</span>
-                    <span id="profile-assets-limit">Ativos: ...</span>
+                <div class="profile-avatar" id="profile-avatar-letter">U</div>
+                <div>
+                    <div class="profile-name" id="profile-username">...</div>
+                    <div class="profile-meta">
+                        <span id="profile-plan" class="plan-badge">Grátis</span>
+                        <span id="profile-assets-limit" class="assets-count">0/4 ativos</span>
+                    </div>
                 </div>
             </div>
-            <button type="button" id="btn-upgrade" class="btn-upgrade">Virar Premium</button>
-            <button onclick="handleUpgrade()">Assinar Premium - US$ 15/mês</button>
+            <button type="button" id="btn-upgrade" class="btn-upgrade">
+                ⭐ Premium
+            </button>
         </div>
 
+        <!-- Balance Card -->
         <div class="balance-card">
-            <div style="font-size: 11px; color: #aaa; letter-spacing: 1px; margin-bottom:5px;">SALDO TOTAL</div>
-            <div id="total-balance" style="font-size: 38px; font-weight: bold;">...</div>
-            
-            <div style="margin-top: 15px; display:flex; gap:10px; justify-content:center;flex-wrap:wrap;">
-                <select id="main-benchmark" style="background:rgba(0,0,0,0.3); border:1px solid #444; color:#fff; padding:4px; border-radius:4px; font-size:10px;">
+            <div class="balance-label">SALDO TOTAL</div>
+            <div id="total-balance" class="balance-value">$0,00</div>
+
+            <div class="chart-controls">
+                <select id="main-benchmark" class="select-bench">
                     <option value="^GSPC">S&P 500</option>
                     <option value="^IXIC">Nasdaq</option>
                     <option value="^BVSP">Ibovespa</option>
                     <option value="BTC-USD">Bitcoin</option>
                 </select>
-                <div class="time-selector-mini">
-                    <button class="time-btn-mini" data-p="1d">24H</button>
-                    <button class="time-btn-mini active" data-p="1mo">1M</button>
-                    <button class="time-btn-mini" data-p="6mo">6M</button>
-                    <button class="time-btn-mini" data-p="1y">1A</button>
+                <div class="time-pills">
+                    <button class="pill" data-p="1d">24H</button>
+                    <button class="pill active" data-p="1mo">1M</button>
+                    <button class="pill" data-p="6mo">6M</button>
+                    <button class="pill" data-p="1y">1A</button>
                 </div>
-                <button id="btn-main-candles" class="time-btn-mini" style="background:rgba(123,66,246,0.3);border-color:#7b42f6;">📊</button>
             </div>
-            
-            <div style="height: 120px; margin-top:10px;">
+
+            <div class="main-chart-wrap">
                 <canvas id="mainChart"></canvas>
             </div>
+
+            <div class="chart-legend">
+                <span class="legend-dot purple"></span><span>Carteira</span>
+                <span class="legend-dot gray"></span><span>Benchmark</span>
+            </div>
         </div>
 
-        <div class="ai-portfolio-card">
-            <div class="ai-portfolio-header">
+        <!-- IA Card -->
+        <div class="ai-card">
+            <div class="ai-card-header">
+                <div class="ai-card-icon">✨</div>
                 <div>
-                    <div class="ai-portfolio-title">Análise IA da Carteira</div>
-                    <div class="ai-portfolio-subtitle">Variação consolidada nas últimas 24 horas</div>
+                    <div class="ai-card-title">Análise IA</div>
+                    <div class="ai-card-sub">Variação consolidada 24h</div>
                 </div>
-                <span id="ai-portfolio-change" class="ai-portfolio-change-badge">--</span>
+                <span id="ai-portfolio-change" class="change-badge">—</span>
             </div>
-            <div id="ai-portfolio-text" class="ai-portfolio-text">
-                Veja uma leitura geral da sua carteira e receba sugestões de alocação. Recurso disponível para usuários Premium.
+            <div id="ai-portfolio-text" class="ai-card-text">
+                Receba análise inteligente da sua carteira e sugestões de alocação. Disponível no plano Premium.
             </div>
-            <button type="button" id="btn-portfolio-ai" class="btn-ai-portfolio">✨ Analisar carteira</button>
+            <button type="button" id="btn-portfolio-ai" class="btn-ai">✨ Analisar Carteira</button>
         </div>
 
+        <!-- Assets List -->
+        <div class="section-title">Seus Ativos</div>
         <div id="assets-list"></div>
     </div>
 
+    <!-- ===== ADD ASSET ===== -->
     <div id="add-asset" class="container">
-        <h3 style="text-align: center; color: #bca0dc;">Novo Ativo</h3>
-        <form id="add-form">
-            <label style="font-size:12px; color:#aaa;">Ativo</label>
-            <div class="input-group">
-                <input type="text" id="symbol" placeholder="Digite para buscar..." autocomplete="off">
-                <div id="search-results"></div>
-            </div>
-            
-            <label style="font-size:12px; color:#aaa; margin-top:10px;">Qtd</label>
-            <input type="number" id="amount" placeholder="0.5" step="any">
-            
-            <label style="font-size:12px; color:#aaa;">Preço Unit. (USD)</label>
-            <input type="number" id="price" placeholder="45000.00" step="any">
+        <div class="page-header">
+            <div class="page-title">Novo Ativo</div>
+            <div class="page-sub">Adicione um ativo à sua carteira</div>
+        </div>
 
-            <label style="font-size:12px; color:#aaa;">Data (Opcional)</label>
-            <input type="date" id="date">
-            
-            <button type="button" id="btn-save" class="btn-confirm" style="margin-top:20px;">Salvar</button>
-        </form>
+        <div class="form-card">
+            <div class="field-group">
+                <label class="field-label">Buscar ativo</label>
+                <div class="input-group">
+                    <input type="text" id="symbol" placeholder="Ex: BTC, AAPL, ETH..." autocomplete="off">
+                    <div id="search-results"></div>
+                </div>
+            </div>
+
+            <div class="form-row">
+                <div class="field-group">
+                    <label class="field-label">Quantidade</label>
+                    <input type="number" id="amount" placeholder="0.5" step="any">
+                </div>
+                <div class="field-group">
+                    <label class="field-label">Preço Unit. (USD)</label>
+                    <input type="number" id="price" placeholder="45000.00" step="any">
+                </div>
+            </div>
+
+            <div class="field-group">
+                <label class="field-label">Data da compra (opcional)</label>
+                <input type="date" id="date">
+            </div>
+
+            <button type="button" id="btn-save" class="btn-primary" style="margin-top:8px;">Salvar Ativo</button>
+        </div>
     </div>
 
+    <!-- ===== DETAIL VIEW ===== -->
     <div id="detail-view">
-        <div style="display:flex; justify-content:space-between; align-items:center;">
-            <button class="back-btn" id="btn-back">← Voltar</button>
-            <span id="days-held-badge" style="font-size:11px; background:rgba(255,255,255,0.1); padding:4px 8px; border-radius:4px; color:#bca0dc;">0 dias</span>
+        <div class="detail-nav">
+            <button class="back-btn" id="btn-back">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M19 12H5M12 5l-7 7 7 7"/></svg>
+                Voltar
+            </button>
+            <span id="days-held-badge" class="holding-badge">0 dias</span>
         </div>
-        <div style="display: flex; align-items: center; gap: 15px; margin-bottom: 15px;">
-            <img id="detail-icon" src="" style="width: 48px; height: 48px; border-radius: 50%; background: #fff; padding:2px;">
+
+        <div class="detail-hero">
+            <div class="detail-icon-wrap">
+                <img id="detail-icon" src="" alt="" onerror="this.style.display='none'">
+                <div id="detail-icon-fallback" class="detail-icon-fallback"></div>
+            </div>
             <div>
-                <h2 id="detail-symbol" style="margin: 0;">...</h2>
-                <span id="detail-price" style="color: #aaa; font-size: 18px;">...</span>
+                <div class="detail-symbol" id="detail-symbol">—</div>
+                <div class="detail-price" id="detail-price">—</div>
             </div>
         </div>
+
         <div class="time-selector">
             <button class="time-btn" data-period="1d">24H</button>
             <button class="time-btn active" data-period="1mo">1M</button>
             <button class="time-btn" data-period="6mo">6M</button>
             <button class="time-btn" data-period="1y">1A</button>
         </div>
-        <div style="flex:1; width:100%; position:relative;">
+
+        <div class="detail-chart-wrap">
             <canvas id="detailChart"></canvas>
         </div>
     </div>
 
+    <!-- ===== MODAL VENDA ===== -->
     <div id="modal-sell" class="modal-overlay">
         <div class="modal-content">
-            <div style="font-size:16px; font-weight:bold; color:#fff;">Fechar Posição</div>
-            
-            <div style="margin: 15px 0;">
-                <label style="font-size:12px; color:#aaa;">Quantidade a Vender</label>
-                <div style="display:flex; gap:10px; align-items:center;">
-                    <input type="number" id="sell-amount-input" style="text-align:center; font-size:16px; font-weight:bold;">
-                    <button id="btn-max" style="font-size:10px; background:rgba(255,255,255,0.1); border:none; color:#fff; padding:5px; cursor:pointer;">MAX</button>
+            <div class="modal-title">Fechar Posição</div>
+
+            <div class="modal-field">
+                <label class="field-label">Quantidade a vender</label>
+                <div class="modal-input-row">
+                    <input type="number" id="sell-amount-input" style="text-align:center; font-size:18px; font-weight:600;">
+                    <button id="btn-max" class="btn-max">MAX</button>
                 </div>
             </div>
 
-            <div id="sell-profit-estimate" class="modal-value" style="font-size:18px;">...</div>
-            <div style="font-size:11px; color:#888; margin-bottom:15px;" id="modal-sell-info"></div>
-            
+            <div id="sell-profit-estimate" class="sell-estimate">—</div>
+            <div id="modal-sell-info" class="sell-info"></div>
+
             <div class="modal-actions">
-                <button class="btn-cancel" id="modal-cancel">Cancelar</button>
-                <button class="btn-confirm" id="modal-confirm">Confirmar</button>
+                <button class="btn-ghost" id="modal-cancel">Cancelar</button>
+                <button class="btn-primary" id="modal-confirm">Confirmar Venda</button>
             </div>
         </div>
     </div>
 
+    <!-- ===== MODAL UPGRADE ===== -->
     <div id="modal-upgrade" class="modal-overlay">
         <div class="modal-content">
-            <div style="font-size:16px; font-weight:bold; color:#fff;">Vire Premium</div>
-            <div style="margin-top:10px; font-size:12px; color:#aaa;" id="upgrade-reason">...</div>
+            <div class="upgrade-icon">⭐</div>
+            <div class="modal-title">Vire Premium</div>
+            <div id="upgrade-reason" class="upgrade-reason">Desbloqueie recursos avançados.</div>
 
-            <div class="upgrade-price">
-                <div class="upgrade-price-main">US$ 15<span class="upgrade-price-sub">/mês</span></div>
-                <div class="upgrade-price-note">Desbloqueie IA e acompanhe mais de 4 ativos.</div>
+            <div class="upgrade-price-card">
+                <div class="upgrade-price-main">US$ 15<span class="upgrade-price-per">/mês</span></div>
+                <ul class="upgrade-features">
+                    <li>✓ Ativos ilimitados</li>
+                    <li>✓ Análise IA individual</li>
+                    <li>✓ Análise IA da carteira</li>
+                    <li>✓ Suporte prioritário</li>
+                </ul>
             </div>
 
-            <div class="modal-actions row">
-                <button class="btn-cancel" id="upgrade-cancel">Agora não</button>
-                <button class="btn-confirm" id="upgrade-confirm">Quero ser Premium</button>
+            <div class="modal-actions">
+                <button class="btn-ghost" id="upgrade-cancel">Agora não</button>
+                <button class="btn-primary btn-gold" id="upgrade-confirm">Quero ser Premium</button>
             </div>
         </div>
     </div>
