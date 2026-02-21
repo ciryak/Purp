@@ -25,10 +25,28 @@ let refreshTimer     = null;
 let searchTimer      = null;
 let portfolioCount   = 0;
 let portfolioSymbols = new Set();
+let hideSensitiveValues = true;
+let selectedAddAssetType = null;
+
+const FEATURED_STOCKS = ['AAPL', 'MSFT', 'NVDA', 'AMZN', 'TSLA'];
+const FEATURED_CRYPTOS = ['BTC', 'ETH', 'SOL', 'BNB', 'XRP'];
 
 const $ = (id) => document.getElementById(id);
 const formatUSD = (v) =>
   new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(v ?? 0);
+const formatPct = (v) => `${v >= 0 ? '+' : ''}${(v || 0).toFixed(2)}%`;
+
+function applyVisibilityMask() {
+  document.querySelectorAll('.sensitive-value').forEach((el) => {
+    el.classList.toggle('is-hidden', hideSensitiveValues);
+  });
+}
+
+function updatePrivacyToggle() {
+  const icon = $('privacy-icon');
+  if (icon) icon.textContent = hideSensitiveValues ? '🙈' : '👁️';
+  applyVisibilityMask();
+}
 
 // ── TOAST ────────────────────────────────────────────────────────
 function toast(msg, type = 'info', duration = 3500) {
@@ -127,7 +145,13 @@ async function apiFetch(path, opts = {}) {
 function startRefresh() {
   stopRefresh();
   refreshTimer = setInterval(() => {
-    if (authToken) { fetchPortfolio(); loadMainChart(true); }
+    if (authToken) {
+      fetchPortfolio();
+      loadMainChart(true);
+      if ($('market-watch')?.classList.contains('active')) {
+        loadMarketWatch();
+      }
+    }
   }, REFRESH_MS);
 }
 
@@ -175,6 +199,7 @@ async function handleLogin() {
       fetchPortfolio();
       loadMainChart();
       startRefresh();
+      checkAIStatus();
     } else {
       const err = await res.json().catch(() => ({}));
       showError('login-error', err.detail || 'Incorrect username or password');
@@ -234,6 +259,7 @@ async function handleRegister() {
       fetchPortfolio();
       loadMainChart();
       startRefresh();
+      checkAIStatus();
       toast('Account created! 🎉', 'success', 5000);
     } else {
       // Show full error detail for debugging
@@ -342,9 +368,43 @@ function closeMenu() {
 function switchTab(id) {
   document.querySelectorAll('.page').forEach((p) => p.classList.remove('active'));
   $(id)?.classList.add('active');
+  $('top-tab-dashboard')?.classList.toggle('active', ['dashboard', 'add-asset', 'transactions-page'].includes(id));
+  $('top-tab-market')?.classList.toggle('active', id === 'market-watch');
   $('nav-portfolio').classList.toggle('active', id === 'dashboard');
   $('nav-add').classList.toggle('active', id === 'add-asset');
-  if (id === 'dashboard') loadMainChart();
+  $('nav-transactions')?.classList.toggle('active', id === 'transactions-page');
+  if (id === 'dashboard') {
+    loadMainChart();
+  }
+  if (id === 'transactions-page') {
+    loadTransactions();
+  }
+  if (id === 'market-watch') {
+    loadMarketWatch();
+  }
+}
+
+function setAddAmountInputMode(type) {
+  const input = $('amount-input');
+  if (!input) return;
+  const isStock = (type || '').toLowerCase() === 'stock';
+  input.step = isStock ? '1' : 'any';
+  input.placeholder = isStock ? '1' : '0.5';
+}
+
+async function resolveSymbolType(symbol) {
+  const sym = (symbol || '').trim().toUpperCase();
+  if (!sym) return null;
+
+  const res = await apiFetch(`/search?q=${encodeURIComponent(sym)}`);
+  if (!res || !res.ok) return null;
+
+  const results = await res.json();
+  const exact = results.find((r) => (r.symbol || '').toUpperCase() === sym);
+  const t = (exact?.type || '').toUpperCase();
+  if (t.includes('CRYPTO')) return 'crypto';
+  if (t.includes('STOCK') || t.includes('EQUITY') || t.includes('ETF') || t.includes('INDEX')) return 'stock';
+  return null;
 }
 
 // ── MAIN CHART ───────────────────────────────────────────────────
@@ -370,6 +430,14 @@ async function loadMainChart(skipAnim = false) {
   const normP = data.portfolio.map((v) => ((v - s0) / (s0 || 1)) * 100);
   const normB = data.benchmark.map((v) => ((v - b0) / (b0 || 1)) * 100);
 
+  const benchChange = normB.length ? normB[normB.length - 1] : 0;
+  const benchEl = $('benchmark-change');
+  if (benchEl) {
+    benchEl.textContent = `Benchmark: ${formatPct(benchChange)}`;
+    benchEl.classList.toggle('pos', benchChange > 0);
+    benchEl.classList.toggle('neg', benchChange < 0);
+  }
+
   mainChart = new Chart(ctx, {
     type: 'line',
     data: {
@@ -386,6 +454,8 @@ async function loadMainChart(skipAnim = false) {
       scales: { x: { display: false }, y: { display: false } },
     },
   });
+
+  applyVisibilityMask();
 }
 
 // ── DETAIL CHART ─────────────────────────────────────────────────
@@ -423,6 +493,8 @@ async function loadDetailChart(symbol, period) {
       },
     },
   });
+
+  applyVisibilityMask();
 }
 
 // ── SPARKLINE ────────────────────────────────────────────────────
@@ -441,6 +513,8 @@ function renderSpark(canvasId, data, color) {
       animation: false,
     },
   });
+
+  applyVisibilityMask();
 }
 
 // ── SEARCH (autocomplete) ────────────────────────────────────────
@@ -483,6 +557,8 @@ async function performSearch(q) {
 
       row.addEventListener('click', () => {
         $('symbol-input').value = item.symbol;
+        selectedAddAssetType = (item.type || '').toUpperCase().includes('CRYPTO') ? 'crypto' : 'stock';
+        setAddAmountInputMode(selectedAddAssetType);
         box.style.display = 'none';
       });
 
@@ -496,6 +572,206 @@ async function performSearch(q) {
   }
 }
 
+async function fetchQuoteForSymbol(symbol) {
+  const res = await apiFetch(`/history/${encodeURIComponent(symbol)}?period=1d`);
+  if (!res || !res.ok) return null;
+  const data = await res.json();
+  const prices = data.prices || [];
+  if (!prices.length) return null;
+
+  const first = prices[0] || 0;
+  const last = prices[prices.length - 1] || 0;
+  const pct = first > 0 ? ((last - first) / first) * 100 : 0;
+  return { symbol, price: last, pct };
+}
+
+function renderMarketRows(containerId, rows) {
+  const root = $(containerId);
+  if (!root) return;
+  root.innerHTML = '';
+
+  if (!rows.length) {
+    root.innerHTML = '<div class="empty-sub">Unable to load quotes right now.</div>';
+    return;
+  }
+
+  rows.forEach((item) => {
+    const isUp = (item.pct || 0) >= 0;
+    const row = document.createElement('div');
+    row.className = 'market-row';
+    row.innerHTML = `
+      <span class="market-symbol">${item.symbol}</span>
+      <span class="market-price sensitive-value">${formatUSD(item.price)}</span>
+      <span class="market-change ${isUp ? 'text-green' : 'text-red'}">${formatPct(item.pct)}</span>
+    `;
+    root.appendChild(row);
+  });
+
+  applyVisibilityMask();
+}
+
+async function loadMarketWatch() {
+  const [stocks, cryptos] = await Promise.all([
+    Promise.all(FEATURED_STOCKS.map((s) => fetchQuoteForSymbol(s))),
+    Promise.all(FEATURED_CRYPTOS.map((s) => fetchQuoteForSymbol(s))),
+  ]);
+
+  renderMarketRows('market-stocks-list', stocks.filter(Boolean));
+  renderMarketRows('market-cryptos-list', cryptos.filter(Boolean));
+}
+
+async function loadBalancePerformance() {
+  if (!authToken) return;
+  const periods = ['1mo', '6mo', '1y'];
+  const updates = await Promise.all(periods.map(async (period) => {
+    const res = await apiFetch(`/portfolio/history?period=${period}&benchmark=%5EGSPC`, { headers: authHeaders() });
+    if (!res || !res.ok) return { period, value: null };
+    const data = await res.json();
+    const prices = data.portfolio || [];
+    if (prices.length < 2 || !prices[0]) return { period, value: 0 };
+    const perf = ((prices[prices.length - 1] - prices[0]) / prices[0]) * 100;
+    return { period, value: perf };
+  }));
+
+  updates.forEach(({ period, value }) => {
+    const pill = document.querySelector(`.perf-pill[data-period="${period}"]`);
+    if (!pill) return;
+    const label = period === '1mo' ? '1M' : period === '6mo' ? '6M' : '12M';
+    if (value == null || Number.isNaN(value)) {
+      pill.textContent = `${label}: —`;
+      pill.classList.remove('pos', 'neg');
+      return;
+    }
+    pill.textContent = `${label}: ${formatPct(value)}`;
+    pill.classList.toggle('pos', value > 0);
+    pill.classList.toggle('neg', value < 0);
+  });
+
+  applyVisibilityMask();
+}
+
+async function loadTransactions() {
+  if (!authToken) return;
+  const res = await apiFetch('/transactions', { headers: authHeaders() });
+  if (!res || !res.ok) return;
+  const txs = await res.json();
+
+  const list = $('transactions-list');
+  if (!list) return;
+  list.innerHTML = '';
+
+  if (!txs.length) {
+    list.innerHTML = `<div class="empty-state"><div class="empty-icon">🧾</div><div class="empty-title">No transactions yet</div><div class="empty-sub">Your buy and sell operations will appear here.</div></div>`;
+    return;
+  }
+
+  txs.forEach((tx) => {
+    const pnl = tx.realized_pnl;
+    const pnlClass = pnl == null ? '' : pnl >= 0 ? 'text-green' : 'text-red';
+    const pnlText = pnl == null ? '—' : `${pnl >= 0 ? '+' : ''}${formatUSD(pnl)}`;
+
+    const row = document.createElement('div');
+    row.className = 'tx-item';
+    row.innerHTML = `
+      <div class="tx-top">
+        <span class="tx-symbol">${tx.symbol}</span>
+        <span class="tx-type ${tx.type}">${tx.type}</span>
+      </div>
+      <div class="tx-meta">
+        <span>${tx.date}</span>
+        <span>${tx.amount} @ ${formatUSD(tx.price)}</span>
+      </div>
+      <div class="tx-meta" style="margin-top:6px;">
+        <span class="sensitive-value">Total: ${formatUSD(tx.total_usd)}</span>
+        <span class="${pnlClass}">P&L: ${pnlText}</span>
+      </div>`;
+    list.appendChild(row);
+  });
+
+  applyVisibilityMask();
+}
+
+async function checkAIStatus() {
+  const res = await apiFetch('/analysis/status');
+  if (!res || !res.ok) return;
+  const info = await res.json();
+  if (!info.enabled) {
+    toast('AI indisponível: configure GEMINI_API_KEY ou GOOGLE_API_KEY no backend.', 'warning', 5500);
+  }
+}
+
+function csvCell(v) {
+  const val = v == null ? '' : String(v);
+  if (/[",\n]/.test(val)) {
+    return `"${val.replace(/"/g, '""')}"`;
+  }
+  return val;
+}
+
+async function exportPortfolioCsv() {
+  if (!authToken) {
+    showLoginScreen();
+    return;
+  }
+
+  const [balanceRes, txRes] = await Promise.all([
+    apiFetch('/portfolio/balance', { headers: authHeaders() }),
+    apiFetch('/transactions', { headers: authHeaders() }),
+  ]);
+
+  if (!balanceRes || !balanceRes.ok) {
+    toast('Unable to export CSV right now.', 'error');
+    return;
+  }
+
+  const balance = await balanceRes.json();
+  const txs = (txRes && txRes.ok) ? await txRes.json() : [];
+  const rows = [];
+
+  rows.push(['Section', 'Symbol', 'Quantity', 'Avg Buy USD', 'Current USD', 'Position USD', 'P&L USD', 'Change %']);
+  (balance.assets || []).forEach((asset) => {
+    rows.push([
+      'asset',
+      asset.symbol,
+      asset.amount,
+      asset.purchase_price,
+      asset.current_price,
+      asset.position_value,
+      asset.profit,
+      asset.percent_change,
+    ]);
+  });
+
+  rows.push([]);
+  rows.push(['Section', 'Date', 'Symbol', 'Type', 'Amount', 'Price USD', 'Total USD', 'Realized P&L']);
+  txs.forEach((tx) => {
+    rows.push([
+      'transaction',
+      tx.date,
+      tx.symbol,
+      tx.type,
+      tx.amount,
+      tx.price,
+      tx.total_usd,
+      tx.realized_pnl,
+    ]);
+  });
+
+  const csv = rows.map((row) => row.map(csvCell).join(',')).join('\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const now = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
+
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `purp-portfolio-${now}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+  toast('CSV exported successfully.', 'success');
+}
+
 // ── PORTFOLIO ────────────────────────────────────────────────────
 async function fetchPortfolio() {
   if (!authToken) return;
@@ -506,6 +782,7 @@ async function fetchPortfolio() {
   const data = await res.json();
 
   $('total-balance').textContent = formatUSD(data.total_balance_usd);
+  $('total-balance').classList.add('sensitive-value');
   portfolioCount   = (data.assets || []).length;
   portfolioSymbols = new Set(
     (data.assets || []).map((a) => (a.real_symbol || a.symbol || '').toUpperCase())
@@ -524,6 +801,8 @@ async function fetchPortfolio() {
       </div>`;
     return;
   }
+
+  await loadBalancePerformance();
 
   data.assets.forEach((asset) => {
     const profit   = asset.profit ?? 0;
@@ -552,15 +831,15 @@ async function fetchPortfolio() {
           <div>
             <div class="asset-name">${asset.symbol}</div>
             <div class="asset-price">
-              ${formatUSD(asset.current_price)}
+              <span class="sensitive-value">${formatUSD(asset.current_price)}</span>
               <span class="${isProfit ? 'text-green' : 'text-red'}">${pctTxt}</span>
             </div>
           </div>
         </div>
         <div class="asset-spark"><canvas id="spark-${asset.id}"></canvas></div>
         <div class="asset-values">
-          <div class="asset-val">${formatUSD(asset.position_value)}</div>
-          <div class="asset-profit ${isProfit ? 'text-green' : 'text-red'}">
+          <div class="asset-val sensitive-value">${formatUSD(asset.position_value)}</div>
+          <div class="asset-profit sensitive-value ${isProfit ? 'text-green' : 'text-red'}">
             ${isProfit ? '+' : ''}${formatUSD(profit)}
           </div>
         </div>
@@ -591,6 +870,8 @@ async function fetchPortfolio() {
     list.appendChild(wrapper);
     renderSpark(`spark-${asset.id}`, asset.history || [], isProfit ? '#10b981' : '#ef4444');
   });
+
+  applyVisibilityMask();
 }
 
 // ── DETAIL VIEW ──────────────────────────────────────────────────
@@ -600,6 +881,7 @@ function openDetail(asset) {
 
   $('detail-symbol').textContent = asset.symbol;
   $('detail-price').textContent  = formatUSD(asset.current_price);
+  $('detail-price').classList.add('sensitive-value');
   $('holding-badge').textContent = `${asset.days_held ?? 0} days held`;
 
   const imgEl = $('detail-icon-img');
@@ -630,6 +912,7 @@ function openSellModal(asset) {
   const qty = $('sell-qty');
   qty.value = asset.amount;
   qty.max   = asset.amount;
+  qty.step  = (asset.type || '').toLowerCase() === 'stock' ? '1' : 'any';
   $('sell-info').textContent =
     `Held: ${asset.amount}  •  Avg cost: ${formatUSD(asset.purchase_price)}`;
   updateSellEstimate();
@@ -652,16 +935,22 @@ function updateSellEstimate() {
   const isWin  = pnl >= 0;
 
   $('sell-estimate').innerHTML = `
-    ${formatUSD(total)}<br>
+    <span class="sensitive-value">${formatUSD(total)}</span><br>
     <span class="${isWin ? 'text-green' : 'text-red'}" style="font-size:13px;">
       ${isWin ? '+' : ''}${formatUSD(pnl)}
     </span>`;
+
+  applyVisibilityMask();
 }
 
 async function confirmSell() {
   if (!assetForSale || !authToken) return;
   const qty = parseFloat($('sell-qty').value);
   if (!qty || qty <= 0) { toast('Enter a valid amount to sell', 'warning'); return; }
+  if ((assetForSale.type || '').toLowerCase() === 'stock' && !Number.isInteger(qty)) {
+    toast('For stocks, sell quantity must be an integer.', 'warning');
+    return;
+  }
 
   const btn = $('btn-sell-confirm');
   btn.disabled    = true;
@@ -780,6 +1069,12 @@ async function handleAddAsset() {
   if (!amount || amount <= 0) { toast('Enter a valid quantity', 'warning'); return; }
   if (!price  || price  <= 0) { toast('Enter a valid price',    'warning'); return; }
 
+  const resolvedType = selectedAddAssetType || await resolveSymbolType(sym);
+  if (resolvedType === 'stock' && !Number.isInteger(amount)) {
+    toast('For stocks, quantity must be an integer.', 'warning');
+    return;
+  }
+
   // Free tier pre-check
   const isExisting = portfolioSymbols.has(sym);
   if (!isPremium() && portfolioCount >= FREE_ASSET_LIMIT && !isExisting) {
@@ -805,6 +1100,8 @@ async function handleAddAsset() {
       $('amount-input').value = '';
       $('price-input').value  = '';
       $('date-input').value   = '';
+      selectedAddAssetType = null;
+      setAddAmountInputMode(null);
       $('search-dropdown').style.display = 'none';
 
       switchTab('dashboard');
@@ -834,9 +1131,12 @@ document.addEventListener('DOMContentLoaded', () => {
     fetchPortfolio();
     loadMainChart();
     startRefresh();
+    checkAIStatus();
   } else {
     showLoginScreen();
   }
+
+  updatePrivacyToggle();
 
   // ── Auth
   $('btn-login')?.addEventListener('click', handleLogin);
@@ -861,7 +1161,18 @@ document.addEventListener('DOMContentLoaded', () => {
   // ── Nav
   $('nav-portfolio')?.addEventListener('click', () => { switchTab('dashboard'); closeMenu(); });
   $('nav-add')?.addEventListener('click',       () => { switchTab('add-asset'); closeMenu(); });
+  $('nav-transactions')?.addEventListener('click', () => { switchTab('transactions-page'); closeMenu(); });
   $('nav-logout')?.addEventListener('click',    () => { handleLogout(); });
+
+  $('top-tab-dashboard')?.addEventListener('click', () => switchTab('dashboard'));
+  $('top-tab-market')?.addEventListener('click', () => switchTab('market-watch'));
+  $('btn-quick-add')?.addEventListener('click', () => switchTab('add-asset'));
+  $('btn-quick-transactions')?.addEventListener('click', () => switchTab('transactions-page'));
+
+  $('btn-privacy-toggle')?.addEventListener('click', () => {
+    hideSensitiveValues = !hideSensitiveValues;
+    updatePrivacyToggle();
+  });
 
   // ── Upgrade
   $('btn-upgrade')?.addEventListener('click', () =>
@@ -869,6 +1180,7 @@ document.addEventListener('DOMContentLoaded', () => {
   );
   $('btn-upgrade-cancel')?.addEventListener('click', hideUpgradeModal);
   $('btn-upgrade-confirm')?.addEventListener('click', handleUpgrade);
+  $('btn-export-csv')?.addEventListener('click', exportPortfolioCsv);
 
   // ── Portfolio AI
   $('btn-portfolio-ai')?.addEventListener('click', handlePortfolioAI);
@@ -901,6 +1213,8 @@ document.addEventListener('DOMContentLoaded', () => {
   $('symbol-input')?.addEventListener('input', (e) => {
     clearTimeout(searchTimer);
     const v = e.target.value.trim();
+    selectedAddAssetType = null;
+    setAddAmountInputMode(null);
     if (v.length < 2) { $('search-dropdown').style.display = 'none'; return; }
     searchTimer = setTimeout(() => performSearch(v), 380);
   });

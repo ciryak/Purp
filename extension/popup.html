@@ -74,6 +74,9 @@
     <span></span><span></span><span></span>
   </button>
   <span class="app-title">Purp</span>
+  <button type="button" id="btn-privacy-toggle" class="privacy-btn" aria-label="Toggle value visibility" title="Hide or show values">
+    <span id="privacy-icon">🙈</span>
+  </button>
   <div class="header-spacer"></div>
 
   <nav id="nav-menu" class="nav-menu hidden" role="navigation">
@@ -85,12 +88,21 @@
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 8v8M8 12h8"/></svg>
       Add Asset
     </button>
+    <button type="button" id="nav-transactions" class="nav-item">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 6h11M9 12h11M9 18h11"/><path d="M4 6h.01M4 12h.01M4 18h.01"/></svg>
+      Transactions
+    </button>
     <button type="button" id="nav-logout" class="nav-item nav-danger">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9"/></svg>
       Sign Out
     </button>
   </nav>
 </header>
+
+<div class="top-tabs">
+  <button type="button" id="top-tab-dashboard" class="top-tab active">Dashboard</button>
+  <button type="button" id="top-tab-market" class="top-tab">Market Watch</button>
+</div>
 
 <!-- ═══ DASHBOARD ═══ -->
 <div id="dashboard" class="page active">
@@ -110,10 +122,20 @@
     <button type="button" id="btn-upgrade" class="btn-upgrade">⭐ Premium</button>
   </div>
 
+  <div class="quick-actions">
+    <button type="button" id="btn-quick-add" class="quick-btn">+ Add Asset</button>
+    <button type="button" id="btn-quick-transactions" class="quick-btn">Transactions</button>
+  </div>
+
   <!-- Balance Card -->
   <div class="balance-card">
     <div class="balance-label">TOTAL BALANCE</div>
     <div id="total-balance" class="balance-value">$0.00</div>
+    <div id="balance-performance" class="balance-performance">
+      <span class="perf-pill" data-period="1mo">1M: —</span>
+      <span class="perf-pill" data-period="6mo">6M: —</span>
+      <span class="perf-pill" data-period="1y">12M: —</span>
+    </div>
 
     <div class="chart-controls">
       <select id="benchmark-select" class="select-ctrl">
@@ -128,6 +150,7 @@
         <button class="pill" data-p="6mo">6M</button>
         <button class="pill" data-p="1y">1Y</button>
       </div>
+      <span id="benchmark-change" class="benchmark-badge">Benchmark: —</span>
     </div>
 
     <div class="main-chart-wrap"><canvas id="mainChart"></canvas></div>
@@ -155,9 +178,35 @@
   </div>
 
   <!-- Assets -->
-  <div class="section-heading">Your Assets</div>
+  <div class="section-heading-row">
+    <div class="section-heading">Your Assets</div>
+    <button type="button" id="btn-export-csv" class="btn-export-csv">Export CSV</button>
+  </div>
   <div id="assets-list"></div>
 
+</div>
+
+<!-- ═══ MARKET WATCH ═══ -->
+<div id="market-watch" class="page">
+  <div class="page-header">
+    <div class="page-title">Market Watch</div>
+    <div class="page-sub">5 stocks and 5 cryptos in real time</div>
+  </div>
+
+  <div class="section-heading">Top Stocks</div>
+  <div id="market-stocks-list"></div>
+
+  <div class="section-heading" style="margin-top:12px;">Top Cryptos</div>
+  <div id="market-cryptos-list"></div>
+</div>
+
+<!-- ═══ TRANSACTIONS ═══ -->
+<div id="transactions-page" class="page">
+  <div class="page-header">
+    <div class="page-title">Transaction History</div>
+    <div class="page-sub">Latest buys and sells in your portfolio</div>
+  </div>
+  <div id="transactions-list"></div>
 </div>
 
 <!-- ═══ ADD ASSET ═══ -->

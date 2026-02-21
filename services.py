@@ -19,16 +19,19 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # ── Gemini ─────────────────────────────────────────────────────────────────────
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "") or os.getenv("GOOGLE_API_KEY", "")
 _gemini_client = None
+_gemini_status = "missing_api_key"
 
 try:
     if GEMINI_API_KEY and "YOUR_KEY" not in GEMINI_API_KEY and len(GEMINI_API_KEY) > 10:
         _gemini_client = genai.Client(api_key=GEMINI_API_KEY)
+        _gemini_status = "ok"
         print("✅ Gemini client initialized")
     else:
-        print("⚠️  GEMINI_API_KEY not set — AI features disabled")
+        print("⚠️  GEMINI_API_KEY/GOOGLE_API_KEY not set — AI features disabled")
 except Exception as e:
+    _gemini_status = f"init_error: {e}"
     print(f"⚠️  Gemini init error: {e}")
     _gemini_client = None
 
@@ -139,17 +142,23 @@ def _cg_find(symbol: str) -> dict | None:
 
 
 def _cg_price(coin_id: str) -> tuple[float | None, float | None]:
-    """Return (price_usd, change_24h_pct)."""
+    """Return (price_usd, change_24h_pct) with CoinGecko market precision."""
     try:
         r = requests.get(
-            "https://api.coingecko.com/api/v3/simple/price",
-            params={"ids": coin_id, "vs_currencies": "usd", "include_24hr_change": "true"},
+            "https://api.coingecko.com/api/v3/coins/markets",
+            params={
+                "vs_currency": "usd",
+                "ids": coin_id,
+                "precision": "full",
+                "price_change_percentage": "24h",
+            },
             headers=_CG_HEADERS, timeout=6
         )
         r.raise_for_status()
-        d = r.json().get(coin_id, {})
-        p = d.get("usd")
-        ch = d.get("usd_24h_change")
+        payload = r.json() or []
+        d = payload[0] if payload else {}
+        p = d.get("current_price")
+        ch = d.get("price_change_percentage_24h")
         return (float(p) if p else None, float(ch) if ch is not None else None)
     except Exception as e:
         print(f"⚠️  CoinGecko price '{coin_id}': {e}")
@@ -172,7 +181,7 @@ def _cg_spark(coin_id: str, days: int = 1) -> list[float]:
         return []
 
 
-def _cg_history(coin_id: str, days: int) -> dict:
+def _cg_history(coin_id: str, days: int, force_hourly: bool = False) -> dict:
     """Return {"dates": [...], "prices": [...]}."""
     try:
         r = requests.get(
@@ -182,6 +191,12 @@ def _cg_history(coin_id: str, days: int) -> dict:
         )
         r.raise_for_status()
         raw = r.json().get("prices", [])
+        if force_hourly and raw:
+            by_hour = {}
+            for ms, price in raw:
+                hour_key = int(ms // 3_600_000)
+                by_hour[hour_key] = (ms, price)
+            raw = [by_hour[k] for k in sorted(by_hour.keys())][-24:]
         is_intraday = days <= 5
         fmt = "%H:%M" if is_intraday else "%m/%d"
         dates, vals = [], []
@@ -210,6 +225,11 @@ def get_asset_data(symbol: str) -> dict | None:
     symbol = symbol.upper().strip()
     base = symbol.replace("-USD", "").strip()
 
+    def _pct_from_series(series: list[float]) -> float:
+        if len(series) < 2 or series[0] <= 0:
+            return 0.0
+        return ((series[-1] - series[0]) / series[0]) * 100
+
     # ── 1) Try CoinGecko for likely crypto
     if not _is_likely_stock(base):
         try:
@@ -217,12 +237,14 @@ def get_asset_data(symbol: str) -> dict | None:
             if coin and coin.get("id"):
                 price, change = _cg_price(coin["id"])
                 if price and price > 0:
-                    spark = _cg_spark(coin["id"], days=1)
+                    intraday = _cg_history(coin["id"], 1, force_hourly=True)
+                    spark = intraday["prices"]
+                    change_hourly = _pct_from_series(spark)
                     return {
                         "symbol": base,
                         "real_symbol": base,
                         "current_price": price,
-                        "percent_change": change or 0.0,
+                        "percent_change": change_hourly if spark else (change or 0.0),
                         "history": spark[-40:] if spark else [price],
                         "type": "crypto",
                         "icon": coin.get("thumb") or "",
@@ -234,13 +256,13 @@ def get_asset_data(symbol: str) -> dict | None:
     for sym in [symbol, base, f"{base}-USD"]:
         try:
             ticker = yf.Ticker(sym)
-            hist = ticker.history(period="1d", interval="15m")
+            hist = ticker.history(period="2d", interval="60m")
             if hist.empty:
                 continue
 
             price = float(hist["Close"].iloc[-1])
-            open_p = float(hist["Open"].iloc[0])
-            change = ((price - open_p) / open_p * 100) if open_p > 0 else 0.0
+            closes = [float(v) for v in hist["Close"].tolist() if v is not None][-24:]
+            change = _pct_from_series(closes)
 
             info = {}
             try:
@@ -266,7 +288,7 @@ def get_asset_data(symbol: str) -> dict | None:
                 "real_symbol": real_sym,
                 "current_price": price,
                 "percent_change": change,
-                "history": hist["Close"].tolist()[-40:],
+                "history": closes[-40:] if closes else [price],
                 "type": asset_type,
                 "icon": icon,
             }
@@ -292,7 +314,7 @@ def get_historical_data(symbol: str, period: str = "1mo") -> dict:
             coin = _cg_find(base)
             if coin and coin.get("id"):
                 days = days_map.get(period, 30)
-                result = _cg_history(coin["id"], days)
+                result = _cg_history(coin["id"], days, force_hourly=(period == "1d"))
                 if result["prices"]:
                     return result
         except Exception as e:
@@ -301,13 +323,17 @@ def get_historical_data(symbol: str, period: str = "1mo") -> dict:
     # Yahoo Finance fallback
     for sym in [symbol, base, f"{base}-USD"]:
         try:
-            hist = yf.Ticker(sym).history(period=period)
+            interval = "60m" if period == "1d" else None
+            hist = yf.Ticker(sym).history(period=period, interval=interval) if interval else yf.Ticker(sym).history(period=period)
             if hist.empty:
                 continue
             is_intraday = period in ("1d", "5d")
             fmt = "%H:%M" if is_intraday else "%m/%d"
             dates = [d.strftime(fmt) for d in hist.index]
             prices = hist["Close"].tolist()
+            if period == "1d":
+                dates = dates[-24:]
+                prices = prices[-24:]
             return {"dates": dates, "prices": prices}
         except Exception as e:
             print(f"⚠️  yfinance history '{sym}': {e}")
@@ -370,6 +396,16 @@ def search_symbols(query: str) -> list[dict]:
 
 
 # ── AI ────────────────────────────────────────────────────────────────────────
+
+
+def get_ai_status() -> dict:
+    return {
+        "enabled": _gemini_client is not None,
+        "provider": "gemini",
+        "status": _gemini_status,
+        "api_key_source": "GEMINI_API_KEY/GOOGLE_API_KEY",
+    }
+
 
 def _extract_gemini_text(res) -> str:
     """Safely extract text from Gemini response."""
