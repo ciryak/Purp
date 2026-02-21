@@ -11,7 +11,7 @@
    ════════════════════════════════════════════════════════════════ */
 
 // ── Config ───────────────────────────────────────────────────────
-const API_BASE          = 'https://purp-backend.railway.app';
+const API_BASE          = 'https://purp-production.up.railway.app';
 const FREE_ASSET_LIMIT  = 4;
 const REFRESH_MS        = 60_000; // 60 s
 
