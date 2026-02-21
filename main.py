@@ -19,8 +19,6 @@ from email.mime.multipart import MIMEMultipart
 from fastapi import FastAPI, HTTPException, Depends, Header, Request
 from fastapi.middleware.cors import CORSMiddleware
 from sqlmodel import Session, select, create_engine, SQLModel
-from sqlalchemy import text
-from sqlalchemy.exc import SQLAlchemyError
 from pydantic import BaseModel, EmailStr
 import bcrypt
 import stripe
@@ -42,18 +40,26 @@ TOKEN_EXPIRE = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", 10080))  # 7 days
 
 stripe.api_key = os.getenv("STRIPE_SECRET_KEY", "")
 
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///database.db").replace(
-    "postgres://", "postgresql://"
-)
+_raw_db_url = os.getenv("DATABASE_URL", "sqlite:///database.db")
+DATABASE_URL = _raw_db_url.replace("postgres://", "postgresql://")
+
+_is_postgres = DATABASE_URL.startswith("postgresql://")
 
 def _build_engine():
-    is_postgres = DATABASE_URL.startswith("postgresql://")
-    connect_args = {"sslmode": "require"} if is_postgres and "sslmode=" not in DATABASE_URL else {}
-    return create_engine(
-        DATABASE_URL,
-        pool_pre_ping=True,
-        connect_args=connect_args,
-    )
+    if _is_postgres:
+        # Railway PostgreSQL requires SSL; pool_pre_ping avoids stale connections
+        connect_args = {}
+        if "sslmode=" not in DATABASE_URL:
+            connect_args = {"sslmode": "require"}
+        return create_engine(
+            DATABASE_URL,
+            pool_pre_ping=True,
+            pool_size=5,
+            max_overflow=10,
+            connect_args=connect_args,
+        )
+    # SQLite (local dev)
+    return create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
 
 engine = _build_engine()
 
@@ -162,17 +168,30 @@ def send_welcome_email_async(to_email: str, username: str) -> None:
 
 # ── DB ─────────────────────────────────────────────────────────────────────────
 def create_db() -> None:
-    SQLModel.metadata.create_all(engine)
-    # Unique index on email (best-effort; SQLite may already have it)
+    print(f"🗄️  DB: {DATABASE_URL[:50]}…")
+    try:
+        SQLModel.metadata.create_all(engine)
+        print("✅ Tables OK")
+    except Exception as e:
+        print(f"❌ FATAL table creation failed: {e}")
+        raise  # surface the real error in Railway logs
+
+    # Unique index on email — PostgreSQL requires quoted "user" (reserved word)
     try:
         with engine.connect() as conn:
-            conn.exec_driver_sql(
-                'CREATE UNIQUE INDEX IF NOT EXISTS ix_user_email_unique ON "user"(email)'
-            )
+            if _is_postgres:
+                conn.exec_driver_sql(
+                    'CREATE UNIQUE INDEX IF NOT EXISTS ix_user_email_unique ON "user"(email)'
+                )
+            else:
+                conn.exec_driver_sql(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS ix_user_email_unique ON user(email)"
+                )
             conn.commit()
-    except Exception:
-        pass
-    # Ensure owner account (id=1) is always premium
+    except Exception as e:
+        print(f"⚠️  Email index already exists or skipped: {e}")
+
+    # Ensure first user (owner) is always premium
     try:
         with Session(engine) as s:
             u = s.get(User, 1)
@@ -180,8 +199,8 @@ def create_db() -> None:
                 u.is_premium = True
                 s.add(u)
                 s.commit()
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"⚠️  Owner premium check skipped: {e}")
 
 
 # ── App ────────────────────────────────────────────────────────────────────────
@@ -262,27 +281,23 @@ def register(data: RegisterInput, session: Session = Depends(get_session)):
     if len(data.password) < 4:
         raise HTTPException(400, "Password must be at least 4 characters")
 
-    try:
-        if session.exec(select(User).where(User.username == uname)).first():
-            raise HTTPException(400, "Username already taken")
+    if session.exec(select(User).where(User.username == uname)).first():
+        raise HTTPException(400, "Username already taken")
 
-        email_norm = str(data.email).strip().lower()
-        if session.exec(select(User).where(User.email == email_norm)).first():
-            raise HTTPException(400, "Email already registered")
+    email_norm = str(data.email).strip().lower()
+    if session.exec(select(User).where(User.email == email_norm)).first():
+        raise HTTPException(400, "Email already registered")
 
-        user = User(
-            username=uname,
-            password_hash=hash_pw(data.password),
-            email=email_norm,
-            is_premium=False,
-            created_at=str(date.today()),
-        )
-        session.add(user)
-        session.commit()
-        session.refresh(user)
-    except SQLAlchemyError:
-        session.rollback()
-        raise HTTPException(503, "Database unavailable — please try again")
+    user = User(
+        username=uname,
+        password_hash=hash_pw(data.password),
+        email=email_norm,
+        is_premium=False,
+        created_at=str(date.today()),
+    )
+    session.add(user)
+    session.commit()
+    session.refresh(user)
 
     if user.id is None:
         raise HTTPException(500, "Failed to create user — please try again")
@@ -297,10 +312,7 @@ def register(data: RegisterInput, session: Session = Depends(get_session)):
 
 @app.post("/auth/login")
 def login(data: LoginInput, session: Session = Depends(get_session)):
-    try:
-        user = session.exec(select(User).where(User.username == data.username.strip())).first()
-    except SQLAlchemyError:
-        raise HTTPException(503, "Database unavailable — please try again")
+    user = session.exec(select(User).where(User.username == data.username.strip())).first()
     if not user or not verify_pw(data.password, user.password_hash):
         raise HTTPException(401, "Incorrect username or password")
 
@@ -753,11 +765,4 @@ def payment_cancelled():
 
 @app.get("/health")
 def health():
-    try:
-        with Session(engine) as s:
-            s.exec(text("SELECT 1"))
-        db_status = "ok"
-    except SQLAlchemyError:
-        raise HTTPException(503, "Database unavailable")
-
-    return {"status": "ok", "db": db_status, "timestamp": datetime.utcnow().isoformat()}
+    return {"status": "ok", "timestamp": datetime.utcnow().isoformat()}
