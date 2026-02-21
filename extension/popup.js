@@ -1,3 +1,4 @@
+// ===== ESTADO GLOBAL =====
 let detailChart = null;
 let mainChart = null;
 let searchTimeout = null;
@@ -7,16 +8,16 @@ let currentUser = null;
 let portfolioAssetsCount = 0;
 let portfolioSymbolSet = new Set();
 let refreshIntervalId = null;
-let lastDataUpdate = 0; // ⭐ Controla atualização de dados
-const REFRESH_INTERVAL_MS = 5000;
-const DATA_UPDATE_THRESHOLD = 1000; // Só atualiza dados se mudou após 1s
+let lastDataUpdate = 0;
 
+const REFRESH_INTERVAL_MS = 30000; // 30s — não sobrecarrega o backend
 const API_BASE = 'https://purp-backend.railway.app';
 const FREE_ASSET_LIMIT = 4;
 
-const formatMoney = (val) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(val);
+const formatMoney = (val) =>
+    new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(val ?? 0);
 
-// ========== AUTENTICAÇÃO ==========
+// ===== AUTH HELPERS =====
 
 function getAuthHeaders() {
     return authToken ? { 'X-Auth-Token': authToken } : {};
@@ -33,9 +34,11 @@ function loadAuth() {
     const token = localStorage.getItem('authToken');
     const userStr = localStorage.getItem('currentUser');
     if (token && userStr) {
-        authToken = token;
-        currentUser = JSON.parse(userStr);
-        return true;
+        try {
+            authToken = token;
+            currentUser = JSON.parse(userStr);
+            return true;
+        } catch (e) { return false; }
     }
     return false;
 }
@@ -50,17 +53,25 @@ function clearAuth() {
     localStorage.removeItem('currentUser');
 }
 
+function isPremium() {
+    return !!currentUser?.is_premium;
+}
+
+function normSymbolForCompare(sym) {
+    return (sym || '').toString().trim().toUpperCase().replace('-USD', '');
+}
+
+// ===== REFRESH =====
+
 function startAutoRefresh() {
     stopAutoRefresh();
     refreshIntervalId = setInterval(() => {
-        if (authToken) {
-            const now = Date.now();
-            // ⭐ Só atualiza dados se passou tempo suficiente
-            if (now - lastDataUpdate >= DATA_UPDATE_THRESHOLD) {
-                lastDataUpdate = now;
-                fetchPortfolio();
-                loadMainChart(true); // ⭐ true = skip animation
-            }
+        if (!authToken) return;
+        const now = Date.now();
+        if (now - lastDataUpdate >= REFRESH_INTERVAL_MS) {
+            lastDataUpdate = now;
+            fetchPortfolio();
+            loadMainChart(true);
         }
     }, REFRESH_INTERVAL_MS);
 }
@@ -72,6 +83,8 @@ function stopAutoRefresh() {
     }
 }
 
+// ===== LOGIN / REGISTER / LOGOUT =====
+
 function showLoginScreen() {
     document.getElementById('login-screen').classList.remove('hidden');
 }
@@ -80,94 +93,38 @@ function hideLoginScreen() {
     document.getElementById('login-screen').classList.add('hidden');
 }
 
-function isPremium() {
-    return !!currentUser?.is_premium;
-}
-
-function normSymbolForCompare(sym) {
-    return (sym || '')
-        .toString()
-        .trim()
-        .toUpperCase()
-        .replace('-USD', '');
-}
-
-function updateProfileBar() {
-    const nameEl = document.getElementById('profile-username');
-    const planEl = document.getElementById('profile-plan');
-    const limitEl = document.getElementById('profile-assets-limit');
-    const upgradeBtn = document.getElementById('btn-upgrade');
-
-    if (nameEl) nameEl.innerText = currentUser?.username ? currentUser.username : '...';
-    if (planEl) planEl.innerText = `Plano: ${isPremium() ? 'Premium' : 'Grátis'}`;
-
-    if (limitEl) {
-        limitEl.innerText = isPremium()
-            ? `Ativos: ${portfolioAssetsCount}`
-            : `Ativos: ${portfolioAssetsCount}/${FREE_ASSET_LIMIT}`;
-    }
-
-    if (upgradeBtn) {
-        if (isPremium()) upgradeBtn.classList.add('hidden');
-        else upgradeBtn.classList.remove('hidden');
-    }
-}
-
-async function handleUpgrade() {
-    try {
-        const res = await fetch(`${API_BASE}/stripe/create-checkout`, {
-            method: 'POST',
-            headers: getAuthHeaders()
-        });
-        const data = await res.json();
-        if (data.checkout_url) {
-            chrome.tabs.create({ url: data.checkout_url });
-        }
-    } catch(e) {
-        alert('Erro ao iniciar pagamento. Tente novamente.');
-    }
-}
-
-
-function hideUpgradeModal() {
-    document.getElementById('modal-upgrade')?.classList.remove('active');
-}
-
 async function handleLogin() {
     const username = document.getElementById('login-username').value.trim();
     const password = document.getElementById('login-password').value;
     const errorEl = document.getElementById('login-error');
-    
+
     if (!username || !password) {
         errorEl.textContent = 'Preencha usuário e senha';
-        errorEl.style.display = 'block';
         return;
     }
-    
+
     try {
         const res = await fetch(`${API_BASE}/auth/login`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ username, password })
         });
-        
+
         if (res.ok) {
             const data = await res.json();
             saveAuth(data.token, data.user);
             hideLoginScreen();
+            updateProfileBar();
             fetchPortfolio();
             loadMainChart();
-            updateProfileBar();
             startAutoRefresh();
-            errorEl.style.display = 'none';
+            errorEl.textContent = '';
         } else {
-            const err = await res.json();
-            errorEl.textContent = err.detail || 'Erro ao fazer login';
-            errorEl.style.display = 'block';
+            const err = await res.json().catch(() => ({}));
+            errorEl.textContent = err.detail || 'Usuário ou senha incorretos';
         }
     } catch (e) {
         errorEl.textContent = 'Erro de conexão';
-        errorEl.style.display = 'block';
     }
 }
 
@@ -176,37 +133,34 @@ async function handleRegister() {
     const password = document.getElementById('register-password').value;
     const email = document.getElementById('register-email').value.trim();
     const errorEl = document.getElementById('register-error');
-    
+
     if (!username || !email || !password || password.length < 4) {
-        errorEl.textContent = 'Usuário, email e senha (mín. 4 caracteres) são obrigatórios';
-        errorEl.style.display = 'block';
+        errorEl.textContent = 'Preencha todos os campos (senha mín. 4 caracteres)';
         return;
     }
-    
+
     try {
         const res = await fetch(`${API_BASE}/auth/register`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ username, password, email })
         });
-        
+
         if (res.ok) {
             const data = await res.json();
             saveAuth(data.token, data.user);
             hideLoginScreen();
+            updateProfileBar();
             fetchPortfolio();
             loadMainChart();
-            updateProfileBar();
             startAutoRefresh();
-            errorEl.style.display = 'none';
+            errorEl.textContent = '';
         } else {
-            const err = await res.json();
+            const err = await res.json().catch(() => ({}));
             errorEl.textContent = err.detail || 'Erro ao criar conta';
-            errorEl.style.display = 'block';
         }
     } catch (e) {
         errorEl.textContent = 'Erro de conexão';
-        errorEl.style.display = 'block';
     }
 }
 
@@ -225,21 +179,88 @@ function toggleLoginRegister() {
     const loginForm = document.getElementById('login-form');
     const registerForm = document.getElementById('register-form');
     const isLogin = loginForm.style.display !== 'none';
-    
     loginForm.style.display = isLogin ? 'none' : 'block';
     registerForm.style.display = isLogin ? 'block' : 'none';
-    document.getElementById('login-error').style.display = 'none';
-    document.getElementById('register-error').style.display = 'none';
+    document.getElementById('login-error').textContent = '';
+    document.getElementById('register-error').textContent = '';
 }
 
-// ========== INICIALIZAÇÃO ==========
+// ===== PROFILE BAR =====
+
+function updateProfileBar() {
+    const nameEl = document.getElementById('profile-username');
+    const planEl = document.getElementById('profile-plan');
+    const limitEl = document.getElementById('profile-assets-limit');
+    const upgradeBtn = document.getElementById('btn-upgrade');
+    const avatarEl = document.getElementById('profile-avatar-letter');
+
+    const username = currentUser?.username || '...';
+    if (nameEl) nameEl.innerText = username;
+    if (avatarEl) avatarEl.innerText = username.charAt(0).toUpperCase();
+
+    if (planEl) {
+        planEl.innerText = isPremium() ? 'Premium' : 'Grátis';
+        planEl.className = isPremium() ? 'plan-badge premium' : 'plan-badge';
+    }
+
+    if (limitEl) {
+        limitEl.innerText = isPremium()
+            ? `${portfolioAssetsCount} ativos`
+            : `${portfolioAssetsCount}/${FREE_ASSET_LIMIT} ativos`;
+    }
+
+    if (upgradeBtn) {
+        upgradeBtn.style.display = isPremium() ? 'none' : '';
+    }
+}
+
+// ===== UPGRADE MODAL =====
+
+function showUpgradeModal(reason) {
+    const reasonEl = document.getElementById('upgrade-reason');
+    if (reasonEl) reasonEl.innerText = reason || 'Desbloqueie recursos avançados.';
+    document.getElementById('modal-upgrade')?.classList.add('active');
+}
+
+function hideUpgradeModal() {
+    document.getElementById('modal-upgrade')?.classList.remove('active');
+}
+
+async function handleUpgrade() {
+    try {
+        const res = await fetch(`${API_BASE}/stripe/create-checkout`, {
+            method: 'POST',
+            headers: getAuthHeaders()
+        });
+        const data = await res.json();
+        if (data.checkout_url) {
+            chrome.tabs.create({ url: data.checkout_url });
+        }
+    } catch (e) {
+        alert('Erro ao iniciar pagamento. Tente novamente.');
+    }
+}
+
+// Expõe globalmente para uso inline se necessário
+window.handleUpgrade = handleUpgrade;
+
+// ===== MENU =====
+
+function closeMenu() {
+    const navMenu = document.getElementById('nav-menu');
+    const btnHamburger = document.getElementById('btn-hamburger');
+    navMenu?.classList.add('hidden');
+    btnHamburger?.classList.remove('active');
+}
+
+// ===== INICIALIZAÇÃO =====
 
 document.addEventListener('DOMContentLoaded', () => {
     if (loadAuth()) {
         hideLoginScreen();
+        updateProfileBar();
         fetchPortfolio();
         loadMainChart();
-        updateProfileBar();
         startAutoRefresh();
     } else {
         showLoginScreen();
@@ -254,83 +275,69 @@ function setupListeners() {
     document.getElementById('btn-register').onclick = handleRegister;
     document.getElementById('btn-show-register').onclick = toggleLoginRegister;
     document.getElementById('btn-show-login').onclick = toggleLoginRegister;
-    
-    // Menu hambúrguer com animação
-    const btnHamburger = document.getElementById('btn-hamburger');
-    const navMenu = document.getElementById('nav-menu');
-    if (btnHamburger && navMenu) {
-        btnHamburger.onclick = () => {
-            const isOpen = !navMenu.classList.contains('hidden');
-            if (isOpen) {
-                navMenu.classList.add('hidden');
-                btnHamburger.classList.remove('active');
-            } else {
-                navMenu.classList.remove('hidden');
-                navMenu.style.animation = 'slideDown 0.3s ease-out';
-                btnHamburger.classList.add('active');
-            }
-        };
-    }
-    
-    // Fecha menu ao clicar em item
-    document.getElementById('nav-carteira').onclick = () => {
-        switchTab('dashboard');
-        closeMenu();
-    };
-    document.getElementById('nav-adicionar').onclick = () => {
-        switchTab('add-asset');
-        closeMenu();
-    };
-    document.getElementById('nav-sair').onclick = () => {
-        closeMenu();
-        handleLogout();
-    };
 
-    // IA Portfolio
-    const btnPortfolioAI = document.getElementById('btn-portfolio-ai');
-    if (btnPortfolioAI) {
-        btnPortfolioAI.onclick = handlePortfolioAI;
-    }
-
-    // Upgrade
-    document.getElementById('btn-upgrade').onclick = () => showUpgradeModal('Desbloqueie IA e acompanhe mais de 4 ativos por US$ 15/mês.');
-    document.getElementById('upgrade-cancel').onclick = hideUpgradeModal;
-    document.getElementById('upgrade-confirm').onclick = () => {
-        // Placeholder: aqui você pluga checkout (Stripe, etc.)
-        hideUpgradeModal();
-        alert("Checkout Premium: implemente seu link de pagamento aqui.");
-    };
-    
-    // Enter key nos formulários
     document.getElementById('login-password').onkeypress = (e) => {
         if (e.key === 'Enter') handleLogin();
     };
     document.getElementById('register-password').onkeypress = (e) => {
         if (e.key === 'Enter') handleRegister();
     };
-    
+
+    // Hamburger
+    const btnHamburger = document.getElementById('btn-hamburger');
+    const navMenu = document.getElementById('nav-menu');
+    if (btnHamburger && navMenu) {
+        btnHamburger.onclick = () => {
+            const isOpen = !navMenu.classList.contains('hidden');
+            if (isOpen) {
+                closeMenu();
+            } else {
+                navMenu.classList.remove('hidden');
+                btnHamburger.classList.add('active');
+            }
+        };
+    }
+
+    // Nav items
+    document.getElementById('nav-carteira').onclick = () => { switchTab('dashboard'); closeMenu(); };
+    document.getElementById('nav-adicionar').onclick = () => { switchTab('add-asset'); closeMenu(); };
+    document.getElementById('nav-sair').onclick = () => { closeMenu(); handleLogout(); };
+
+    // IA Portfolio
+    document.getElementById('btn-portfolio-ai')?.addEventListener('click', handlePortfolioAI);
+
+    // Upgrade
+    document.getElementById('btn-upgrade').onclick = () =>
+        showUpgradeModal('Desbloqueie IA e acompanhe ativos ilimitados por US$ 15/mês.');
+    document.getElementById('upgrade-cancel').onclick = hideUpgradeModal;
+    document.getElementById('upgrade-confirm').onclick = () => {
+        hideUpgradeModal();
+        handleUpgrade();
+    };
+
     // Back
-    document.getElementById('btn-back').onclick = () => document.getElementById('detail-view').classList.remove('active');
-    
-    // Main Chart Controls
-    document.getElementById('main-benchmark').onchange = loadMainChart;
-    document.querySelectorAll('.time-btn-mini').forEach(btn => {
+    document.getElementById('btn-back').onclick = () =>
+        document.getElementById('detail-view').classList.remove('active');
+
+    // Main chart controls
+    document.getElementById('main-benchmark').onchange = () => loadMainChart();
+    document.querySelectorAll('.pill').forEach(btn => {
         btn.onclick = (e) => {
-            document.querySelectorAll('.time-btn-mini').forEach(b => b.classList.remove('active'));
+            document.querySelectorAll('.pill').forEach(b => b.classList.remove('active'));
             e.target.classList.add('active');
             loadMainChart();
         };
     });
 
-    // Actions
+    // Save asset
     document.getElementById('btn-save').onclick = handleAddAsset;
-    
-    // Modal Sell
+
+    // Modal sell
     document.getElementById('modal-cancel').onclick = closeModal;
     document.getElementById('modal-confirm').onclick = confirmSell;
     document.getElementById('sell-amount-input').oninput = updateSellCalc;
     document.getElementById('btn-max').onclick = () => {
-        if(assetForSale) {
+        if (assetForSale) {
             document.getElementById('sell-amount-input').value = assetForSale.amount;
             updateSellCalc();
         }
@@ -339,56 +346,56 @@ function setupListeners() {
     // Search
     document.getElementById('symbol').oninput = (e) => {
         clearTimeout(searchTimeout);
-        if(e.target.value.length < 2) return document.getElementById('search-results').style.display='none';
-        searchTimeout = setTimeout(() => performSearch(e.target.value), 400);
+        const val = e.target.value.trim();
+        if (val.length < 2) {
+            document.getElementById('search-results').style.display = 'none';
+            return;
+        }
+        searchTimeout = setTimeout(() => performSearch(val), 400);
     };
 
-    // Time Detail
+    // Time detail chart
     document.querySelectorAll('.time-btn').forEach(btn => {
         btn.onclick = (e) => {
             document.querySelectorAll('.time-btn').forEach(b => b.classList.remove('active'));
             e.target.classList.add('active');
             const sym = document.getElementById('detail-symbol').innerText;
-            fetchHistoryAndRender(sym, e.target.getAttribute('data-period'));
+            if (sym && sym !== '—') fetchHistoryAndRender(sym, e.target.getAttribute('data-period'));
         };
     });
 }
 
-// ========== GRÁFICO PRINCIPAL ==========
+// ===== GRÁFICO PRINCIPAL =====
 
 async function loadMainChart(skipAnimation = false) {
     if (!authToken) return;
-    
+
     const ctx = document.getElementById('mainChart')?.getContext('2d');
     if (!ctx) return;
-    
-    if(mainChart) mainChart.destroy();
 
-    const period = document.querySelector('.time-btn-mini.active')?.dataset.p || '1mo';
+    if (mainChart) { mainChart.destroy(); mainChart = null; }
+
+    const period = document.querySelector('.pill.active')?.dataset.p || '1mo';
     const bench = document.getElementById('main-benchmark')?.value || '^GSPC';
 
     try {
         const res = await fetch(`${API_BASE}/portfolio/history?period=${period}&benchmark=${bench}`, {
             headers: getAuthHeaders()
         });
-        
+
         if (!res.ok) {
-            if (res.status === 401) {
-                clearAuth();
-                showLoginScreen();
-            }
+            if (res.status === 401) { clearAuth(); showLoginScreen(); }
             return;
         }
-        
+
         const data = await res.json();
-        
-        if(data.portfolio.length === 0) return;
+        if (!data.portfolio || data.portfolio.length === 0) return;
 
         const startPort = data.portfolio[0];
-        const startBench = data.benchmark[0];
-        
-        const normPort = data.portfolio.map(v => ((v - startPort)/startPort)*100);
-        const normBench = data.benchmark.map(v => ((v - startBench)/startBench)*100);
+        const startBench = data.benchmark[0] || 1;
+
+        const normPort = data.portfolio.map(v => ((v - startPort) / startPort) * 100);
+        const normBench = data.benchmark.map(v => ((v - startBench) / startBench) * 100);
 
         mainChart = new Chart(ctx, {
             type: 'line',
@@ -396,9 +403,9 @@ async function loadMainChart(skipAnimation = false) {
                 labels: data.dates,
                 datasets: [
                     {
-                        label: 'Minha Carteira',
+                        label: 'Carteira',
                         data: normPort,
-                        borderColor: '#7b42f6',
+                        borderColor: '#a78bfa',
                         borderWidth: 2,
                         pointRadius: 0,
                         tension: 0.4
@@ -406,9 +413,9 @@ async function loadMainChart(skipAnimation = false) {
                     {
                         label: bench,
                         data: normBench,
-                        borderColor: '#555',
+                        borderColor: '#444',
                         borderWidth: 1,
-                        borderDash: [5, 5],
+                        borderDash: [4, 4],
                         pointRadius: 0,
                         tension: 0.4
                     }
@@ -417,48 +424,32 @@ async function loadMainChart(skipAnimation = false) {
             options: {
                 responsive: true,
                 maintainAspectRatio: false,
-                animation: skipAnimation ? false : {
-                    duration: 300,
-                    easing: 'easeOutQuart'
-                },
-                plugins: {
-                    legend: { display: false },
-                    tooltip: { mode: 'index', intersect: false }
-                },
-                scales: {
-                    x: { display: false },
-                    y: { display: false }
-                }
+                animation: skipAnimation ? false : { duration: 400, easing: 'easeOutQuart' },
+                plugins: { legend: { display: false }, tooltip: { mode: 'index', intersect: false } },
+                scales: { x: { display: false }, y: { display: false } }
             }
         });
-
-    } catch(e) { 
-        console.error("Erro chart principal", e);
-        if (e.message?.includes('401')) {
-            clearAuth();
-            showLoginScreen();
-        }
+    } catch (e) {
+        console.error('Erro chart principal:', e);
     }
 }
 
-// ⭐ Atualizado para skipAnimation
+// ===== HISTÓRICO DETALHE =====
+
 async function fetchHistoryAndRender(symbol, period) {
     const ctx = document.getElementById('detailChart')?.getContext('2d');
-    if(!ctx) return;
-    if(detailChart) detailChart.destroy();
+    if (!ctx) return;
+    if (detailChart) { detailChart.destroy(); detailChart = null; }
 
     try {
         const res = await fetch(`${API_BASE}/history/${symbol}?period=${period}`);
         const data = await res.json();
 
-        if (!data.prices || data.prices.length === 0) {
-            console.warn("Sem dados de preço para", symbol);
-            return;
-        }
+        if (!data.prices || data.prices.length === 0) return;
 
-        const grad = ctx.createLinearGradient(0,0,0,300);
-        grad.addColorStop(0, 'rgba(123,66,246,0.5)');
-        grad.addColorStop(1, 'rgba(123,66,246,0)');
+        const grad = ctx.createLinearGradient(0, 0, 0, 280);
+        grad.addColorStop(0, 'rgba(124,58,237,0.4)');
+        grad.addColorStop(1, 'rgba(124,58,237,0)');
 
         detailChart = new Chart(ctx, {
             type: 'line',
@@ -466,11 +457,11 @@ async function fetchHistoryAndRender(symbol, period) {
                 labels: data.dates || [],
                 datasets: [{
                     data: data.prices,
-                    borderColor: '#7b42f6',
+                    borderColor: '#7c3aed',
                     backgroundColor: grad,
                     borderWidth: 2,
                     pointRadius: 0,
-                    pointHoverRadius: 6,
+                    pointHoverRadius: 5,
                     fill: true,
                     tension: 0.4
                 }]
@@ -478,79 +469,88 @@ async function fetchHistoryAndRender(symbol, period) {
             options: {
                 responsive: true,
                 maintainAspectRatio: false,
-                animation: {
-                    duration: 300,
-                    easing: 'easeOutQuart'
-                },
+                animation: { duration: 300, easing: 'easeOutQuart' },
                 interaction: { mode: 'index', intersect: false },
-                plugins: { legend: false },
+                plugins: { legend: { display: false } },
                 scales: {
                     x: { display: false },
                     y: {
                         display: true,
                         position: 'right',
-                        grid: { color: 'rgba(255,255,255,0.05)' }
+                        grid: { color: 'rgba(255,255,255,0.04)' },
+                        ticks: { color: 'rgba(255,255,255,0.3)', font: { family: 'DM Mono', size: 9 } }
                     }
                 }
             }
         });
-    } catch(e) {
-        console.error("Erro ao carregar histórico", e);
+    } catch (e) {
+        console.error('Erro histórico:', e);
     }
 }
 
-// ========== BUSCA ==========
+// ===== BUSCA =====
 
 async function performSearch(q) {
-    const res = await fetch(`${API_BASE}/search?q=${q}`);
-    const data = await res.json();
-    const box = document.getElementById('search-results');
-    box.innerHTML = '';
-    
-    if(data.length > 0) {
-        box.style.display = 'block';
-        data.forEach(item => {
-            const img = item.icon ? `<img src="${item.icon}" style="width:16px;height:16px;border-radius:50%;object-fit:cover;">` : '';
-            const div = document.createElement('div');
-            div.className = 'search-item';
-            div.innerHTML = `${img} <strong>${item.symbol}</strong> <span class="search-tag">${item.type}</span>`;
-            div.onclick = () => {
-                document.getElementById('symbol').value = item.symbol;
-                box.style.display = 'none';
-            };
-            box.appendChild(div);
-        });
-    } else box.style.display = 'none';
+    try {
+        const res = await fetch(`${API_BASE}/search?q=${encodeURIComponent(q)}`);
+        const data = await res.json();
+        const box = document.getElementById('search-results');
+        box.innerHTML = '';
+
+        if (data.length > 0) {
+            box.style.display = 'block';
+            data.forEach(item => {
+                const imgHtml = item.icon
+                    ? `<img src="${item.icon}" alt="${item.symbol}" onerror="this.style.display='none'">`
+                    : '';
+                const div = document.createElement('div');
+                div.className = 'search-item';
+                div.innerHTML = `${imgHtml}<strong>${item.symbol}</strong><span style="font-size:11px;color:var(--text-2)">${item.name || ''}</span><span class="search-tag">${item.type}</span>`;
+                div.onclick = () => {
+                    document.getElementById('symbol').value = item.symbol;
+                    box.style.display = 'none';
+                };
+                box.appendChild(div);
+            });
+        } else {
+            box.style.display = 'none';
+        }
+    } catch (e) {
+        console.error('Erro busca:', e);
+    }
 }
 
-// ========== CARTEIRA ==========
+// ===== CARTEIRA =====
 
 async function fetchPortfolio() {
     if (!authToken) return;
-    
+
     try {
         const res = await fetch(`${API_BASE}/portfolio/balance`, {
             headers: getAuthHeaders()
         });
-        
+
         if (!res.ok) {
-            if (res.status === 401) {
-                clearAuth();
-                showLoginScreen();
-            }
+            if (res.status === 401) { clearAuth(); showLoginScreen(); }
             return;
         }
-        
+
         const data = await res.json();
         document.getElementById('total-balance').innerText = formatMoney(data.total_balance_usd);
         portfolioAssetsCount = (data.assets || []).length;
         portfolioSymbolSet = new Set((data.assets || []).map(a => normSymbolForCompare(a.real_symbol || a.symbol)));
         updateProfileBar();
-        
+
         const list = document.getElementById('assets-list');
         list.innerHTML = '';
-        if(data.assets.length === 0) {
-            list.innerHTML = '<div style="text-align:center;padding:20px;color:#666">Carteira vazia</div>';
+
+        if (data.assets.length === 0) {
+            list.innerHTML = `
+                <div class="empty-state">
+                    <div class="empty-icon">📭</div>
+                    <div class="empty-title">Carteira vazia</div>
+                    <div class="empty-sub">Adicione seu primeiro ativo para começar a acompanhar seu portfólio.</div>
+                </div>`;
             return;
         }
 
@@ -558,110 +558,119 @@ async function fetchPortfolio() {
             const div = document.createElement('div');
             div.className = 'asset-wrapper';
             const profit = asset.profit || 0;
-            const color = profit >= 0 ? '#00ff88' : '#ff4d4d';
-            
-            // Ícone com fallback e tamanho fixo
-            const iconSrc = asset.icon || '';
-            const iconHtml = iconSrc 
-                ? `<img src="${iconSrc}" class="asset-icon" onerror="this.style.display='none';">`
-                : '<div class="asset-icon" style="background:var(--accent);display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:bold;">' + asset.symbol.substring(0,2) + '</div>';
-            
+            const isProfit = profit >= 0;
+            const colorClass = isProfit ? 'text-green' : 'text-red';
+            const profitSign = isProfit ? '+' : '';
+            const pct = asset.percent_change ? `${asset.percent_change >= 0 ? '+' : ''}${asset.percent_change.toFixed(2)}%` : '';
+
+            const sym2 = (asset.symbol || '').substring(0, 2).toUpperCase();
+            const iconHtml = asset.icon
+                ? `<img src="${asset.icon}" class="asset-icon" alt="${asset.symbol}" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
+                   <div class="asset-icon-fallback" style="display:none;">${sym2}</div>`
+                : `<div class="asset-icon-fallback">${sym2}</div>`;
+
             div.innerHTML = `
-                <div class="asset-main" style="display:flex; justify-content:space-between; align-items:center;">
-                    <div style="display:flex; gap:10px; align-items:center; width:40%">
-                        ${iconHtml}
+                <div class="asset-main">
+                    <div class="asset-left">
+                        <div style="position:relative;width:34px;height:34px;flex-shrink:0;">
+                            ${iconHtml}
+                        </div>
                         <div>
-                            <div style="font-weight:bold; font-size:15px">${asset.symbol}</div>
-                            <div style="font-size:11px; color:#aaa">${formatMoney(asset.current_price)}</div>
+                            <div class="asset-name">${asset.symbol}</div>
+                            <div class="asset-price">${formatMoney(asset.current_price)} <span class="${colorClass}">${pct}</span></div>
                         </div>
                     </div>
-                    <div style="width:60px; height:30px"><canvas id="c-${asset.id}"></canvas></div>
-                    <div style="text-align:right; width:30%">
-                        <div style="font-weight:bold">${formatMoney(asset.position_value)}</div>
-                        <div style="color:${color}; font-size:11px">${profit>=0?'+':''}${formatMoney(profit)}</div>
+                    <div class="asset-spark"><canvas id="c-${asset.id}"></canvas></div>
+                    <div class="asset-values">
+                        <div class="asset-value">${formatMoney(asset.position_value)}</div>
+                        <div class="asset-profit ${colorClass}">${profitSign}${formatMoney(profit)}</div>
                     </div>
                 </div>
                 <div class="action-bar">
-                    <button class="icon-btn ai-btn" data-id="${asset.id}" style="color:#bca0dc;font-size:11px;">✨ Analisar</button>
+                    <button class="icon-btn ai-btn" data-id="${asset.id}">✨ Análise IA</button>
                     <button class="icon-btn sell-btn" data-id="${asset.id}">📉 Vender</button>
                 </div>
-                <div id="ai-${asset.id}" class="ai-analysis-text" style="display:none;margin-top:5px;padding:8px;background:rgba(0,0,0,0.3);color:#ddd;border-radius:8px"></div>
+                <div id="ai-${asset.id}" class="ai-analysis-text"></div>
             `;
-            
+
             div.querySelector('.asset-main').onclick = () => openDetail(asset);
             div.querySelector('.sell-btn').onclick = (e) => { e.stopPropagation(); openSellModal(asset); };
             div.querySelector('.ai-btn').onclick = (e) => { e.stopPropagation(); askAI(asset); };
 
             list.appendChild(div);
-            renderSpark(`c-${asset.id}`, asset.history, color);
+            renderSpark(`c-${asset.id}`, asset.history || [], isProfit ? '#10b981' : '#ef4444');
         });
-    } catch(e) { 
-        console.error(e);
-        if (e.message?.includes('401')) {
-            clearAuth();
-            showLoginScreen();
-        }
+    } catch (e) {
+        console.error('Erro fetchPortfolio:', e);
     }
 }
 
-// ========== MODAL VENDA ==========
+// ===== MODAL VENDA =====
 
 function openSellModal(asset) {
     assetForSale = asset;
     document.getElementById('modal-sell').classList.add('active');
-    
+
     const input = document.getElementById('sell-amount-input');
     input.value = asset.amount;
     input.max = asset.amount;
-    
-    document.getElementById('modal-sell-info').innerText = `Possui: ${asset.amount} | Média: ${formatMoney(asset.purchase_price)}`;
+
+    document.getElementById('modal-sell-info').innerText =
+        `Qtd atual: ${asset.amount} • Preço médio: ${formatMoney(asset.purchase_price)}`;
     updateSellCalc();
 }
 
 function updateSellCalc() {
-    if(!assetForSale) return;
+    if (!assetForSale) return;
     const input = document.getElementById('sell-amount-input');
-    let qty = parseFloat(input.value);
-    
-    if(qty > assetForSale.amount) { qty = assetForSale.amount; input.value = qty; }
-    if(qty < 0) qty = 0;
+    let qty = parseFloat(input.value) || 0;
+
+    if (qty > assetForSale.amount) { qty = assetForSale.amount; input.value = qty; }
+    if (qty < 0) qty = 0;
 
     const total = qty * assetForSale.current_price;
     const profit = (assetForSale.current_price - assetForSale.purchase_price) * qty;
     const isWin = profit >= 0;
 
-    const valEl = document.getElementById('sell-profit-estimate');
-    valEl.innerHTML = `Venda: ${formatMoney(total)}<br><span class="${isWin?'text-green':'text-red'}" style="font-size:14px">Resultado: ${formatMoney(profit)}</span>`;
+    document.getElementById('sell-profit-estimate').innerHTML =
+        `${formatMoney(total)}<br><span class="${isWin ? 'text-green' : 'text-red'}" style="font-size:13px;">
+            ${isWin ? '+' : ''}${formatMoney(profit)}
+        </span>`;
 }
 
 async function confirmSell() {
-    if(!assetForSale || !authToken) return;
+    if (!assetForSale || !authToken) return;
     const qty = parseFloat(document.getElementById('sell-amount-input').value);
+    if (!qty || qty <= 0) return;
+
     const btn = document.getElementById('modal-confirm');
-    
-    btn.innerText = "...";
+    btn.innerText = '...';
+    btn.disabled = true;
+
     try {
         const res = await fetch(`${API_BASE}/assets/${assetForSale.id}/sell`, {
             method: 'POST',
             headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
             body: JSON.stringify({ amount: qty })
         });
-        if(res.ok) {
+
+        if (res.ok) {
             closeModal();
             fetchPortfolio();
             loadMainChart();
+        } else if (res.status === 401) {
+            clearAuth();
+            showLoginScreen();
         } else {
-            if (res.status === 401) {
-                clearAuth();
-                showLoginScreen();
-            } else {
-                alert("Erro venda");
-            }
+            const err = await res.json().catch(() => ({}));
+            alert(err.detail || 'Erro ao vender');
         }
-    } catch(e) { 
-        alert("Erro conexão");
+    } catch (e) {
+        alert('Erro de conexão');
+    } finally {
+        btn.innerText = 'Confirmar Venda';
+        btn.disabled = false;
     }
-    finally { btn.innerText = "Confirmar"; }
 }
 
 function closeModal() {
@@ -669,211 +678,82 @@ function closeModal() {
     assetForSale = null;
 }
 
-// ========== DETALHES ==========
+// ===== DETALHE =====
 
 function openDetail(asset) {
-    document.getElementById('detail-view').classList.add('active');
+    const detailView = document.getElementById('detail-view');
+    detailView.classList.add('active');
+
     document.getElementById('detail-symbol').innerText = asset.symbol;
     document.getElementById('detail-price').innerText = formatMoney(asset.current_price);
-    
+    document.getElementById('days-held-badge').innerText = `Holding: ${asset.days_held || 0} dias`;
+
+    // Ícone com fallback
     const iconEl = document.getElementById('detail-icon');
+    const fallbackEl = document.getElementById('detail-icon-fallback');
     if (asset.icon) {
         iconEl.src = asset.icon;
         iconEl.style.display = 'block';
+        fallbackEl.style.display = 'none';
         iconEl.onerror = () => {
             iconEl.style.display = 'none';
+            fallbackEl.style.display = 'flex';
+            fallbackEl.innerText = asset.symbol.substring(0, 2).toUpperCase();
         };
     } else {
         iconEl.style.display = 'none';
+        fallbackEl.style.display = 'flex';
+        fallbackEl.innerText = asset.symbol.substring(0, 2).toUpperCase();
     }
-    
-    document.getElementById('days-held-badge').innerText = `Holding: ${asset.days_held} dias`;
-    
+
     document.querySelectorAll('.time-btn').forEach(b => b.classList.remove('active'));
     document.querySelector('[data-period="1mo"]')?.classList.add('active');
-    
-    // Adiciona botão de toggle candles
-    let candleBtn = document.getElementById('btn-toggle-candles');
-    if (!candleBtn) {
-        candleBtn = document.createElement('button');
-        candleBtn.id = 'btn-toggle-candles';
-        candleBtn.className = 'time-btn';
-        candleBtn.textContent = '📊 Candles';
-        candleBtn.style.marginLeft = '5px';
-        document.querySelector('.time-selector').appendChild(candleBtn);
-        candleBtn.onclick = () => {
-            const isCandleMode = candleBtn.classList.contains('active');
-            if (isCandleMode) {
-                candleBtn.classList.remove('active');
-                fetchHistoryAndRender(asset.real_symbol, '1mo');
-            } else {
-                candleBtn.classList.add('active');
-                document.querySelectorAll('.time-btn:not(#btn-toggle-candles)').forEach(b => b.classList.remove('active'));
-                renderCandleChart('detailChart', asset.real_symbol, '1mo');
-            }
-        };
-    }
-    
-    fetchHistoryAndRender(asset.real_symbol, '1mo');
+    fetchHistoryAndRender(asset.real_symbol || asset.symbol, '1mo');
 }
 
-async function fetchHistoryAndRender(symbol, period) {
-    const ctx = document.getElementById('detailChart')?.getContext('2d');
-    if(!ctx) return;
-    if(detailChart) detailChart.destroy();
-
-    try {
-        const res = await fetch(`${API_BASE}/history/${symbol}?period=${period}`);
-        const data = await res.json();
-
-        if (!data.prices || data.prices.length === 0) {
-            console.warn("Sem dados de preço para", symbol);
-            return;
-        }
-
-        const grad = ctx.createLinearGradient(0,0,0,300);
-        grad.addColorStop(0, 'rgba(123,66,246,0.5)');
-        grad.addColorStop(1, 'rgba(123,66,246,0)');
-
-        detailChart = new Chart(ctx, {
-            type: 'line',
-            data: {
-                labels: data.dates || [],
-                datasets: [{
-                    data: data.prices,
-                    borderColor: '#7b42f6',
-                    backgroundColor: grad,
-                    borderWidth: 2,
-                    pointRadius: 0,
-                    pointHoverRadius: 6,
-                    fill: true,
-                    tension: 0.4
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                animation: {
-                    duration: 300,
-                    easing: 'easeOutQuart'
-                },
-                interaction: { mode: 'index', intersect: false },
-                plugins: { legend: false },
-                scales: {
-                    x: { display: false },
-                    y: {
-                        display: true,
-                        position: 'right',
-                        grid: { color: 'rgba(255,255,255,0.05)' }
-                    }
-                }
-            }
-        });
-    } catch(e) {
-        console.error("Erro ao carregar histórico", e);
-    }
-}
-
-// ========== HELPERS ==========
-
-async function handleAddAsset() {
-    if (!authToken) {
-        showLoginScreen();
-        return;
-    }
-
-    const inputSymNorm = normSymbolForCompare(document.getElementById('symbol').value);
-    const isExistingAsset = portfolioSymbolSet.has(inputSymNorm);
-
-    if (!isPremium() && portfolioAssetsCount >= FREE_ASSET_LIMIT && !isExistingAsset) {
-        showUpgradeModal(`Você atingiu o limite de ${FREE_ASSET_LIMIT} ativos no plano grátis. Vire Premium por US$ 15/mês.`);
-        return;
-    }
-    
-    const s = document.getElementById('symbol').value.trim();
-    const a = document.getElementById('amount').value;
-    const p = document.getElementById('price').value;
-    const d = document.getElementById('date').value;
-
-    if(!s || !a || !p) return alert("Preencha tudo");
-    
-    const btn = document.getElementById('btn-save');
-    btn.innerText = "..."; 
-    btn.disabled = true;
-    
-    try {
-        const res = await fetch(`${API_BASE}/assets/`, {
-            method: 'POST',
-            headers: { ...getAuthHeaders(), 'Content-Type':'application/json' },
-            body: JSON.stringify({ symbol:s, amount: parseFloat(a), purchase_price: parseFloat(p), purchase_date: d || "" })
-        });
-        if(res.ok) {
-            document.getElementById('add-form').reset();
-            switchTab('dashboard');
-            fetchPortfolio();
-            loadMainChart();
-        } else {
-            if (res.status === 401) {
-                clearAuth();
-                showLoginScreen();
-            } else if (res.status === 402) {
-                let err = {};
-                try { err = await res.json(); } catch(e) {}
-                showUpgradeModal(err.detail || `Recurso premium. Vire Premium por US$ 15/mês.`);
-            } else {
-                alert("Não encontrado");
-            }
-        }
-    } catch(e) { 
-        alert("Erro");
-    }
-    finally { 
-        btn.innerText = "Salvar"; 
-        btn.disabled = false; 
-    }
-}
+// ===== IA INDIVIDUAL =====
 
 async function askAI(asset) {
     if (!authToken) return;
 
     if (!isPremium()) {
-        showUpgradeModal("Recurso premium: sistema de IA disponível apenas no Premium. Vire Premium por US$ 15/mês.");
+        showUpgradeModal('Análise IA individual disponível apenas no plano Premium.');
         return;
     }
-    
+
     const div = document.getElementById(`ai-${asset.id}`);
-    div.style.display='block'; 
-    div.innerText='...';
+    if (!div) return;
+    div.style.display = 'block';
+    div.innerHTML = '<span style="color:var(--text-3)">Analisando...</span>';
+
     try {
-        const res = await fetch(`${API_BASE}/analysis/${asset.symbol}?change=${asset.percent_change}`, {
-            headers: getAuthHeaders()
-        });
+        const res = await fetch(
+            `${API_BASE}/analysis/${encodeURIComponent(asset.symbol)}?change=${asset.percent_change || 0}`,
+            { headers: getAuthHeaders() }
+        );
+
         if (res.ok) {
             const data = await res.json();
-            div.innerHTML = `<b style="color:#bca0dc">IA:</b> ${data.analysis}`;
+            div.innerHTML = `<strong style="color:var(--accent-light)">IA:</strong> ${data.analysis}`;
+        } else if (res.status === 402) {
+            div.style.display = 'none';
+            const err = await res.json().catch(() => ({}));
+            showUpgradeModal(err.detail || 'Recurso Premium.');
         } else {
-            if (res.status === 402) {
-                let err = {};
-                try { err = await res.json(); } catch(e) {}
-                div.style.display='none';
-                showUpgradeModal(err.detail || "Recurso premium: IA apenas no Premium. Vire Premium por US$ 15/mês.");
-            } else {
-                div.style.display='none';
-            }
+            div.style.display = 'none';
         }
-    } catch(e) { 
-        div.style.display='none'; 
+    } catch (e) {
+        div.style.display = 'none';
     }
 }
 
+// ===== IA PORTFOLIO =====
+
 async function handlePortfolioAI() {
-    if (!authToken) {
-        showLoginScreen();
-        return;
-    }
+    if (!authToken) { showLoginScreen(); return; }
 
     if (!isPremium()) {
-        showUpgradeModal("Recurso premium: análise consolidada da carteira disponível apenas no Premium. Vire Premium por US$ 15/mês.");
+        showUpgradeModal('Análise consolidada da carteira disponível apenas no plano Premium.');
         return;
     }
 
@@ -881,94 +761,163 @@ async function handlePortfolioAI() {
     const badge = document.getElementById('ai-portfolio-change');
     if (!box || !badge) return;
 
-    box.innerText = 'Gerando análise da sua carteira nas últimas 24 horas...';
+    box.innerText = 'Gerando análise...';
 
     try {
         const res = await fetch(`${API_BASE}/analysis/portfolio`, {
             headers: getAuthHeaders()
         });
+
         if (res.ok) {
             const data = await res.json();
-            box.innerText = data.analysis || 'Não foi possível gerar uma análise no momento.';
+            box.innerText = data.analysis || 'Análise indisponível no momento.';
 
             if (typeof data.change_pct === 'number') {
                 const v = data.change_pct;
                 badge.classList.remove('positive', 'negative');
-                const formatted = `${v >= 0 ? '+' : ''}${v.toFixed(2)}%`;
-                badge.innerText = formatted;
-                if (v > 0) badge.classList.add('positive');
-                else if (v < 0) badge.classList.add('negative');
+                badge.innerText = `${v >= 0 ? '+' : ''}${v.toFixed(2)}%`;
+                badge.classList.add(v > 0 ? 'positive' : v < 0 ? 'negative' : '');
             }
         } else if (res.status === 402) {
-            let err = {};
-            try { err = await res.json(); } catch(e) {}
-            showUpgradeModal(err.detail || "Recurso premium: análise consolidada da carteira apenas no Premium. Vire Premium por US$ 15/mês.");
+            const err = await res.json().catch(() => ({}));
+            showUpgradeModal(err.detail || 'Recurso Premium.');
+            box.innerText = 'Disponível apenas no plano Premium.';
         } else {
-            let msg = 'Erro ao buscar análise da carteira.';
-            try {
-                const err = await res.json();
-                if (err.detail) msg = typeof err.detail === 'string' ? err.detail : JSON.stringify(err.detail);
-            } catch (_) {}
-            box.innerText = msg;
+            box.innerText = 'Erro ao buscar análise.';
         }
     } catch (e) {
-        box.innerText = 'Erro de conexão ao consultar a IA. Verifique se o servidor está rodando.';
+        box.innerText = 'Erro de conexão com o servidor.';
     }
 }
 
+// ===== SPARKLINE =====
+
 function renderSpark(id, data, color) {
     const ctx = document.getElementById(id)?.getContext('2d');
-    if(!ctx) return;
+    if (!ctx || !data || data.length === 0) return;
+
     new Chart(ctx, {
         type: 'line',
-        data: { labels: data.map((_, i) => i), datasets: [{ data: data, borderColor: color, borderWidth: 2, pointRadius: 0, tension: 0.4, fill: false }] },
-        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: false, tooltip: false }, scales: { x: { display: false }, y: { display: false } }, layout: { padding: 0 } }
+        data: {
+            labels: data.map((_, i) => i),
+            datasets: [{
+                data,
+                borderColor: color,
+                borderWidth: 1.5,
+                pointRadius: 0,
+                tension: 0.4,
+                fill: false
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { display: false }, tooltip: { enabled: false } },
+            scales: { x: { display: false }, y: { display: false } }
+        }
     });
 }
+
+// ===== TABS =====
 
 function switchTab(t) {
     document.querySelectorAll('.container').forEach(e => e.classList.remove('active'));
-    const el = document.getElementById(t);
-    if (el) el.classList.add('active');
-    const navCarteira = document.getElementById('nav-carteira');
-    const navAdicionar = document.getElementById('nav-adicionar');
-    if (navCarteira) navCarteira.classList.toggle('active', t === 'dashboard');
-    if (navAdicionar) navAdicionar.classList.toggle('active', t === 'add-asset');
+    document.getElementById(t)?.classList.add('active');
+
+    document.getElementById('nav-carteira')?.classList.toggle('active', t === 'dashboard');
+    document.getElementById('nav-adicionar')?.classList.toggle('active', t === 'add-asset');
+
     if (t === 'dashboard') loadMainChart();
 }
 
-chrome.notifications.create({
-    type: 'basic',
-    iconUrl: 'icon.png',
-    title: 'Alerta de Preco - Purp',
-    message: `${symbol} atingiu US$ ${price.toFixed(2)}`
-});
+// ===== ADD ASSET =====
+
+async function handleAddAsset() {
+    if (!authToken) { showLoginScreen(); return; }
+
+    const symRaw = document.getElementById('symbol').value.trim();
+    const inputSymNorm = normSymbolForCompare(symRaw);
+    const isExisting = portfolioSymbolSet.has(inputSymNorm);
+
+    if (!isPremium() && portfolioAssetsCount >= FREE_ASSET_LIMIT && !isExisting) {
+        showUpgradeModal(`Limite de ${FREE_ASSET_LIMIT} ativos atingido. Vire Premium para ilimitados.`);
+        return;
+    }
+
+    const amount = document.getElementById('amount').value;
+    const price = document.getElementById('price').value;
+    const purchaseDate = document.getElementById('date').value;
+
+    if (!symRaw || !amount || !price) {
+        alert('Preencha símbolo, quantidade e preço.');
+        return;
+    }
+
+    const btn = document.getElementById('btn-save');
+    btn.innerText = '...';
+    btn.disabled = true;
+
+    try {
+        const res = await fetch(`${API_BASE}/assets/`, {
+            method: 'POST',
+            headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                symbol: symRaw,
+                amount: parseFloat(amount),
+                purchase_price: parseFloat(price),
+                purchase_date: purchaseDate || ''
+            })
+        });
+
+        if (res.ok) {
+            document.getElementById('add-form')?.reset();
+            document.getElementById('symbol').value = '';
+            document.getElementById('amount').value = '';
+            document.getElementById('price').value = '';
+            document.getElementById('date').value = '';
+            switchTab('dashboard');
+            fetchPortfolio();
+            loadMainChart();
+        } else if (res.status === 401) {
+            clearAuth();
+            showLoginScreen();
+        } else if (res.status === 402) {
+            const err = await res.json().catch(() => ({}));
+            showUpgradeModal(err.detail || 'Recurso Premium.');
+        } else if (res.status === 404) {
+            alert('Ativo não encontrado. Verifique o símbolo.');
+        } else {
+            alert('Erro ao salvar ativo.');
+        }
+    } catch (e) {
+        alert('Erro de conexão.');
+    } finally {
+        btn.innerText = 'Salvar Ativo';
+        btn.disabled = false;
+    }
+}
+
+// ===== EXPORT CSV =====
 
 async function exportCSV() {
-    const res = await fetch(`${API_BASE}/portfolio/balance`, {
-        headers: getAuthHeaders()
-    });
-    const data = await res.json();
+    if (!authToken) return;
+    try {
+        const res = await fetch(`${API_BASE}/portfolio/balance`, { headers: getAuthHeaders() });
+        const data = await res.json();
 
-    let csv = 'Simbolo,Quantidade,Preco Compra,Preco Atual,Valor,Lucro/Prejuizo\n';
-    data.assets.forEach(a => {
-        csv += `${a.symbol},${a.amount},${a.purchase_price},${a.current_price},${a.position_value},${a.profit}\n`;
-    });
+        let csv = 'Simbolo,Quantidade,Preco Compra,Preco Atual,Valor,Lucro/Prejuizo\n';
+        (data.assets || []).forEach(a => {
+            csv += `${a.symbol},${a.amount},${a.purchase_price},${a.current_price},${a.position_value},${a.profit}\n`;
+        });
 
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'purp-carteira.csv';
-    a.click();
+        const blob = new Blob([csv], { type: 'text/csv' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = 'purp-carteira.csv';
+        link.click();
+        URL.revokeObjectURL(url);
+    } catch (e) {
+        console.error('Erro ao exportar CSV:', e);
+    }
 }
-
-// Função para converter USD para BRL
-async function getExchangeRate(currency = 'BRL') {
-    const res = await fetch(`https://api.exchangerate-api.com/v4/latest/USD`);
-    const data = await res.json();
-    return data.rates[currency];
-}
-
-// Uso: multiplique qualquer valor USD pela taxa:
-const brlValue = usdValue * await getExchangeRate('BRL');
