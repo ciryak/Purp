@@ -1,14 +1,16 @@
 """
-Purp — Data & AI services.
-Fixes applied:
-  - search_symbols always returns 'icon' field (not 'thumb')
-  - BTC/ETH hardcoded entries now include real CoinGecko thumb URLs
-  - get_asset_data: stocks that contain '.' or start with '^' skip CoinGecko
-  - real_symbol for stocks never gets '-USD' suffix unless yfinance requires it
-  - Gemini: google-genai v1 API (client.models.generate_content) — verified
-  - All timeouts guarded; every function returns safe defaults on error
+Purp — Data & AI services v3.
+Bugs fixed:
+  - _cg_price: removed duplicate/corrupted try block
+  - _cg_history: removed duplicate force_hourly param
+  - get_asset_data: removed all duplicate lines, unified logic
+  - get_historical_data: removed force_hourly call, fixed interval logic
+  - get_portfolio_ai_analysis: removed duplicate return
+  - _pct_from_series: used consistently for 24h change
+  - Price cache (60s TTL) to avoid duplicate API calls in same request batch
 """
 import os
+import threading
 import time
 import yfinance as yf
 from google import genai
@@ -35,74 +37,70 @@ except Exception as e:
     print(f"⚠️  Gemini init error: {e}")
     _gemini_client = None
 
-# ── CoinGecko cache ────────────────────────────────────────────────────────────
+# ── Price cache (60s TTL) ──────────────────────────────────────────────────────
+_price_cache: dict[str, tuple[dict, float]] = {}
+_price_cache_lock = threading.Lock()
+_PRICE_TTL = 60
+
+def _cache_get(key: str) -> dict | None:
+    with _price_cache_lock:
+        entry = _price_cache.get(key)
+        if entry and time.time() - entry[1] < _PRICE_TTL:
+            return entry[0]
+    return None
+
+def _cache_set(key: str, value: dict) -> None:
+    with _price_cache_lock:
+        _price_cache[key] = (value, time.time())
+
+# ── CoinGecko coin info cache ──────────────────────────────────────────────────
 _cg_cache: dict[str, dict | None] = {
-    "btc": {
-        "id": "bitcoin", "symbol": "btc", "name": "Bitcoin",
-        "thumb": "https://assets.coingecko.com/coins/images/1/thumb/bitcoin.png"
-    },
-    "bitcoin": {
-        "id": "bitcoin", "symbol": "btc", "name": "Bitcoin",
-        "thumb": "https://assets.coingecko.com/coins/images/1/thumb/bitcoin.png"
-    },
-    "eth": {
-        "id": "ethereum", "symbol": "eth", "name": "Ethereum",
-        "thumb": "https://assets.coingecko.com/coins/images/279/thumb/ethereum.png"
-    },
-    "ethereum": {
-        "id": "ethereum", "symbol": "eth", "name": "Ethereum",
-        "thumb": "https://assets.coingecko.com/coins/images/279/thumb/ethereum.png"
-    },
-    "sol": {
-        "id": "solana", "symbol": "sol", "name": "Solana",
-        "thumb": "https://assets.coingecko.com/coins/images/4128/thumb/solana.png"
-    },
-    "bnb": {
-        "id": "binancecoin", "symbol": "bnb", "name": "BNB",
-        "thumb": "https://assets.coingecko.com/coins/images/825/thumb/bnb-icon2_2x.png"
-    },
-    "xrp": {
-        "id": "ripple", "symbol": "xrp", "name": "XRP",
-        "thumb": "https://assets.coingecko.com/coins/images/44/thumb/xrp-symbol-white-128.png"
-    },
-    "ada": {
-        "id": "cardano", "symbol": "ada", "name": "Cardano",
-        "thumb": "https://assets.coingecko.com/coins/images/975/thumb/cardano.png"
-    },
-    "doge": {
-        "id": "dogecoin", "symbol": "doge", "name": "Dogecoin",
-        "thumb": "https://assets.coingecko.com/coins/images/5/thumb/dogecoin.png"
-    },
+    "btc":      {"id": "bitcoin",       "symbol": "btc",  "name": "Bitcoin",   "thumb": "https://assets.coingecko.com/coins/images/1/thumb/bitcoin.png"},
+    "bitcoin":  {"id": "bitcoin",       "symbol": "btc",  "name": "Bitcoin",   "thumb": "https://assets.coingecko.com/coins/images/1/thumb/bitcoin.png"},
+    "eth":      {"id": "ethereum",      "symbol": "eth",  "name": "Ethereum",  "thumb": "https://assets.coingecko.com/coins/images/279/thumb/ethereum.png"},
+    "ethereum": {"id": "ethereum",      "symbol": "eth",  "name": "Ethereum",  "thumb": "https://assets.coingecko.com/coins/images/279/thumb/ethereum.png"},
+    "sol":      {"id": "solana",        "symbol": "sol",  "name": "Solana",    "thumb": "https://assets.coingecko.com/coins/images/4128/thumb/solana.png"},
+    "bnb":      {"id": "binancecoin",   "symbol": "bnb",  "name": "BNB",       "thumb": "https://assets.coingecko.com/coins/images/825/thumb/bnb-icon2_2x.png"},
+    "xrp":      {"id": "ripple",        "symbol": "xrp",  "name": "XRP",       "thumb": "https://assets.coingecko.com/coins/images/44/thumb/xrp-symbol-white-128.png"},
+    "ada":      {"id": "cardano",       "symbol": "ada",  "name": "Cardano",   "thumb": "https://assets.coingecko.com/coins/images/975/thumb/cardano.png"},
+    "doge":     {"id": "dogecoin",      "symbol": "doge", "name": "Dogecoin",  "thumb": "https://assets.coingecko.com/coins/images/5/thumb/dogecoin.png"},
+    "avax":     {"id": "avalanche-2",   "symbol": "avax", "name": "Avalanche", "thumb": "https://assets.coingecko.com/coins/images/12559/thumb/Avalanche_Circle_RedWhite_Trans.png"},
+    "dot":      {"id": "polkadot",      "symbol": "dot",  "name": "Polkadot",  "thumb": "https://assets.coingecko.com/coins/images/12171/thumb/polkadot.png"},
+    "link":     {"id": "chainlink",     "symbol": "link", "name": "Chainlink", "thumb": "https://assets.coingecko.com/coins/images/877/thumb/chainlink-new-logo.png"},
+    "matic":    {"id": "matic-network", "symbol": "matic","name": "Polygon",   "thumb": "https://assets.coingecko.com/coins/images/4713/thumb/matic-token-icon.png"},
+    "shib":     {"id": "shiba-inu",     "symbol": "shib", "name": "Shiba Inu", "thumb": "https://assets.coingecko.com/coins/images/11939/thumb/shiba.png"},
 }
 
-# Known stock tickers — skip CoinGecko for these
 _KNOWN_STOCKS = {
     "AAPL","MSFT","GOOGL","GOOG","AMZN","TSLA","NVDA","META","NFLX",
     "AMD","INTC","ORCL","IBM","CRM","ADBE","PYPL","SQ","SHOP",
     "BABA","JD","PDD","TCEHY","BIDU","NIO","LI","XPEV",
-    "BRK.B","JPM","BAC","GS","MS","WFC","C",
-    "SPY","QQQ","IWM","GLD","SLV","USO","TLT","VTI",
+    "BRK.B","JPM","BAC","GS","MS","WFC","C","V","MA","COIN",
+    "SPY","QQQ","IWM","GLD","SLV","USO","TLT","VTI","ARKK",
     "^GSPC","^IXIC","^DJI","^BVSP","^FTSE","^N225",
 }
 
-_CG_HEADERS = {"User-Agent": "Purp/1.0", "Accept": "application/json"}
+_CG_HEADERS = {"User-Agent": "Purp/2.0", "Accept": "application/json"}
 
 
 def _is_likely_stock(symbol: str) -> bool:
-    """Return True if symbol is almost certainly a stock/ETF, not crypto."""
     s = symbol.upper().strip()
     if s in _KNOWN_STOCKS:
         return True
     if s.startswith("^"):
         return True
-    if "." in s:  # e.g. BRK.B, HAPV3.SA
+    if "." in s:
         return True
-    # All-caps, 1-5 chars with no numeric — could be either; let CoinGecko try
     return False
 
 
+def _pct_from_series(series: list[float]) -> float:
+    if len(series) < 2 or series[0] <= 0:
+        return 0.0
+    return ((series[-1] - series[0]) / series[0]) * 100
+
+
 def _cg_find(symbol: str) -> dict | None:
-    """Resolve symbol → CoinGecko coin info dict with caching."""
     s = symbol.lower().strip()
     if s in _cg_cache:
         return _cg_cache[s]
@@ -119,8 +117,8 @@ def _cg_find(symbol: str) -> dict | None:
         pool = exact if exact else coins[:3]
 
         def rank(c):
-            r = c.get("market_cap_rank")
-            return 999_999 if r is None else int(r)
+            rv = c.get("market_cap_rank")
+            return 999_999 if rv is None else int(rv)
 
         best = sorted(pool, key=rank)[0] if pool else None
         if best and best.get("id"):
@@ -142,24 +140,11 @@ def _cg_find(symbol: str) -> dict | None:
 
 
 def _cg_price(coin_id: str) -> tuple[float | None, float | None]:
-    """Return (price_usd, change_24h_pct) with CoinGecko market precision."""
-    try:
-        r = requests.get(
-            "https://api.coingecko.com/api/v3/coins/markets",
-            params={
-                "vs_currency": "usd",
-                "ids": coin_id,
-                "precision": "full",
-                "price_change_percentage": "24h",
-            },
-            headers=_CG_HEADERS, timeout=6
-        )
-        r.raise_for_status()
-        payload = r.json() or []
-        d = payload[0] if payload else {}
-        p = d.get("current_price")
-        ch = d.get("price_change_percentage_24h")
     """Return (price_usd, change_24h_pct)."""
+    cached = _cache_get(f"cg_price_{coin_id}")
+    if cached:
+        return cached.get("price"), cached.get("change")
+
     try:
         r = requests.get(
             "https://api.coingecko.com/api/v3/simple/price",
@@ -168,9 +153,11 @@ def _cg_price(coin_id: str) -> tuple[float | None, float | None]:
         )
         r.raise_for_status()
         d = r.json().get(coin_id, {})
-        p = d.get("usd")
-        ch = d.get("usd_24h_change")
-        return (float(p) if p else None, float(ch) if ch is not None else None)
+        price = float(d["usd"]) if d.get("usd") else None
+        change = float(d["usd_24h_change"]) if d.get("usd_24h_change") is not None else None
+        if price:
+            _cache_set(f"cg_price_{coin_id}", {"price": price, "change": change})
+        return price, change
     except Exception as e:
         print(f"⚠️  CoinGecko price '{coin_id}': {e}")
         return None, None
@@ -192,7 +179,6 @@ def _cg_spark(coin_id: str, days: int = 1) -> list[float]:
         return []
 
 
-def _cg_history(coin_id: str, days: int, force_hourly: bool = False) -> dict:
 def _cg_history(coin_id: str, days: int) -> dict:
     """Return {"dates": [...], "prices": [...]}."""
     try:
@@ -203,12 +189,6 @@ def _cg_history(coin_id: str, days: int) -> dict:
         )
         r.raise_for_status()
         raw = r.json().get("prices", [])
-        if force_hourly and raw:
-            by_hour = {}
-            for ms, price in raw:
-                hour_key = int(ms // 3_600_000)
-                by_hour[hour_key] = (ms, price)
-            raw = [by_hour[k] for k in sorted(by_hour.keys())][-24:]
         is_intraday = days <= 5
         fmt = "%H:%M" if is_intraday else "%m/%d"
         dates, vals = [], []
@@ -227,59 +207,50 @@ def _cg_history(coin_id: str, days: int) -> dict:
 # ── Public API ─────────────────────────────────────────────────────────────────
 
 def get_asset_data(symbol: str) -> dict | None:
-    """
-    Fetch current price, 24h change, sparkline, and icon for any asset.
-    Returns None if asset cannot be resolved.
-    """
+    """Fetch current price, 24h change, sparkline, and icon for any asset."""
     if not symbol:
         return None
 
     symbol = symbol.upper().strip()
     base = symbol.replace("-USD", "").strip()
 
-    def _pct_from_series(series: list[float]) -> float:
-        if len(series) < 2 or series[0] <= 0:
-            return 0.0
-        return ((series[-1] - series[0]) / series[0]) * 100
+    cached = _cache_get(f"asset_{base}")
+    if cached:
+        return cached
 
-    # ── 1) Try CoinGecko for likely crypto
+    # ── 1) CoinGecko for crypto
     if not _is_likely_stock(base):
         try:
             coin = _cg_find(base)
             if coin and coin.get("id"):
                 price, change = _cg_price(coin["id"])
                 if price and price > 0:
-                    intraday = _cg_history(coin["id"], 1, force_hourly=True)
-                    spark = intraday["prices"]
-                    change_hourly = _pct_from_series(spark)
                     spark = _cg_spark(coin["id"], days=1)
-                    return {
+                    result = {
                         "symbol": base,
                         "real_symbol": base,
                         "current_price": price,
-                        "percent_change": change_hourly if spark else (change or 0.0),
-                        "percent_change": change or 0.0,
+                        "percent_change": change or _pct_from_series(spark) or 0.0,
                         "history": spark[-40:] if spark else [price],
                         "type": "crypto",
                         "icon": coin.get("thumb") or "",
                     }
+                    _cache_set(f"asset_{base}", result)
+                    return result
         except Exception as e:
             print(f"⚠️  CoinGecko asset '{base}': {e}")
 
-    # ── 2) Fallback to Yahoo Finance
+    # ── 2) Yahoo Finance fallback
     for sym in [symbol, base, f"{base}-USD"]:
         try:
             ticker = yf.Ticker(sym)
-            hist = ticker.history(period="2d", interval="60m")
             hist = ticker.history(period="1d", interval="15m")
             if hist.empty:
                 continue
 
             price = float(hist["Close"].iloc[-1])
-            closes = [float(v) for v in hist["Close"].tolist() if v is not None][-24:]
+            closes = [float(v) for v in hist["Close"].tolist() if v is not None]
             change = _pct_from_series(closes)
-            open_p = float(hist["Open"].iloc[0])
-            change = ((price - open_p) / open_p * 100) if open_p > 0 else 0.0
 
             info = {}
             try:
@@ -290,26 +261,20 @@ def get_asset_data(symbol: str) -> dict | None:
             quote_type = info.get("quoteType", "")
             is_crypto = "CRYPTOCURRENCY" in quote_type or sym.endswith("-USD")
             asset_type = "crypto" if is_crypto else "stock"
-
-            # real_symbol: store without -USD for stocks
             real_sym = sym if is_crypto else base
+            icon = info.get("logo_url") or info.get("image") or ""
 
-            icon = (
-                info.get("logo_url")
-                or info.get("image")
-                or ""
-            )
-
-            return {
+            result = {
                 "symbol": base,
                 "real_symbol": real_sym,
                 "current_price": price,
                 "percent_change": change,
                 "history": closes[-40:] if closes else [price],
-                "history": hist["Close"].tolist()[-40:],
                 "type": asset_type,
                 "icon": icon,
             }
+            _cache_set(f"asset_{base}", result)
+            return result
         except Exception as e:
             print(f"⚠️  yfinance '{sym}': {e}")
             continue
@@ -326,34 +291,30 @@ def get_historical_data(symbol: str, period: str = "1mo") -> dict:
     base = symbol.upper().strip().replace("-USD", "")
     days_map = {"1d": 1, "5d": 5, "1mo": 30, "3mo": 90, "6mo": 180, "1y": 365, "2y": 730}
 
-    # Try CoinGecko for crypto
     if not _is_likely_stock(base):
         try:
             coin = _cg_find(base)
             if coin and coin.get("id"):
                 days = days_map.get(period, 30)
-                result = _cg_history(coin["id"], days, force_hourly=(period == "1d"))
                 result = _cg_history(coin["id"], days)
                 if result["prices"]:
                     return result
         except Exception as e:
             print(f"⚠️  CoinGecko history '{base}': {e}")
 
-    # Yahoo Finance fallback
+    # Yahoo Finance — use 60m interval only for intraday
+    yf_interval = "60m" if period == "1d" else "1d"
     for sym in [symbol, base, f"{base}-USD"]:
         try:
-            interval = "60m" if period == "1d" else None
-            hist = yf.Ticker(sym).history(period=period, interval=interval) if interval else yf.Ticker(sym).history(period=period)
-            hist = yf.Ticker(sym).history(period=period)
+            hist = yf.Ticker(sym).history(period=period, interval=yf_interval)
+            if hist.empty:
+                hist = yf.Ticker(sym).history(period=period)
             if hist.empty:
                 continue
             is_intraday = period in ("1d", "5d")
             fmt = "%H:%M" if is_intraday else "%m/%d"
             dates = [d.strftime(fmt) for d in hist.index]
             prices = hist["Close"].tolist()
-            if period == "1d":
-                dates = dates[-24:]
-                prices = prices[-24:]
             return {"dates": dates, "prices": prices}
         except Exception as e:
             print(f"⚠️  yfinance history '{sym}': {e}")
@@ -363,14 +324,10 @@ def get_historical_data(symbol: str, period: str = "1mo") -> dict:
 
 
 def search_symbols(query: str) -> list[dict]:
-    """
-    Search both CoinGecko and Yahoo Finance.
-    Always returns list of {"symbol", "name", "type", "icon"}.
-    """
+    """Search CoinGecko and Yahoo Finance. Returns list of {"symbol","name","type","icon"}."""
     results: list[dict] = []
     seen: set[str] = set()
 
-    # CoinGecko
     try:
         r = requests.get(
             f"https://api.coingecko.com/api/v3/search?query={query}",
@@ -385,12 +342,11 @@ def search_symbols(query: str) -> list[dict]:
                     "symbol": sym,
                     "name": c.get("name", ""),
                     "type": "CRYPTO",
-                    "icon": c.get("thumb") or c.get("large") or "",  # always 'icon'
+                    "icon": c.get("thumb") or c.get("large") or "",
                 })
     except Exception as e:
         print(f"⚠️  CoinGecko search: {e}")
 
-    # Yahoo Finance
     try:
         r = requests.get(
             f"https://query2.finance.yahoo.com/v1/finance/search?q={query}&quotesCount=6",
@@ -399,7 +355,6 @@ def search_symbols(query: str) -> list[dict]:
         for q in r.json().get("quotes", []):
             sym = (q.get("symbol") or "").upper()
             qtype = (q.get("quoteType") or "").upper()
-            # Skip crypto duplicates already found via CoinGecko
             if not sym or sym in seen or qtype == "CRYPTOCURRENCY":
                 continue
             seen.add(sym)
@@ -407,7 +362,7 @@ def search_symbols(query: str) -> list[dict]:
                 "symbol": sym,
                 "name": q.get("shortname") or q.get("longname") or sym,
                 "type": "STOCK" if qtype in ("EQUITY", "ETF", "INDEX") else qtype or "STOCK",
-                "icon": "",  # Yahoo doesn't provide icons directly
+                "icon": "",
             })
     except Exception as e:
         print(f"⚠️  Yahoo search: {e}")
@@ -416,7 +371,6 @@ def search_symbols(query: str) -> list[dict]:
 
 
 # ── AI ────────────────────────────────────────────────────────────────────────
-
 
 def get_ai_status() -> dict:
     return {
@@ -428,7 +382,6 @@ def get_ai_status() -> dict:
 
 
 def _extract_gemini_text(res) -> str:
-    """Safely extract text from Gemini response."""
     try:
         if hasattr(res, "text") and res.text:
             return res.text
@@ -444,7 +397,6 @@ def _extract_gemini_text(res) -> str:
 
 
 def get_ai_analysis(symbol: str, change: float) -> str:
-    """Return 1-2 sentence AI analysis for a single asset."""
     if not _gemini_client:
         return "⚠️ Gemini API not configured. Add GEMINI_API_KEY to your environment."
 
@@ -460,15 +412,13 @@ def get_ai_analysis(symbol: str, change: float) -> str:
             model="gemini-1.5-flash",
             contents=prompt,
         )
-        text = _extract_gemini_text(res)
-        return text or "Analysis temporarily unavailable."
+        return _extract_gemini_text(res) or "Analysis temporarily unavailable."
     except Exception as e:
         print(f"❌ Gemini error for {symbol}: {e}")
-        return f"AI analysis temporarily unavailable."
+        return "AI analysis temporarily unavailable."
 
 
 def get_portfolio_ai_analysis(portfolio_change: float, assets: list[dict]) -> str:
-    """Return 2-3 sentence AI analysis for the whole portfolio."""
     if not _gemini_client:
         return "⚠️ Gemini API not configured. Add GEMINI_API_KEY to your environment."
 
@@ -490,9 +440,7 @@ def get_portfolio_ai_analysis(portfolio_change: float, assets: list[dict]) -> st
             model="gemini-1.5-flash",
             contents=prompt,
         )
-        text = _extract_gemini_text(res)
-        return text or "Portfolio analysis temporarily unavailable."
+        return _extract_gemini_text(res) or "Portfolio analysis temporarily unavailable."
     except Exception as e:
         print(f"❌ Gemini portfolio error: {e}")
-        return "Portfolio analysis temporarily unavailable."
         return "Portfolio analysis temporarily unavailable."
