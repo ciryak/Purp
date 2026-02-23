@@ -23,7 +23,7 @@ import bcrypt
 import stripe
 from jose import JWTError, jwt
 
-from models import Asset, User, Transaction, PriceAlert, WatchlistItem
+from models import Asset, User, Transaction, PriceAlert, WatchlistItem, ProcessedEvent
 from services import (
     get_asset_data,
     get_ai_analysis,
@@ -587,10 +587,16 @@ def toggle_alert(alert_id: int, user_id: int = Depends(get_current_user), sessio
 
 
 @app.post("/alerts/check")
-def check_alerts_endpoint(background_tasks: BackgroundTasks, session: Session = Depends(get_session)):
+def check_alerts_endpoint(background_tasks: BackgroundTasks):
     """Endpoint para checar alertas (chamado por cron job ou manualmente)"""
-    background_tasks.add_task(check_and_trigger_alerts, session, send_alert_email_async)
+    background_tasks.add_task(_run_alert_check)
     return {"status": "checking alerts in background"}
+
+
+def _run_alert_check():
+    """Helper que cria uma nova sessão para a background task"""
+    with Session(engine) as session:
+        check_and_trigger_alerts(session, send_alert_email_async)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -679,6 +685,13 @@ def sell_asset(asset_id: int, data: SellInput, user_id: int = Depends(get_curren
         raise HTTPException(400, "Sell amount must be positive")
     if data.amount > asset.amount + 1e-9:
         raise HTTPException(400, f"Cannot sell more than you hold ({asset.amount})")
+
+    # TAREFA 4: Validar quantidade inteira para stocks
+    if asset.type.lower() == 'stock' and not data.amount.is_integer():
+        raise HTTPException(
+            400, 
+            f"For stocks, sell quantity must be a whole number. You entered {data.amount}."
+        )
 
     m = get_asset_data(asset.symbol)
     current_price = m["current_price"] if m else asset.purchase_price
@@ -954,6 +967,23 @@ async def stripe_webhook(request: Request, session: Session = Depends(get_sessio
     except Exception:
         raise HTTPException(400, "Webhook processing error")
 
+    # TAREFA 2: Verificar idempotência - não processar eventos duplicados
+    event_id = event.get("id")
+    if event_id:
+        existing = session.get(ProcessedEvent, event_id)
+        if existing:
+            print(f"⚠️  Event {event_id} already processed at {existing.processed_at}")
+            return {"ok": True}
+        
+        # Registrar evento como processado
+        processed = ProcessedEvent(
+            event_id=event_id,
+            processed_at=str(datetime.now())
+        )
+        session.add(processed)
+        session.commit()
+
+    # Handler para checkout completado (upgrade para Premium)
     if event["type"] == "checkout.session.completed":
         meta    = event["data"]["object"].get("metadata", {})
         user_id = int(meta.get("user_id", 0))
@@ -964,6 +994,41 @@ async def stripe_webhook(request: Request, session: Session = Depends(get_sessio
                 session.add(u)
                 session.commit()
                 print(f"✅ User {user_id} upgraded to Premium")
+
+    # TAREFA 3: Handlers para cancelamento de assinatura
+    elif event["type"] in ["customer.subscription.deleted", "customer.subscription.paused"]:
+        subscription = event["data"]["object"]
+        
+        # Tentar localizar usuário por metadata user_id
+        user_id = None
+        metadata = subscription.get("metadata", {})
+        if metadata and "user_id" in metadata:
+            user_id = int(metadata["user_id"])
+        
+        # Se não encontrou via metadata, tentar por customer email
+        if not user_id:
+            customer_id = subscription.get("customer")
+            if customer_id:
+                try:
+                    customer = stripe.Customer.retrieve(customer_id)
+                    email = customer.get("email", "").lower().strip()
+                    if email:
+                        u = session.exec(select(User).where(User.email == email)).first()
+                        if u:
+                            user_id = u.id
+                except Exception as e:
+                    print(f"⚠️  Could not retrieve Stripe customer: {e}")
+        
+        # Downgrade para Free
+        if user_id:
+            u = session.get(User, user_id)
+            if u and u.is_premium:
+                u.is_premium = False
+                session.add(u)
+                session.commit()
+                print(f"✅ User {user_id} downgraded to Free (subscription {event['type']})")
+        else:
+            print(f"⚠️  Could not find user for subscription event {event['type']}")
 
     return {"ok": True}
 

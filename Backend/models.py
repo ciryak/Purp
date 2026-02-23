@@ -56,3 +56,8 @@ class WatchlistItem(SQLModel, table=True):
     added_at: Optional[str] = None
     # Ordenação customizada
     order_index: int = Field(default=0)
+
+class ProcessedEvent(SQLModel, table=True):
+    """Rastreia eventos do Stripe já processados para idempotência"""
+    event_id: str = Field(primary_key=True, max_length=255)
+    processed_at: str
