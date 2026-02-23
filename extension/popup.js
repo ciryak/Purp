@@ -5,6 +5,7 @@
    - DOMContentLoaded: removed spurious extra closing `});` at end of file
    - total-balance now correctly has sensitive-value class via JS
    - loadMarketWatch: added to refresh cycle
+   - SECURITY: Migrated from localStorage to chrome.storage.local
    ════════════════════════════════════════════════════════════════ */
 
 // ── Config ───────────────────────────────────────────────────────
@@ -84,23 +85,27 @@ function authHeaders(extra = {}) {
 function saveSession(token, user) {
   authToken   = token;
   currentUser = user;
-  try {
-    localStorage.setItem('purp_token', token);
-    localStorage.setItem('purp_user',  JSON.stringify(user));
-  } catch (e) {}
+  chrome.storage.local.set({
+    purp_token: token,
+    purp_user: JSON.stringify(user)
+  });
 }
 
-function loadSession() {
-  try {
-    const t = localStorage.getItem('purp_token');
-    const u = localStorage.getItem('purp_user');
-    if (t && u) {
-      authToken   = t;
-      currentUser = JSON.parse(u);
-      return true;
+function loadSession(callback) {
+  chrome.storage.local.get(['purp_token', 'purp_user'], (result) => {
+    if (result.purp_token && result.purp_user) {
+      try {
+        authToken   = result.purp_token;
+        currentUser = JSON.parse(result.purp_user);
+        callback(true);
+      } catch (e) {
+        console.error('Failed to parse user data:', e);
+        callback(false);
+      }
+    } else {
+      callback(false);
     }
-  } catch (e) {}
-  return false;
+  });
 }
 
 function clearSession() {
@@ -109,10 +114,7 @@ function clearSession() {
   portfolioCount   = 0;
   portfolioSymbols = new Set();
   stopRefresh();
-  try {
-    localStorage.removeItem('purp_token');
-    localStorage.removeItem('purp_user');
-  } catch (e) {}
+  chrome.storage.local.remove(['purp_token', 'purp_user']);
 }
 
 function isPremium() { return !!currentUser?.is_premium; }
@@ -337,7 +339,7 @@ async function handleUpgrade() {
     if (res.ok) {
       const data = await res.json();
       if (data.checkout_url) {
-        chrome.tabs.create({ url: data.checkout_url });
+        window.open(data.checkout_url, '_blank');
       }
     } else {
       const err = await res.json().catch(() => ({}));
@@ -1029,16 +1031,18 @@ async function handleAddAsset() {
 
 // ── INIT & LISTENERS ─────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
-  if (loadSession()) {
-    hideLoginScreen();
-    updateProfileBar();
-    fetchPortfolio();
-    loadMainChart();
-    startRefresh();
-    checkAIStatus();
-  } else {
-    showLoginScreen();
-  }
+  loadSession((hasSession) => {
+    if (hasSession) {
+      hideLoginScreen();
+      updateProfileBar();
+      fetchPortfolio();
+      loadMainChart();
+      startRefresh();
+      checkAIStatus();
+    } else {
+      showLoginScreen();
+    }
+  });
 
   updatePrivacyToggle();
 
