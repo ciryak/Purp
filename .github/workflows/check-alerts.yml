@@ -1,0 +1,20 @@
+name: Check Price Alerts
+
+on:
+  schedule:
+    # Roda a cada 15 minutos
+    - cron: '*/15 * * * *'
+  # Permite trigger manual também
+  workflow_dispatch:
+
+jobs:
+  check-alerts:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check and trigger price alerts
+        run: |
+          curl -X POST ${{ secrets.APP_URL }}/alerts/check
+          
+      - name: Log completion
+        run: |
+          echo "Alert check completed at $(date)"
