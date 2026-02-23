@@ -19,9 +19,9 @@ RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements-Docker.txt
 
 # Copia o código
-COPY Backend\main.py .
-COPY Backend\models.py .
-COPY Backend\services.py .
+COPY main.py .
+COPY models.py .
+COPY services.py .
 
 # Porta exposta
 EXPOSE 8080
