@@ -1,0 +1,2494 @@
+<!DOCTYPE html>
+<html lang="en" class="scroll-smooth">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0" />
+  <title>Purp — AI Portfolio Tracker</title>
+  <meta name="description" content="Track crypto & stocks with AI analysis, price alerts, and tax optimization. Free forever, upgrade when ready." />
+
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;1,9..40,400&family=DM+Mono:wght@400;500&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+
+  <style>
+    /* ══════════════════════════════════════════
+       DESIGN TOKENS
+    ══════════════════════════════════════════ */
+    :root {
+      --ink:       #05040c;
+      --ink2:      #0e0c1c;
+      --ink3:      #161328;
+      --card:      rgba(255,255,255,0.03);
+      --card-h:    rgba(255,255,255,0.06);
+      --border:    rgba(255,255,255,0.07);
+      --border-h:  rgba(255,255,255,0.14);
+
+      --violet:    #6d28d9;
+      --violet-l:  #8b5cf6;
+      --violet-ll: #c4b5fd;
+      --glow:      rgba(109,40,217,0.35);
+
+      --amber:     #d97706;
+      --amber-l:   #f59e0b;
+      --amber-ll:  #fcd34d;
+      --amber-glow:rgba(217,119,6,0.3);
+
+      --green:     #059669;
+      --green-l:   #10b981;
+      --red:       #dc2626;
+      --red-l:     #ef4444;
+
+      --txt:       #f5f4ff;
+      --txt2:      rgba(245,244,255,0.55);
+      --txt3:      rgba(245,244,255,0.28);
+
+      --r:         16px;
+      --r-sm:      10px;
+      --r-xs:      6px;
+
+      --font-head: 'Syne', system-ui, sans-serif;
+      --font-body: 'DM Sans', system-ui, sans-serif;
+      --font-mono: 'DM Mono', 'Courier New', monospace;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html { font-size: 16px; scroll-behavior: smooth; }
+
+    body {
+      background: var(--ink);
+      color: var(--txt);
+      font-family: var(--font-body);
+      font-size: 15px;
+      line-height: 1.6;
+      overflow-x: hidden;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* ── Scrollbar ── */
+    ::-webkit-scrollbar { width: 4px; }
+    ::-webkit-scrollbar-track { background: var(--ink); }
+    ::-webkit-scrollbar-thumb { background: var(--violet); border-radius: 4px; }
+
+    /* ── Selection ── */
+    ::selection { background: rgba(109,40,217,0.35); color: var(--txt); }
+
+    /* ── Utils ── */
+    .sr-only { position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);border:0; }
+    .hidden { display: none !important; }
+
+    /* ══════════════════════════════════════════
+       NOISE TEXTURE OVERLAY
+    ══════════════════════════════════════════ */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.025'/%3E%3C/svg%3E");
+      pointer-events: none;
+      z-index: 0;
+      opacity: 0.4;
+    }
+
+    /* ══════════════════════════════════════════
+       NAVIGATION
+    ══════════════════════════════════════════ */
+    #nav {
+      position: fixed;
+      top: 0; left: 0; right: 0;
+      z-index: 100;
+      padding: 0 max(24px, calc((100% - 1200px)/2));
+      height: 68px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 24px;
+      background: rgba(5,4,12,0.7);
+      backdrop-filter: blur(20px) saturate(1.5);
+      border-bottom: 1px solid transparent;
+      transition: border-color 0.3s;
+    }
+    #nav.scrolled { border-color: var(--border); }
+
+    .nav-logo {
+      display: flex; align-items: center; gap: 10px;
+      text-decoration: none; flex-shrink: 0;
+    }
+    .nav-logo-mark {
+      width: 36px; height: 36px;
+      border-radius: 10px;
+      background: linear-gradient(135deg, var(--violet), var(--violet-l));
+      display: flex; align-items: center; justify-content: center;
+      font-family: var(--font-head);
+      font-weight: 800; font-size: 18px; color: #fff;
+      box-shadow: 0 4px 14px var(--glow);
+    }
+    .nav-logo-name {
+      font-family: var(--font-head);
+      font-weight: 800; font-size: 20px;
+      background: linear-gradient(135deg, #fff 30%, var(--violet-ll));
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    }
+
+    .nav-links {
+      display: flex; align-items: center; gap: 6px;
+      list-style: none;
+    }
+    .nav-links a {
+      color: var(--txt2); text-decoration: none; font-size: 14px; font-weight: 500;
+      padding: 6px 14px; border-radius: 999px;
+      transition: color 0.2s, background 0.2s;
+    }
+    .nav-links a:hover { color: var(--txt); background: var(--card-h); }
+
+    .nav-actions { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+
+    .btn-nav-ghost {
+      background: none; border: 1px solid var(--border-h);
+      color: var(--txt2); font-family: var(--font-body);
+      font-size: 13px; font-weight: 600;
+      padding: 7px 18px; border-radius: 999px; cursor: pointer;
+      transition: all 0.2s;
+    }
+    .btn-nav-ghost:hover { color: var(--txt); border-color: rgba(109,40,217,0.5); background: rgba(109,40,217,0.08); }
+
+    .btn-cta {
+      background: linear-gradient(135deg, var(--amber), var(--amber-l));
+      color: #1a0e00; border: none;
+      font-family: var(--font-body); font-size: 13px; font-weight: 700;
+      padding: 8px 20px; border-radius: 999px; cursor: pointer;
+      transition: all 0.2s;
+      box-shadow: 0 4px 18px var(--amber-glow);
+      display: flex; align-items: center; gap: 6px;
+    }
+    .btn-cta:hover { filter: brightness(1.08); transform: translateY(-1px); box-shadow: 0 8px 24px var(--amber-glow); }
+    .btn-cta:active { transform: translateY(0); }
+
+    /* User avatar button (when logged in) */
+    #nav-user-btn {
+      display: flex; align-items: center; gap: 8px;
+      background: var(--card-h); border: 1px solid var(--border-h);
+      border-radius: 999px; padding: 5px 14px 5px 5px;
+      cursor: pointer; color: var(--txt2); font-size: 13px; font-weight: 600;
+      transition: all 0.2s;
+    }
+    #nav-user-btn:hover { border-color: rgba(109,40,217,0.45); color: var(--txt); }
+    .nav-avatar {
+      width: 28px; height: 28px; border-radius: 50%;
+      background: linear-gradient(135deg, var(--violet), var(--violet-l));
+      display: flex; align-items: center; justify-content: center;
+      font-size: 12px; font-weight: 800; color: #fff;
+    }
+
+    /* Hamburger */
+    #hamburger {
+      display: none;
+      flex-direction: column; gap: 5px;
+      width: 36px; height: 36px; align-items: center; justify-content: center;
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: var(--r-xs); cursor: pointer;
+    }
+    #hamburger span {
+      display: block; width: 16px; height: 1.5px;
+      background: var(--txt2); border-radius: 2px; transition: all 0.28s;
+    }
+    #hamburger.open span:nth-child(1) { transform: translateY(6.5px) rotate(45deg); }
+    #hamburger.open span:nth-child(2) { opacity: 0; transform: scaleX(0); }
+    #hamburger.open span:nth-child(3) { transform: translateY(-6.5px) rotate(-45deg); }
+
+    /* Mobile Nav Drawer */
+    #mobile-drawer {
+      position: fixed;
+      top: 68px; right: 0;
+      width: min(320px, 92vw);
+      height: calc(100vh - 68px);
+      background: var(--ink2);
+      border-left: 1px solid var(--border);
+      z-index: 99;
+      padding: 24px;
+      display: flex; flex-direction: column; gap: 8px;
+      transform: translateX(110%);
+      transition: transform 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+      overflow-y: auto;
+    }
+    #mobile-drawer.open { transform: translateX(0); }
+    .mobile-nav-link {
+      color: var(--txt2); text-decoration: none; font-size: 15px; font-weight: 500;
+      padding: 12px 16px; border-radius: var(--r-sm); transition: all 0.15s;
+      display: block;
+    }
+    .mobile-nav-link:hover { color: var(--txt); background: var(--card-h); }
+    #drawer-overlay {
+      position: fixed; inset: 0; top: 68px;
+      background: rgba(0,0,0,0.5); z-index: 98;
+      display: none;
+      backdrop-filter: blur(4px);
+    }
+    #drawer-overlay.active { display: block; }
+
+    /* ══════════════════════════════════════════
+       HERO
+    ══════════════════════════════════════════ */
+    #hero {
+      min-height: 100svh;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      padding: calc(68px + 40px + 60px) max(20px, calc((100% - 1200px)/2)) 80px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    /* Radial gradient orbs */
+    .hero-orb {
+      position: absolute; border-radius: 50%;
+      filter: blur(80px); pointer-events: none;
+    }
+    .orb-1 {
+      width: 600px; height: 600px; top: -100px; left: -150px;
+      background: radial-gradient(circle, rgba(109,40,217,0.18) 0%, transparent 60%);
+      animation: orbFloat1 12s ease-in-out infinite;
+    }
+    .orb-2 {
+      width: 500px; height: 500px; bottom: -50px; right: -100px;
+      background: radial-gradient(circle, rgba(217,119,6,0.12) 0%, transparent 60%);
+      animation: orbFloat2 15s ease-in-out infinite;
+    }
+    .orb-3 {
+      width: 300px; height: 300px; top: 40%; left: 55%;
+      background: radial-gradient(circle, rgba(109,40,217,0.1) 0%, transparent 60%);
+      animation: orbFloat1 18s ease-in-out infinite reverse;
+    }
+
+    @keyframes orbFloat1 {
+      0%, 100% { transform: translate(0, 0); }
+      33% { transform: translate(30px, -20px); }
+      66% { transform: translate(-20px, 15px); }
+    }
+    @keyframes orbFloat2 {
+      0%, 100% { transform: translate(0, 0); }
+      33% { transform: translate(-25px, 20px); }
+      66% { transform: translate(15px, -25px); }
+    }
+
+    .hero-inner {
+      display: grid; grid-template-columns: 1fr 1fr;
+      gap: 64px; align-items: center;
+      position: relative; z-index: 1; width: 100%;
+    }
+
+    .hero-eyebrow {
+      display: inline-flex; align-items: center; gap: 8px;
+      padding: 6px 14px 6px 6px;
+      background: rgba(109,40,217,0.1); border: 1px solid rgba(109,40,217,0.25);
+      border-radius: 999px; font-size: 12px; font-weight: 600;
+      color: var(--violet-ll); margin-bottom: 22px;
+    }
+    .eyebrow-dot {
+      width: 20px; height: 20px; border-radius: 50%;
+      background: linear-gradient(135deg, var(--violet), var(--violet-l));
+      display: flex; align-items: center; justify-content: center;
+      font-size: 10px;
+    }
+
+    .hero-h1 {
+      font-family: var(--font-head);
+      font-size: clamp(38px, 5vw, 62px);
+      font-weight: 800;
+      line-height: 1.08;
+      letter-spacing: -1.5px;
+      margin-bottom: 22px;
+    }
+    .hero-h1 span {
+      background: linear-gradient(135deg, var(--amber-ll) 0%, var(--amber-l) 50%, var(--violet-ll) 100%);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+      background-size: 200% 100%;
+      animation: shimmerGrad 4s linear infinite;
+    }
+    @keyframes shimmerGrad {
+      0% { background-position: 100% 0; }
+      100% { background-position: -100% 0; }
+    }
+
+    .hero-p {
+      font-size: 17px; color: var(--txt2); line-height: 1.75;
+      max-width: 480px; margin-bottom: 36px;
+    }
+
+    .hero-btns {
+      display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 44px;
+    }
+
+    .btn-hero-primary {
+      background: linear-gradient(135deg, var(--amber), var(--amber-l));
+      color: #1a0e00; border: none;
+      font-family: var(--font-body); font-size: 15px; font-weight: 700;
+      padding: 14px 28px; border-radius: 999px; cursor: pointer;
+      display: flex; align-items: center; gap: 8px;
+      transition: all 0.2s; box-shadow: 0 6px 24px var(--amber-glow);
+    }
+    .btn-hero-primary:hover { filter: brightness(1.08); transform: translateY(-2px); }
+    .btn-hero-primary:active { transform: none; }
+
+    .btn-hero-ghost {
+      background: rgba(255,255,255,0.04); border: 1px solid var(--border-h);
+      color: var(--txt2); font-family: var(--font-body);
+      font-size: 15px; font-weight: 500;
+      padding: 14px 28px; border-radius: 999px; cursor: pointer;
+      display: flex; align-items: center; gap: 8px;
+      transition: all 0.2s;
+    }
+    .btn-hero-ghost:hover { background: var(--card-h); color: var(--txt); border-color: rgba(109,40,217,0.4); }
+
+    .hero-trust {
+      display: flex; flex-wrap: wrap; gap: 20px;
+      font-size: 12px; color: var(--txt3);
+    }
+    .hero-trust-item { display: flex; align-items: center; gap: 6px; }
+    .hero-trust-item svg { flex-shrink: 0; }
+
+    /* Hero visual — mock extension popup */
+    .hero-visual {
+      position: relative;
+    }
+    .hero-float {
+      animation: floatY 7s ease-in-out infinite;
+    }
+    @keyframes floatY {
+      0%, 100% { transform: translateY(0); }
+      50% { transform: translateY(-16px); }
+    }
+
+    .mock-browser {
+      background: var(--ink3);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 18px;
+      overflow: hidden;
+      box-shadow: 0 40px 100px rgba(0,0,0,0.6), 0 0 0 1px rgba(255,255,255,0.04);
+    }
+    .mock-bar {
+      background: var(--ink2);
+      padding: 10px 14px;
+      display: flex; align-items: center; gap: 10px;
+      border-bottom: 1px solid var(--border);
+    }
+    .mock-dots { display: flex; gap: 5px; }
+    .mock-dot { width: 10px; height: 10px; border-radius: 50%; }
+    .mock-url {
+      flex: 1; background: rgba(0,0,0,0.3); border-radius: 6px;
+      padding: 4px 10px; font-size: 11px; color: var(--txt3);
+      font-family: var(--font-mono);
+      display: flex; align-items: center; gap: 6px;
+    }
+    .mock-ext {
+      width: 28px; height: 28px; border-radius: 7px;
+      background: linear-gradient(135deg, var(--violet), var(--violet-l));
+      display: flex; align-items: center; justify-content: center;
+      font-size: 13px; font-weight: 800; color: #fff;
+      flex-shrink: 0;
+    }
+
+    .mock-popup {
+      padding: 16px;
+      background: var(--ink);
+    }
+
+    .popup-header {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 14px;
+    }
+    .popup-logo { display: flex; align-items: center; gap: 8px; }
+    .popup-logo-mark {
+      width: 30px; height: 30px; border-radius: 8px;
+      background: linear-gradient(135deg, var(--violet), var(--violet-l));
+      display: flex; align-items: center; justify-content: center;
+      font-size: 14px; font-weight: 800; color: #fff;
+    }
+    .popup-logo-name { font-family: var(--font-head); font-weight: 800; font-size: 15px; }
+    .popup-plan-badge {
+      padding: 3px 10px; border-radius: 999px; font-size: 10px; font-weight: 800;
+      background: rgba(245,158,11,0.15); color: var(--amber-ll);
+      border: 1px solid rgba(245,158,11,0.3); letter-spacing: 0.5px;
+    }
+
+    .popup-balance {
+      background: linear-gradient(135deg, rgba(109,40,217,0.12), rgba(5,4,12,0.6));
+      border: 1px solid rgba(109,40,217,0.2);
+      border-radius: 12px; padding: 14px; margin-bottom: 12px;
+    }
+    .balance-lbl { font-size: 9px; font-weight: 700; color: var(--txt3); letter-spacing: 1px; text-transform: uppercase; margin-bottom: 4px; }
+    .balance-num {
+      font-family: var(--font-mono); font-size: 26px; font-weight: 500;
+      background: linear-gradient(135deg, #fff, var(--violet-ll));
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    }
+    .balance-change { font-size: 11px; color: var(--green-l); margin-top: 4px; font-family: var(--font-mono); }
+
+    /* Sparkline SVG */
+    .spark-wrap {
+      height: 40px; width: 100%; margin: 8px 0;
+      position: relative;
+    }
+
+    .popup-assets { display: flex; flex-direction: column; gap: 6px; }
+    .popup-asset {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 8px 10px;
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: 9px; font-size: 11px;
+    }
+    .pa-left { display: flex; align-items: center; gap: 8px; }
+    .pa-icon {
+      width: 24px; height: 24px; border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 11px; font-weight: 800; flex-shrink: 0;
+    }
+    .pa-sym { font-weight: 700; font-size: 12px; }
+    .pa-name { font-size: 9px; color: var(--txt3); }
+    .pa-right { text-align: right; }
+    .pa-val { font-family: var(--font-mono); font-size: 11px; font-weight: 500; }
+    .pa-chg { font-size: 9px; font-family: var(--font-mono); }
+    .up { color: var(--green-l); }
+    .dn { color: var(--red-l); }
+
+    .popup-ai {
+      margin-top: 10px;
+      background: rgba(109,40,217,0.08); border: 1px solid rgba(109,40,217,0.2);
+      border-radius: 9px; padding: 9px 11px;
+      display: flex; align-items: flex-start; gap: 8px;
+    }
+    .ai-badge {
+      font-size: 9px; font-weight: 800; color: var(--violet-ll);
+      background: rgba(109,40,217,0.2); border: 1px solid rgba(109,40,217,0.3);
+      border-radius: 4px; padding: 2px 5px; letter-spacing: 0.5px; flex-shrink: 0;
+      margin-top: 1px;
+    }
+    .ai-insight { font-size: 10px; color: var(--txt2); line-height: 1.5; }
+
+    /* Floating badge */
+    .hero-badge {
+      position: absolute; bottom: -20px; left: -30px;
+      background: var(--ink2); border: 1px solid rgba(109,40,217,0.3);
+      border-radius: 14px; padding: 10px 14px;
+      display: flex; align-items: center; gap: 10px;
+      box-shadow: 0 20px 40px rgba(0,0,0,0.4);
+      animation: floatY 9s ease-in-out infinite reverse;
+    }
+    .badge-icon { font-size: 20px; }
+    .badge-title { font-size: 12px; font-weight: 700; color: var(--txt); }
+    .badge-sub { font-size: 10px; color: var(--txt3); }
+
+    .hero-badge-right {
+      position: absolute; top: 10px; right: -20px;
+      background: var(--ink2); border: 1px solid rgba(245,158,11,0.3);
+      border-radius: 14px; padding: 10px 14px;
+      display: flex; align-items: center; gap: 10px;
+      box-shadow: 0 20px 40px rgba(0,0,0,0.4);
+      animation: floatY 11s ease-in-out infinite;
+    }
+
+    /* ══════════════════════════════════════════
+       STATS BAR
+    ══════════════════════════════════════════ */
+    #stats {
+      padding: 60px max(20px, calc((100% - 1200px)/2));
+      border-top: 1px solid var(--border);
+      border-bottom: 1px solid var(--border);
+      background: rgba(14,12,28,0.5);
+      position: relative; z-index: 1;
+    }
+    .stats-grid {
+      display: grid; grid-template-columns: repeat(4, 1fr);
+      gap: 32px;
+    }
+    .stat-item { text-align: center; }
+    .stat-num {
+      font-family: var(--font-head);
+      font-size: clamp(28px, 4vw, 42px);
+      font-weight: 800; letter-spacing: -1px;
+      background: linear-gradient(135deg, #fff 30%, var(--violet-ll));
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+      margin-bottom: 6px;
+    }
+    .stat-lbl { font-size: 13px; color: var(--txt2); }
+
+    /* ══════════════════════════════════════════
+       SECTION COMMONS
+    ══════════════════════════════════════════ */
+    section { position: relative; z-index: 1; }
+
+    .section-tag {
+      display: inline-block;
+      padding: 5px 14px;
+      background: rgba(109,40,217,0.1); border: 1px solid rgba(109,40,217,0.22);
+      border-radius: 999px; font-size: 11px; font-weight: 700;
+      color: var(--violet-ll); letter-spacing: 0.6px;
+      text-transform: uppercase; margin-bottom: 16px;
+    }
+
+    .section-h {
+      font-family: var(--font-head);
+      font-size: clamp(28px, 4vw, 46px);
+      font-weight: 800; letter-spacing: -1px;
+      line-height: 1.1; margin-bottom: 18px;
+    }
+    .grad {
+      background: linear-gradient(135deg, var(--amber-ll) 0%, var(--amber-l) 100%);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    }
+    .section-sub { font-size: 16px; color: var(--txt2); line-height: 1.75; max-width: 560px; margin: 0 auto; }
+
+    /* ══════════════════════════════════════════
+       FEATURES
+    ══════════════════════════════════════════ */
+    #features {
+      padding: 100px max(20px, calc((100% - 1200px)/2));
+    }
+    .features-head { text-align: center; margin-bottom: 64px; }
+
+    .features-grid {
+      display: grid; grid-template-columns: repeat(3, 1fr);
+      gap: 20px;
+    }
+    .feature-card {
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: var(--r); padding: 28px;
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      position: relative; overflow: hidden;
+      opacity: 0; transform: translateY(20px);
+    }
+    .feature-card.visible { opacity: 1; transform: translateY(0); }
+    .feature-card::before {
+      content: ''; position: absolute;
+      inset: 0; border-radius: var(--r);
+      background: radial-gradient(circle at var(--mx,50%) var(--my,50%), rgba(109,40,217,0.06) 0%, transparent 60%);
+      opacity: 0; transition: opacity 0.3s;
+    }
+    .feature-card:hover::before { opacity: 1; }
+    .feature-card:hover {
+      border-color: rgba(109,40,217,0.3);
+      transform: translateY(-4px);
+      box-shadow: 0 20px 40px rgba(0,0,0,0.3);
+    }
+
+    .feat-icon {
+      width: 48px; height: 48px; border-radius: 12px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 22px; margin-bottom: 18px;
+    }
+    .feat-icon-v { background: rgba(109,40,217,0.15); border: 1px solid rgba(109,40,217,0.25); }
+    .feat-icon-a { background: rgba(217,119,6,0.12); border: 1px solid rgba(217,119,6,0.25); }
+
+    .feat-h { font-family: var(--font-head); font-size: 17px; font-weight: 700; margin-bottom: 8px; }
+    .feat-p { font-size: 13px; color: var(--txt2); line-height: 1.7; }
+
+    /* ══════════════════════════════════════════
+       HOW IT WORKS
+    ══════════════════════════════════════════ */
+    #how {
+      padding: 100px max(20px, calc((100% - 1200px)/2));
+      background: rgba(14,12,28,0.35);
+      border-top: 1px solid var(--border);
+      border-bottom: 1px solid var(--border);
+    }
+    .how-head { text-align: center; margin-bottom: 64px; }
+
+    .steps-grid {
+      display: grid; grid-template-columns: repeat(3, 1fr);
+      gap: 32px; position: relative;
+    }
+    .steps-grid::before {
+      content: ''; position: absolute;
+      top: 44px; left: calc(16.66% + 20px); right: calc(16.66% + 20px);
+      height: 1px;
+      background: linear-gradient(90deg, var(--violet), var(--amber-l), var(--violet));
+      opacity: 0.3;
+    }
+
+    .step-card {
+      text-align: center;
+      opacity: 0; transform: translateY(20px);
+      transition: all 0.5s ease;
+    }
+    .step-card.visible { opacity: 1; transform: translateY(0); }
+    .step-num {
+      width: 88px; height: 88px; border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-family: var(--font-head); font-size: 32px; font-weight: 800;
+      margin: 0 auto 20px; position: relative; z-index: 1;
+    }
+    .step-num-v {
+      background: linear-gradient(135deg, var(--violet), var(--violet-l));
+      box-shadow: 0 0 30px var(--glow);
+      color: #fff;
+    }
+    .step-num-a {
+      background: linear-gradient(135deg, var(--amber), var(--amber-l));
+      box-shadow: 0 0 30px var(--amber-glow);
+      color: #1a0e00;
+    }
+
+    .step-inner {
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: var(--r); padding: 24px 20px;
+    }
+    .step-h { font-family: var(--font-head); font-size: 17px; font-weight: 700; margin-bottom: 8px; }
+    .step-p { font-size: 13px; color: var(--txt2); line-height: 1.7; }
+
+    /* ══════════════════════════════════════════
+       REVIEWS
+    ══════════════════════════════════════════ */
+    #reviews {
+      padding: 100px max(20px, calc((100% - 1200px)/2));
+    }
+    .reviews-head { text-align: center; margin-bottom: 64px; }
+    .reviews-grid {
+      display: grid; grid-template-columns: repeat(3, 1fr);
+      gap: 20px;
+    }
+    .review-card {
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: var(--r); padding: 26px;
+      opacity: 0; transform: translateY(16px);
+      transition: all 0.4s ease;
+    }
+    .review-card.visible { opacity: 1; transform: translateY(0); }
+    .review-card:hover { border-color: rgba(109,40,217,0.25); }
+
+    .stars { display: flex; gap: 3px; margin-bottom: 14px; }
+    .star { color: var(--amber-l); font-size: 14px; }
+
+    .review-text { font-size: 13px; color: var(--txt2); line-height: 1.75; margin-bottom: 18px; font-style: italic; }
+    .review-text::before { content: '"'; font-size: 24px; color: var(--violet-l); line-height: 0; vertical-align: -8px; margin-right: 2px; }
+    .review-text::after { content: '"'; font-size: 24px; color: var(--violet-l); line-height: 0; vertical-align: -8px; margin-left: 2px; }
+
+    .reviewer { display: flex; align-items: center; gap: 12px; }
+    .reviewer-av {
+      width: 38px; height: 38px; border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 14px; font-weight: 800; color: #fff; flex-shrink: 0;
+    }
+    .reviewer-name { font-weight: 700; font-size: 13px; }
+    .reviewer-role { font-size: 11px; color: var(--txt3); margin-top: 1px; }
+    .reviewer-platform {
+      margin-left: auto; font-size: 10px; color: var(--txt3);
+      background: var(--card-h); padding: 3px 8px;
+      border-radius: 999px; border: 1px solid var(--border);
+    }
+
+    /* ══════════════════════════════════════════
+       PRICING
+    ══════════════════════════════════════════ */
+    #pricing {
+      padding: 100px max(20px, calc((100% - 1200px)/2));
+      background: rgba(14,12,28,0.35);
+      border-top: 1px solid var(--border);
+    }
+    .pricing-head { text-align: center; margin-bottom: 64px; }
+
+    .pricing-grid {
+      display: grid; grid-template-columns: repeat(3, 1fr);
+      gap: 20px; align-items: start;
+    }
+
+    .plan-card {
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: var(--r); padding: 30px;
+      position: relative;
+      opacity: 0; transform: translateY(20px);
+      transition: all 0.4s ease;
+    }
+    .plan-card.visible { opacity: 1; transform: translateY(0); }
+    .plan-card.featured {
+      background: linear-gradient(145deg, rgba(109,40,217,0.1), rgba(5,4,12,0.5));
+      border-color: rgba(109,40,217,0.35);
+      box-shadow: 0 0 60px rgba(109,40,217,0.12);
+      transform: scale(1.04);
+    }
+    .plan-card.featured.visible { transform: scale(1.04) translateY(0); }
+
+    .plan-badge-top {
+      position: absolute; top: -13px; left: 50%; transform: translateX(-50%);
+      background: linear-gradient(135deg, var(--amber), var(--amber-l));
+      color: #1a0e00; font-size: 11px; font-weight: 800;
+      padding: 4px 14px; border-radius: 999px; white-space: nowrap;
+      box-shadow: 0 4px 12px var(--amber-glow);
+    }
+    .plan-name { font-family: var(--font-head); font-size: 18px; font-weight: 800; margin-bottom: 6px; }
+    .plan-desc { font-size: 13px; color: var(--txt2); margin-bottom: 20px; }
+    .plan-price { margin-bottom: 22px; display: flex; align-items: baseline; gap: 1px; }
+    .plan-price-num {
+      font-family: var(--font-mono);
+      font-size: 42px;
+      font-weight: 600;
+      letter-spacing: -2px;
+      background: linear-gradient(135deg, var(--amber-ll), var(--amber-l));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      line-height: 1;
+    }
+    .plan-price-cents {
+      font-family: var(--font-mono);
+      font-size: 20px;
+      font-weight: 500;
+      letter-spacing: -0.5px;
+      background: linear-gradient(135deg, var(--amber-ll), var(--amber-l));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      opacity: 0.65;
+      line-height: 1;
+      align-self: flex-start;
+      margin-top: 4px;
+    }
+    .plan-price-per { font-size: 13px; color: var(--txt3); margin-left: 4px; align-self: flex-end; padding-bottom: 3px; }
+
+    .plan-features { list-style: none; display: flex; flex-direction: column; gap: 10px; margin-bottom: 26px; }
+    .plan-feature { display: flex; align-items: flex-start; gap: 9px; font-size: 13px; color: var(--txt2); }
+    .pf-check { color: var(--green-l); flex-shrink: 0; margin-top: 2px; font-size: 14px; }
+    .pf-x { color: var(--txt3); flex-shrink: 0; margin-top: 2px; font-size: 14px; }
+    .pf-x + span { color: var(--txt3); }
+
+    .btn-plan {
+      width: 100%; padding: 12px; border-radius: 999px;
+      font-family: var(--font-body); font-size: 14px; font-weight: 700;
+      cursor: pointer; transition: all 0.2s;
+    }
+    .btn-plan-ghost {
+      background: none; border: 1px solid var(--border-h); color: var(--txt2);
+    }
+    .btn-plan-ghost:hover { color: var(--txt); border-color: rgba(109,40,217,0.4); background: var(--card-h); }
+    .btn-plan-primary {
+      background: linear-gradient(135deg, var(--violet), var(--violet-l));
+      border: none; color: #fff;
+      box-shadow: 0 6px 20px var(--glow);
+    }
+    .btn-plan-primary:hover { filter: brightness(1.1); transform: translateY(-1px); }
+    .btn-plan-gold {
+      background: linear-gradient(135deg, var(--amber), var(--amber-l));
+      border: none; color: #1a0e00;
+      box-shadow: 0 6px 20px var(--amber-glow);
+    }
+    .btn-plan-gold:hover { filter: brightness(1.08); transform: translateY(-1px); }
+
+    /* ══════════════════════════════════════════
+       CTA SECTION
+    ══════════════════════════════════════════ */
+    #cta {
+      padding: 120px max(20px, calc((100% - 1200px)/2));
+      text-align: center; position: relative; overflow: hidden;
+      border-top: 1px solid var(--border);
+    }
+    .cta-orb {
+      position: absolute; border-radius: 50%; filter: blur(100px); pointer-events: none;
+      width: 500px; height: 500px; top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+      background: radial-gradient(circle, rgba(109,40,217,0.12) 0%, transparent 60%);
+    }
+    .cta-h { font-family: var(--font-head); font-size: clamp(28px, 5vw, 52px); font-weight: 800; letter-spacing: -1.5px; margin-bottom: 18px; line-height: 1.1; position: relative; z-index: 1; }
+    .cta-p { font-size: 17px; color: var(--txt2); max-width: 520px; margin: 0 auto 40px; position: relative; z-index: 1; }
+    .cta-btns { display: flex; justify-content: center; gap: 12px; flex-wrap: wrap; position: relative; z-index: 1; }
+
+    /* ══════════════════════════════════════════
+       FOOTER
+    ══════════════════════════════════════════ */
+    footer {
+      padding: 60px max(20px, calc((100% - 1200px)/2)) 32px;
+      border-top: 1px solid var(--border);
+      background: var(--ink2);
+    }
+    .footer-top {
+      display: grid; grid-template-columns: 2fr 1fr 1fr 1fr;
+      gap: 48px; margin-bottom: 48px;
+    }
+    .footer-brand .nav-logo { margin-bottom: 14px; display: inline-flex; }
+    .footer-brand p { font-size: 13px; color: var(--txt2); line-height: 1.7; max-width: 280px; margin-bottom: 20px; }
+    .footer-socials { display: flex; gap: 8px; }
+    .social-btn {
+      width: 34px; height: 34px; border-radius: 8px;
+      background: var(--card); border: 1px solid var(--border);
+      display: flex; align-items: center; justify-content: center;
+      color: var(--txt3); cursor: pointer; transition: all 0.15s; font-size: 14px;
+      text-decoration: none;
+    }
+    .social-btn:hover { color: var(--txt); border-color: rgba(109,40,217,0.4); background: rgba(109,40,217,0.08); }
+
+    .footer-col h4 { font-size: 12px; font-weight: 700; letter-spacing: 0.8px; text-transform: uppercase; color: var(--txt3); margin-bottom: 16px; }
+    .footer-col ul { list-style: none; display: flex; flex-direction: column; gap: 8px; }
+    .footer-col a { font-size: 13px; color: var(--txt2); text-decoration: none; transition: color 0.15s; }
+    .footer-col a:hover { color: var(--violet-ll); }
+
+    .footer-bottom {
+      border-top: 1px solid var(--border); padding-top: 24px;
+      display: flex; justify-content: space-between; align-items: center;
+      gap: 16px; flex-wrap: wrap;
+    }
+    .footer-copy { font-size: 12px; color: var(--txt3); }
+
+    /* ══════════════════════════════════════════
+       MODAL — AUTH
+    ══════════════════════════════════════════ */
+    .modal-bg {
+      position: fixed; inset: 0; z-index: 500;
+      background: rgba(5,4,12,0.85);
+      backdrop-filter: blur(14px);
+      display: none; align-items: center; justify-content: center;
+      padding: 20px;
+    }
+    .modal-bg.open { display: flex; }
+
+    .modal-box {
+      background: var(--ink2); border: 1px solid var(--border-h);
+      border-radius: 22px; padding: 36px;
+      width: 100%; max-width: 420px;
+      box-shadow: 0 40px 80px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.04);
+      animation: modalSlide 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    @keyframes modalSlide {
+      from { opacity: 0; transform: scale(0.96) translateY(12px); }
+      to   { opacity: 1; transform: scale(1) translateY(0); }
+    }
+
+    .modal-close {
+      position: absolute; top: 16px; right: 16px;
+      width: 32px; height: 32px; border-radius: 50%;
+      background: var(--card); border: 1px solid var(--border);
+      color: var(--txt2); font-size: 18px; cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      transition: all 0.15s; line-height: 1;
+    }
+    .modal-close:hover { background: var(--card-h); color: var(--txt); }
+
+    .modal-header { text-align: center; margin-bottom: 28px; }
+    .modal-mark {
+      width: 56px; height: 56px; border-radius: 16px;
+      background: linear-gradient(135deg, var(--violet), var(--violet-l));
+      display: flex; align-items: center; justify-content: center;
+      font-family: var(--font-head); font-size: 26px; font-weight: 800; color: #fff;
+      margin: 0 auto 14px; box-shadow: 0 8px 24px var(--glow);
+    }
+    .modal-title { font-family: var(--font-head); font-size: 24px; font-weight: 800; margin-bottom: 4px; }
+    .modal-sub { font-size: 13px; color: var(--txt2); }
+
+    .modal-form { display: flex; flex-direction: column; gap: 14px; }
+    .form-field { display: flex; flex-direction: column; gap: 5px; }
+    .form-label { font-size: 11px; font-weight: 700; color: var(--txt2); text-transform: uppercase; letter-spacing: 0.5px; }
+    .form-input {
+      padding: 11px 14px; border-radius: var(--r-sm);
+      background: rgba(0,0,0,0.3); border: 1px solid var(--border-h);
+      color: var(--txt); font-family: var(--font-body); font-size: 14px;
+      transition: border-color 0.15s;
+    }
+    .form-input:focus { outline: none; border-color: rgba(109,40,217,0.55); background: rgba(109,40,217,0.04); }
+    .form-input::placeholder { color: var(--txt3); }
+
+    .btn-modal-submit {
+      width: 100%; padding: 13px; border: none;
+      background: linear-gradient(135deg, var(--violet), var(--violet-l));
+      color: #fff; font-family: var(--font-body);
+      font-size: 14px; font-weight: 700; border-radius: var(--r-sm);
+      cursor: pointer; transition: all 0.2s;
+      box-shadow: 0 6px 20px var(--glow); margin-top: 4px;
+    }
+    .btn-modal-submit:hover { filter: brightness(1.1); transform: translateY(-1px); }
+    .btn-modal-submit:disabled { opacity: 0.55; cursor: not-allowed; transform: none; filter: none; }
+
+    .modal-switch {
+      text-align: center; font-size: 13px; color: var(--txt2); margin-top: 16px;
+    }
+    .modal-link { color: var(--violet-ll); font-weight: 600; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; background: none; border: none; font-family: var(--font-body); font-size: 13px; }
+
+    .error-msg {
+      display: none; padding: 10px 13px;
+      background: rgba(220,38,38,0.1); border: 1px solid rgba(220,38,38,0.28);
+      border-radius: var(--r-xs); font-size: 12px; color: #fca5a5;
+      display: flex; align-items: center; gap: 7px;
+    }
+    .error-msg.hidden { display: none; }
+    .success-msg {
+      padding: 10px 13px;
+      background: rgba(5,150,105,0.1); border: 1px solid rgba(5,150,105,0.28);
+      border-radius: var(--r-xs); font-size: 12px; color: #6ee7b7;
+      display: flex; align-items: center; gap: 7px;
+    }
+
+    /* ══════════════════════════════════════════
+       TOAST
+    ══════════════════════════════════════════ */
+    #toast-root {
+      position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+      z-index: 9999; display: flex; flex-direction: column; gap: 8px;
+      pointer-events: none; width: min(380px, 90vw);
+    }
+    .toast {
+      display: flex; align-items: center; gap: 10px;
+      padding: 13px 16px; border-radius: 12px;
+      font-size: 13px; font-weight: 500;
+      pointer-events: auto;
+      backdrop-filter: blur(10px);
+      border: 1px solid;
+      animation: toastIn 0.3s ease-out;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+    }
+    .toast.success { background: rgba(5,150,105,0.15); border-color: rgba(5,150,105,0.35); color: #6ee7b7; }
+    .toast.error   { background: rgba(220,38,38,0.15); border-color: rgba(220,38,38,0.35); color: #fca5a5; }
+    .toast.info    { background: rgba(109,40,217,0.15); border-color: rgba(109,40,217,0.35); color: var(--violet-ll); }
+    @keyframes toastIn { from { opacity:0; transform:translateY(10px) scale(0.96); } to { opacity:1; transform:none; } }
+    @keyframes toastOut { to { opacity:0; transform:translateY(8px) scale(0.96); } }
+
+    /* ══════════════════════════════════════════
+       SCROLL ANIMATIONS
+    ══════════════════════════════════════════ */
+    .reveal { opacity: 0; transform: translateY(24px); transition: opacity 0.6s ease, transform 0.6s ease; }
+    .reveal.visible { opacity: 1; transform: translateY(0); }
+
+    /* ══════════════════════════════════════════
+       RESPONSIVE
+    ══════════════════════════════════════════ */
+    @media (max-width: 1024px) {
+      .hero-inner { grid-template-columns: 1fr; gap: 48px; }
+      .hero-visual { display: none; }
+      .features-grid { grid-template-columns: repeat(2, 1fr); }
+      .pricing-grid { grid-template-columns: 1fr; gap: 16px; }
+      .plan-card.featured { transform: none; }
+      .plan-card.featured.visible { transform: none; }
+      .footer-top { grid-template-columns: 1fr 1fr; }
+      .reviews-grid { grid-template-columns: repeat(2, 1fr); }
+    }
+
+    @media (max-width: 768px) {
+      .nav-links, .btn-nav-ghost { display: none; }
+      #hamburger { display: flex; }
+      .stats-grid { grid-template-columns: repeat(2, 1fr); }
+      .features-grid { grid-template-columns: 1fr; }
+      .steps-grid { grid-template-columns: 1fr; gap: 16px; }
+      .steps-grid::before { display: none; }
+      .reviews-grid { grid-template-columns: 1fr; }
+      .footer-top { grid-template-columns: 1fr; gap: 32px; }
+      .hero-btns { flex-direction: column; }
+      .btn-hero-primary, .btn-hero-ghost { justify-content: center; }
+    }
+
+    @media (max-width: 480px) {
+      .modal-box { padding: 24px 20px; }
+    }
+
+    /* ── SVG icon helper ── */
+    svg { display: inline-block; vertical-align: middle; }
+
+    /* ══════════════════════════════════════════
+       TICKER TAPE
+    ══════════════════════════════════════════ */
+    #ticker-wrap {
+      position: fixed;
+      top: 68px;
+      left: 0; right: 0;
+      z-index: 90;
+      background: rgba(7,5,16,0.96);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border-bottom: 1px solid rgba(217,119,6,0.18);
+      overflow: hidden;
+      height: 40px;
+      display: flex;
+      align-items: center;
+    }
+
+    .ticker-label {
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      padding: 0 16px;
+      border-right: 1px solid rgba(217,119,6,0.2);
+      height: 100%;
+      background: rgba(217,119,6,0.07);
+      font-size: 9.5px;
+      font-weight: 600;
+      letter-spacing: 0.16em;
+      color: var(--amber-l);
+      text-transform: uppercase;
+      font-family: 'IBM Plex Mono', var(--font-mono);
+      z-index: 2;
+    }
+
+    .ticker-live-dot {
+      width: 5px; height: 5px;
+      border-radius: 50%;
+      background: var(--amber-l);
+      animation: livePulse 1.8s ease-in-out infinite;
+      flex-shrink: 0;
+    }
+
+    @keyframes livePulse {
+      0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(245,158,11,0.5); }
+      60%       { opacity: 0.6; box-shadow: 0 0 0 5px rgba(245,158,11,0); }
+    }
+
+    .ticker-track-outer {
+      flex: 1;
+      overflow: hidden;
+      position: relative;
+      cursor: grab;
+    }
+    .ticker-track-outer:active { cursor: grabbing; }
+
+    .ticker-track-outer::before,
+    .ticker-track-outer::after {
+      content: '';
+      position: absolute;
+      top: 0; bottom: 0;
+      width: 56px;
+      z-index: 2;
+      pointer-events: none;
+    }
+    .ticker-track-outer::before { left:0;  background: linear-gradient(to right, rgba(7,5,16,0.95), transparent); }
+    .ticker-track-outer::after  { right:0; background: linear-gradient(to left,  rgba(7,5,16,0.95), transparent); }
+
+    .ticker-track {
+      display: flex;
+      align-items: center;
+      white-space: nowrap;
+      will-change: transform;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+
+    @keyframes tickerScroll {
+      0%   { transform: translateX(0); }
+      100% { transform: translateX(-50%); }
+    }
+
+    .ticker-item {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 0 22px;
+      white-space: nowrap;
+      border-right: 1px solid rgba(255,255,255,0.05);
+      height: 40px;
+      transition: background 0.15s;
+    }
+
+    .ticker-item:hover { background: rgba(217,119,6,0.05); }
+
+    .ticker-icon {
+      width: 17px; height: 17px;
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 8.5px;
+      font-weight: 700;
+      flex-shrink: 0;
+      font-family: 'IBM Plex Mono', var(--font-mono);
+    }
+
+    .ticker-symbol {
+      font-family: 'IBM Plex Mono', var(--font-mono);
+      font-weight: 600;
+      font-size: 11px;
+      letter-spacing: 0.06em;
+      color: var(--amber-ll);
+    }
+
+    .ticker-price {
+      font-family: 'IBM Plex Mono', var(--font-mono);
+      font-weight: 400;
+      font-size: 11.5px;
+      color: rgba(245,244,255,0.75);
+      letter-spacing: 0.01em;
+    }
+
+    .ticker-change {
+      font-family: 'IBM Plex Mono', var(--font-mono);
+      font-size: 10px;
+      font-weight: 500;
+      padding: 2px 6px;
+      border-radius: 3px;
+      letter-spacing: 0.02em;
+    }
+
+    .ticker-change.up   { color: #6ee7b7; background: rgba(16,185,129,0.1);  border: 1px solid rgba(16,185,129,0.15); }
+    .ticker-change.down { color: #fca5a5; background: rgba(220,38,38,0.1);   border: 1px solid rgba(220,38,38,0.15); }
+    .ticker-change.flat { color: rgba(245,244,255,0.3); background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06); }
+
+    /* Push hero content below ticker - handled in main hero rule above */
+
+    /* Ticker skeleton shimmer while loading */
+    .ticker-shimmer {
+      display: flex; align-items: center; gap: 20px;
+      padding: 0 24px;
+    }
+    .shimmer-block {
+      width: 120px; height: 13px;
+      border-radius: 3px;
+      background: linear-gradient(90deg, rgba(217,119,6,0.07) 25%, rgba(217,119,6,0.12) 50%, rgba(217,119,6,0.07) 75%);
+      background-size: 200% 100%;
+      animation: shimmerSlide 1.8s infinite;
+    }
+    @keyframes shimmerSlide { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
+  </style>
+</head>
+<body>
+
+<!-- ════════ NAVIGATION ════════ -->
+<nav id="nav">
+  <a href="#" class="nav-logo" aria-label="Purp home">
+    <div class="nav-logo-mark">P</div>
+    <span class="nav-logo-name">Purp</span>
+  </a>
+
+  <ul class="nav-links" role="list">
+    <li><a href="#features">Features</a></li>
+    <li><a href="#how">How it works</a></li>
+    <li><a href="#pricing">Pricing</a></li>
+    <li><a href="#reviews">Reviews</a></li>
+  </ul>
+
+  <div class="nav-actions">
+    <!-- Logged-out state -->
+    <div id="nav-auth-btns">
+      <button class="btn-nav-ghost" id="btn-signin">Sign in</button>
+      <button class="btn-cta" id="btn-nav-start">
+        Get started free
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+      </button>
+    </div>
+    <!-- Logged-in state -->
+    <button id="nav-user-btn" class="hidden">
+      <div class="nav-avatar" id="nav-avatar-letter">U</div>
+      <span id="nav-username">User</span>
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
+    </button>
+  </div>
+
+  <button id="hamburger" aria-label="Menu" aria-expanded="false">
+    <span></span><span></span><span></span>
+  </button>
+</nav>
+
+<!-- Mobile drawer -->
+<div id="drawer-overlay" role="button" tabindex="-1" aria-label="Close menu"></div>
+<div id="mobile-drawer" role="dialog" aria-label="Navigation">
+  <a href="#features" class="mobile-nav-link">Features</a>
+  <a href="#how" class="mobile-nav-link">How it works</a>
+  <a href="#pricing" class="mobile-nav-link">Pricing</a>
+  <a href="#reviews" class="mobile-nav-link">Reviews</a>
+  <hr style="border:none;border-top:1px solid var(--border);margin:8px 0;">
+  <button class="mobile-nav-link" style="background:none;border:none;color:var(--txt2);text-align:left;cursor:pointer;" id="mobile-signin">Sign in</button>
+  <button class="btn-cta" id="mobile-start" style="justify-content:center;margin-top:4px;">Get started free</button>
+</div>
+
+<!-- ════════ TICKER TAPE ════════ -->
+<div id="ticker-wrap" role="marquee" aria-label="Live market prices">
+  <div class="ticker-label">
+    <span class="ticker-live-dot"></span>
+    Live
+  </div>
+  <div class="ticker-track-outer">
+    <div id="ticker-loading" class="ticker-shimmer">
+      <div class="shimmer-block"></div>
+      <div class="shimmer-block" style="width:90px"></div>
+      <div class="shimmer-block" style="width:130px"></div>
+      <div class="shimmer-block" style="width:80px"></div>
+      <div class="shimmer-block" style="width:110px"></div>
+      <div class="shimmer-block" style="width:95px"></div>
+      <div class="shimmer-block"></div>
+    </div>
+    <div id="ticker-track" class="ticker-track" style="display:none"></div>
+  </div>
+</div>
+
+<!-- ════════ HERO ════════ -->
+<section id="hero">
+  <div class="hero-orb orb-1"></div>
+  <div class="hero-orb orb-2"></div>
+  <div class="hero-orb orb-3"></div>
+
+  <div class="hero-inner">
+    <!-- Left copy -->
+    <div>
+      <div class="hero-eyebrow">
+        <span class="eyebrow-dot">✨</span>
+        AI-Powered Portfolio Tracking
+      </div>
+      <h1 class="hero-h1">
+        Your wealth,<br>
+        <span>understood by AI</span>
+      </h1>
+      <p class="hero-p">
+        Track stocks, crypto and ETFs in one intelligent dashboard. Get Gemini AI insights, real-time price alerts, and tax-loss harvesting — all in a Chrome extension.
+      </p>
+      <div class="hero-btns">
+        <button class="btn-hero-primary" id="btn-hero-start">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 8v8M8 12h8"/></svg>
+          Start for free
+        </button>
+        <button class="btn-hero-ghost" onclick="document.getElementById('how').scrollIntoView({behavior:'smooth'})">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M10 8l6 4-6 4V8z"/></svg>
+          See how it works
+        </button>
+      </div>
+      <div class="hero-trust">
+        <div class="hero-trust-item">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+          Free plan, no credit card
+        </div>
+        <div class="hero-trust-item">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12.55a11 11 0 010 0"/><path d="M1.42 9a16 16 0 000 6"/><path d="M21.57 9a16 16 0 010 6"/><path d="M8.53 16.11a6 6 0 016.95 0"/><line x1="12" y1="20" x2="12" y2="22"/><path d="M12 12a3 3 0 100-6 3 3 0 000 6z"/></svg>
+          Real-time data
+        </div>
+        <div class="hero-trust-item">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 002 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/></svg>
+          Gemini AI analysis
+        </div>
+      </div>
+    </div>
+
+    <!-- Right — browser mock -->
+    <div class="hero-visual">
+      <div class="hero-float">
+        <div class="mock-browser">
+          <div class="mock-bar">
+            <div class="mock-dots">
+              <div class="mock-dot" style="background:#ef4444;"></div>
+              <div class="mock-dot" style="background:#f59e0b;"></div>
+              <div class="mock-dot" style="background:#10b981;"></div>
+            </div>
+            <div class="mock-url">
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
+              robinhood.com/portfolio
+            </div>
+            <div class="mock-ext">P</div>
+          </div>
+          <div class="mock-popup">
+            <div class="popup-header">
+              <div class="popup-logo">
+                <div class="popup-logo-mark">P</div>
+                <span class="popup-logo-name">Purp</span>
+              </div>
+              <span class="popup-plan-badge">INVESTOR</span>
+            </div>
+            <div class="popup-balance">
+              <div class="balance-lbl">Total Balance</div>
+              <div class="balance-num">$61,284.40</div>
+              <div class="balance-change">↑ +$1,842 today (+3.1%)</div>
+              <!-- Sparkline -->
+              <div class="spark-wrap">
+                <svg width="100%" height="40" viewBox="0 0 280 40" preserveAspectRatio="none">
+                  <defs>
+                    <linearGradient id="sg" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stop-color="#8b5cf6" stop-opacity="0.4"/>
+                      <stop offset="100%" stop-color="#8b5cf6" stop-opacity="0"/>
+                    </linearGradient>
+                  </defs>
+                  <path d="M0,32 C20,30 40,28 60,24 C80,20 100,26 120,22 C140,18 160,14 180,10 C200,6 220,8 240,6 C255,4 270,4 280,3" fill="none" stroke="#8b5cf6" stroke-width="2"/>
+                  <path d="M0,32 C20,30 40,28 60,24 C80,20 100,26 120,22 C140,18 160,14 180,10 C200,6 220,8 240,6 C255,4 270,4 280,3 L280,40 L0,40 Z" fill="url(#sg)"/>
+                </svg>
+              </div>
+            </div>
+            <div class="popup-assets">
+              <div class="popup-asset">
+                <div class="pa-left">
+                  <div class="pa-icon" style="background:rgba(247,147,26,0.15)">₿</div>
+                  <div><div class="pa-sym">BTC</div><div class="pa-name">Bitcoin</div></div>
+                </div>
+                <div class="pa-right">
+                  <div class="pa-val">$28,440</div>
+                  <div class="pa-chg up">+4.2%</div>
+                </div>
+              </div>
+              <div class="popup-asset">
+                <div class="pa-left">
+                  <div class="pa-icon" style="background:rgba(98,126,234,0.15)">Ξ</div>
+                  <div><div class="pa-sym">ETH</div><div class="pa-name">Ethereum</div></div>
+                </div>
+                <div class="pa-right">
+                  <div class="pa-val">$14,920</div>
+                  <div class="pa-chg up">+2.8%</div>
+                </div>
+              </div>
+              <div class="popup-asset">
+                <div class="pa-left">
+                  <div class="pa-icon" style="background:rgba(16,185,129,0.15)" style="font-size:9px;font-weight:700">AAPL</div>
+                  <div><div class="pa-sym">AAPL</div><div class="pa-name">Apple Inc.</div></div>
+                </div>
+                <div class="pa-right">
+                  <div class="pa-val">$17,924</div>
+                  <div class="pa-chg dn">−0.6%</div>
+                </div>
+              </div>
+            </div>
+            <div class="popup-ai">
+              <span class="ai-badge">AI</span>
+              <div class="ai-insight">Portfolio up 3.1% driven by BTC recovery. Consider trimming ETH exposure — it's now 24% of holdings.</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Floating badge — left -->
+        <div class="hero-badge">
+          <div class="badge-icon">💰</div>
+          <div>
+            <div class="badge-title">Tax savings found</div>
+            <div class="badge-sub">$1,240 opportunity in TSLA</div>
+          </div>
+        </div>
+
+        <!-- Floating badge — right -->
+        <div class="hero-badge-right">
+          <div class="badge-icon">🔔</div>
+          <div>
+            <div class="badge-title">Alert triggered</div>
+            <div class="badge-sub">BTC crossed $94,000</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ════════ STATS ════════ -->
+<section id="stats">
+  <div class="stats-grid">
+    <div class="stat-item reveal">
+      <div class="stat-num" data-target="50000">0</div>
+      <div class="stat-lbl">Active investors</div>
+    </div>
+    <div class="stat-item reveal">
+      <div class="stat-num" data-target="3200000" data-prefix="$" data-suffix="M+">$0M+</div>
+      <div class="stat-lbl">Tax savings generated</div>
+    </div>
+    <div class="stat-item reveal">
+      <div class="stat-num" data-target="15" data-suffix="+">0+</div>
+      <div class="stat-lbl">Supported platforms</div>
+    </div>
+    <div class="stat-item reveal">
+      <div class="stat-num" data-target="4.8">0</div>
+      <div class="stat-lbl">Average rating</div>
+    </div>
+  </div>
+</section>
+
+<!-- ════════ FEATURES ════════ -->
+<section id="features">
+  <div class="features-head reveal">
+    <div class="section-tag">Features</div>
+    <h2 class="section-h">Everything to invest <span class="grad">smarter</span></h2>
+    <p class="section-sub">One extension. Every market. Powered by Gemini AI to surface insights you'd otherwise miss.</p>
+  </div>
+
+  <div class="features-grid">
+    <div class="feature-card">
+      <div class="feat-icon feat-icon-v">🧩</div>
+      <h3 class="feat-h">Chrome Extension</h3>
+      <p class="feat-p">Works seamlessly in your browser. Click the icon on any portfolio page and get instant AI-powered analysis without leaving the site.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feat-icon feat-icon-a">🤖</div>
+      <h3 class="feat-h">Gemini AI Insights</h3>
+      <p class="feat-p">Google's Gemini 1.5 Flash analyzes each asset and your full portfolio in plain English — no jargon, just actionable guidance.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feat-icon feat-icon-v">📥</div>
+      <h3 class="feat-h">Broker CSV Import</h3>
+      <p class="feat-p">Import trade history from Coinbase, Robinhood, Fidelity, Kraken, and Schwab. Your entire history syncs in under 30 seconds.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feat-icon feat-icon-a">🔔</div>
+      <h3 class="feat-h">Smart Price Alerts</h3>
+      <p class="feat-p">Set price-above, price-below, or percentage-change alerts for any asset. Get emailed the instant your threshold is hit.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feat-icon feat-icon-v">📉</div>
+      <h3 class="feat-h">Tax Loss Harvesting</h3>
+      <p class="feat-p">Our engine scans your portfolio for harvestable losses, calculates wash-sale safe dates, and estimates exact dollar savings for your bracket.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feat-icon feat-icon-a">📊</div>
+      <h3 class="feat-h">Portfolio Analytics</h3>
+      <p class="feat-p">Compare your performance against the S&amp;P 500, Nasdaq, or Bitcoin across 1D to 2Y. FIFO, LIFO, and HIFO cost-basis methods included.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ════════ HOW IT WORKS ════════ -->
+<section id="how">
+  <div class="how-head reveal">
+    <div class="section-tag">How it works</div>
+    <h2 class="section-h">Up and running in <span class="grad">3 minutes</span></h2>
+    <p class="section-sub">No open-banking API keys. No account linking. Just install, add your holdings, and let the AI go to work.</p>
+  </div>
+  <div class="steps-grid">
+    <div class="step-card">
+      <div class="step-num step-num-v">1</div>
+      <div class="step-inner">
+        <h3 class="step-h">Install the extension</h3>
+        <p class="step-p">Add Purp to Chrome in one click. Create a free account with your email — no credit card required.</p>
+      </div>
+    </div>
+    <div class="step-card">
+      <div class="step-num step-num-a">2</div>
+      <div class="step-inner">
+        <h3 class="step-h">Add your assets</h3>
+        <p class="step-p">Type any ticker (BTC, AAPL, ETH) and enter your quantity and buy price — or import a full CSV from your broker in seconds.</p>
+      </div>
+    </div>
+    <div class="step-card">
+      <div class="step-num step-num-v">3</div>
+      <div class="step-inner">
+        <h3 class="step-h">Let AI optimize</h3>
+        <p class="step-p">Real-time prices, AI analysis, price alerts, and tax-saving recommendations. Your portfolio, finally working for you.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ════════ REVIEWS ════════ -->
+<section id="reviews">
+  <div class="reviews-head reveal">
+    <div class="section-tag">Reviews</div>
+    <h2 class="section-h">Trusted by <span class="grad">real investors</span></h2>
+    <p class="section-sub">From hobbyist holders to full-time traders — here's what people are actually saying.</p>
+  </div>
+  <!-- Review count bar -->
+  <div class="review-meta reveal" style="display:flex;align-items:center;justify-content:center;gap:20px;margin-bottom:48px;flex-wrap:wrap;">
+    <div style="display:flex;align-items:center;gap:8px;">
+      <span style="font-size:22px;letter-spacing:2px;color:#fbbf24;">★★★★★</span>
+      <span style="font-family:var(--font-mono);font-weight:700;font-size:18px;">4.8</span>
+      <span style="color:var(--txt3);font-size:13px;">/ 5.0</span>
+    </div>
+    <div style="width:1px;height:24px;background:var(--border);"></div>
+    <span style="color:var(--txt2);font-size:13px;">Based on <strong style="color:var(--txt);">2,341 reviews</strong> across Chrome Web Store &amp; Product Hunt</span>
+  </div>
+
+  <div class="reviews-grid">
+    <div class="review-card">
+      <div class="stars">★★★★★</div>
+      <p class="review-text">Skeptical at first — I've tried Kubera, Sharesight, all of them. But Purp's tax-loss harvesting found $3,100 in write-offs I completely missed. The subscription paid for itself in the first week.</p>
+      <div class="reviewer">
+        <div class="reviewer-av" style="background:linear-gradient(135deg,#7c3aed,#a78bfa)">RH</div>
+        <div>
+          <div class="reviewer-name">Ryan Harris</div>
+          <div class="reviewer-role">Software engineer, Austin TX · BTC, ETH, AAPL</div>
+        </div>
+        <span class="reviewer-platform">Chrome Web Store</span>
+      </div>
+    </div>
+    <div class="review-card">
+      <div class="stars">★★★★★</div>
+      <p class="review-text">When SOL dropped 14% last month the AI didn't just say "it's down." It explained the Binance outflow data, linked it to the macro move, and told me my position size was still within my own risk tolerance. Genuinely useful.</p>
+      <div class="reviewer">
+        <div class="reviewer-av" style="background:linear-gradient(135deg,#d97706,#fbbf24)">JW</div>
+        <div>
+          <div class="reviewer-name">Jake Williams</div>
+          <div class="reviewer-role">Day trader, Chicago IL · 18 assets tracked</div>
+        </div>
+        <span class="reviewer-platform">Product Hunt</span>
+      </div>
+    </div>
+    <div class="review-card">
+      <div class="stars">★★★★★</div>
+      <p class="review-text">Imported 3 years of Robinhood and Fidelity history in under a minute. Every other app I tried either choked on the CSV or mangled my cost basis. This just worked, first try.</p>
+      <div class="reviewer">
+        <div class="reviewer-av" style="background:linear-gradient(135deg,#059669,#34d399)">AJ</div>
+        <div>
+          <div class="reviewer-name">Ashley Johnson</div>
+          <div class="reviewer-role">Financial analyst, Seattle WA · Fidelity + Robinhood</div>
+        </div>
+        <span class="reviewer-platform">Twitter / X</span>
+      </div>
+    </div>
+    <div class="review-card">
+      <div class="stars">★★★★☆</div>
+      <p class="review-text">Really solid product. The HIFO cost basis method alone saves me hours every April. Only reason it's not 5 stars is I'd love a native iOS app — the mobile web version works but a dedicated app would be perfect.</p>
+      <div class="reviewer">
+        <div class="reviewer-av" style="background:linear-gradient(135deg,#dc2626,#f87171)">BM</div>
+        <div>
+          <div class="reviewer-name">Brian Miller</div>
+          <div class="reviewer-role">Small business owner, Denver CO · Tax Pro plan</div>
+        </div>
+        <span class="reviewer-platform">Chrome Web Store</span>
+      </div>
+    </div>
+    <div class="review-card">
+      <div class="stars">★★★★★</div>
+      <p class="review-text">Been using it for four months. The AI knows I hold a lot of NVDA and gave me a rebalancing suggestion specific to my portfolio — not generic "diversify" advice. That kind of context is what I was paying a financial advisor for.</p>
+      <div class="reviewer">
+        <div class="reviewer-av" style="background:linear-gradient(135deg,#7c3aed,#ec4899)">ST</div>
+        <div>
+          <div class="reviewer-name">Sarah Thompson</div>
+          <div class="reviewer-role">Marketing manager, Nashville TN · crypto &amp; stocks</div>
+        </div>
+        <span class="reviewer-platform">Product Hunt</span>
+      </div>
+    </div>
+    <div class="review-card">
+      <div class="stars">★★★★★</div>
+      <p class="review-text">Set a BTC price alert at $95k on a Friday night. Got the push notification at 11:42pm, literally seconds after it crossed. I've had alerts on Coinbase and Binance both fail to fire — this one was instant, every single time.</p>
+      <div class="reviewer">
+        <div class="reviewer-av" style="background:linear-gradient(135deg,#0284c7,#38bdf8)">KC</div>
+        <div>
+          <div class="reviewer-name">Kevin Clark</div>
+          <div class="reviewer-role">Investor, Phoenix AZ · 9 assets, 15 active alerts</div>
+        </div>
+        <span class="reviewer-platform">Chrome Web Store</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ════════ PRICING ════════ -->
+<section id="pricing">
+  <div class="pricing-head reveal">
+    <div class="section-tag">Pricing</div>
+    <h2 class="section-h">Simple, honest <span class="grad">pricing</span></h2>
+    <p class="section-sub">Start free and upgrade when you're ready. No hidden fees, no annual commitment.</p>
+  </div>
+  <div class="pricing-grid">
+
+    <!-- Free -->
+    <div class="plan-card">
+      <div class="plan-name">Free</div>
+      <div class="plan-desc">Track your first positions, no card needed</div>
+      <div class="plan-price">
+        <span class="plan-price-num">$0</span><span class="plan-price-cents">.00</span>
+        <span class="plan-price-per">/month</span>
+      </div>
+      <ul class="plan-features">
+        <li class="plan-feature"><span class="pf-check">✓</span><span>Up to 4 assets</span></li>
+        <li class="plan-feature"><span class="pf-check">✓</span><span>Real-time prices</span></li>
+        <li class="plan-feature"><span class="pf-check">✓</span><span>10 watchlist items</span></li>
+        <li class="plan-feature"><span class="pf-check">✓</span><span>2 price alerts</span></li>
+        <li class="plan-feature"><span class="pf-check">✓</span><span>30-day price history</span></li>
+        <li class="plan-feature"><span class="pf-x">✗</span><span>AI analysis</span></li>
+        <li class="plan-feature"><span class="pf-x">✗</span><span>CSV import</span></li>
+        <li class="plan-feature"><span class="pf-x">✗</span><span>Tax tools</span></li>
+      </ul>
+      <button class="btn-plan btn-plan-ghost" data-plan="free" onclick="openAuthModal('register')">Get started free</button>
+    </div>
+
+    <!-- Investor -->
+    <div class="plan-card featured">
+      <div class="plan-badge-top">Most popular</div>
+      <div class="plan-name">Investor</div>
+      <div class="plan-desc">Unlimited tracking with Gemini AI insights</div>
+      <div class="plan-price">
+        <span class="plan-price-num">$19</span><span class="plan-price-cents">.99</span>
+        <span class="plan-price-per">/month</span>
+      </div>
+      <ul class="plan-features">
+        <li class="plan-feature"><span class="pf-check">✓</span><span>Unlimited assets, watchlist & alerts</span></li>
+        <li class="plan-feature"><span class="pf-check">✓</span><span>Gemini AI per asset & portfolio</span></li>
+        <li class="plan-feature"><span class="pf-check">✓</span><span>CSV import (5 brokers)</span></li>
+        <li class="plan-feature"><span class="pf-check">✓</span><span>2-year price history</span></li>
+        <li class="plan-feature"><span class="pf-check">✓</span><span>Priority email support</span></li>
+      </ul>
+      <button class="btn-plan btn-plan-primary" data-plan="investor" id="btn-plan-investor">Upgrade to Investor</button>
+    </div>
+
+    <!-- Tax Pro -->
+    <div class="plan-card">
+      <div class="plan-badge-top" style="background:linear-gradient(135deg,var(--violet),var(--violet-l));color:#fff;box-shadow:0 4px 12px var(--glow);">Max savings</div>
+      <div class="plan-name">Tax Pro</div>
+      <div class="plan-desc">Everything in Investor + full tax engine</div>
+      <div class="plan-price">
+        <span class="plan-price-num">$29</span><span class="plan-price-cents">.99</span>
+        <span class="plan-price-per">/month</span>
+      </div>
+      <ul class="plan-features">
+        <li class="plan-feature"><span class="pf-check">✓</span><span>Everything in Investor</span></li>
+        <li class="plan-feature"><span class="pf-check">✓</span><span>Tax Loss Harvesting engine</span></li>
+        <li class="plan-feature"><span class="pf-check">✓</span><span>FIFO / LIFO / HIFO cost basis</span></li>
+        <li class="plan-feature"><span class="pf-check">✓</span><span>Wash-sale rule guidance</span></li>
+        <li class="plan-feature"><span class="pf-check">✓</span><span>Form 8949 export</span></li>
+        <li class="plan-feature"><span class="pf-check">✓</span><span>Replacement asset suggestions</span></li>
+      </ul>
+      <button class="btn-plan btn-plan-gold" data-plan="tax_pro" id="btn-plan-taxpro">Upgrade to Tax Pro</button>
+    </div>
+  </div>
+</section>
+
+<!-- ════════ CTA ════════ -->
+<section id="cta">
+  <div class="cta-orb"></div>
+  <h2 class="cta-h">Ready to invest smarter?</h2>
+  <p class="cta-p">Join 50,000+ investors using Purp's AI to understand their portfolios and save on taxes. Free plan — no card needed.</p>
+  <div class="cta-btns">
+    <button class="btn-hero-primary" id="btn-cta-start">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 8v8M8 12h8"/></svg>
+      Create free account
+    </button>
+    <a href="#pricing" class="btn-hero-ghost" style="text-decoration:none;">View plans</a>
+  </div>
+</section>
+
+<!-- ════════ FOOTER ════════ -->
+<footer>
+  <div class="footer-top">
+    <div class="footer-brand">
+      <a href="#" class="nav-logo">
+        <div class="nav-logo-mark">P</div>
+        <span class="nav-logo-name">Purp</span>
+      </a>
+      <p>AI-powered Chrome extension that tracks crypto & stocks, analyzes your portfolio with Gemini AI, and finds real tax savings.</p>
+      <div class="footer-socials">
+        <a href="#" class="social-btn" aria-label="Twitter">✕</a>
+        <a href="#" class="social-btn" aria-label="Instagram">📷</a>
+        <a href="#" class="social-btn" aria-label="LinkedIn">in</a>
+      </div>
+    </div>
+    <div class="footer-col">
+      <h4>Product</h4>
+      <ul>
+        <li><a href="#features">Features</a></li>
+        <li><a href="#pricing">Pricing</a></li>
+        <li><a href="#how">How it works</a></li>
+        <li><a href="#reviews">Reviews</a></li>
+      </ul>
+    </div>
+    <div class="footer-col">
+      <h4>Company</h4>
+      <ul>
+        <li><a href="#">About</a></li>
+        <li><a href="#">Blog</a></li>
+        <li><a href="#">Careers</a></li>
+        <li><a href="#">Contact</a></li>
+      </ul>
+    </div>
+    <div class="footer-col">
+      <h4>Legal</h4>
+      <ul>
+        <li><a href="#">Privacy policy</a></li>
+        <li><a href="#">Terms of service</a></li>
+        <li><a href="#">Cookie policy</a></li>
+      </ul>
+    </div>
+  </div>
+  <div class="footer-bottom">
+    <p class="footer-copy">© 2026 <strong style="color:var(--violet-ll)">André Soluções LTDA</strong>. All rights reserved.</p>
+    <p class="footer-copy">Made with ♥ in Brazil</p>
+  </div>
+</footer>
+
+<!-- ════════ AUTH MODAL ════════ -->
+<div class="modal-bg" id="auth-modal" role="dialog" aria-modal="true" aria-label="Authentication">
+  <div class="modal-box" style="position:relative;">
+    <button class="modal-close" id="modal-close-btn" aria-label="Close">✕</button>
+
+    <!-- Sign In form -->
+    <div id="form-signin">
+      <div class="modal-header">
+        <div class="modal-mark">P</div>
+        <h2 class="modal-title">Welcome back</h2>
+        <p class="modal-sub">Sign in to your Purp account</p>
+      </div>
+      <div class="modal-form">
+        <div id="signin-error" class="error-msg hidden">
+          <span>⚠</span><span id="signin-error-msg">Error</span>
+        </div>
+        <div class="form-field">
+          <label class="form-label" for="signin-username">Username</label>
+          <input class="form-input" type="text" id="signin-username" placeholder="your username" autocomplete="username" />
+        </div>
+        <div class="form-field">
+          <label class="form-label" for="signin-password">Password</label>
+          <input class="form-input" type="password" id="signin-password" placeholder="••••••••" autocomplete="current-password" />
+        </div>
+        <button class="btn-modal-submit" id="btn-do-signin">Sign in to Purp</button>
+      </div>
+      <p class="modal-switch">No account? <button class="modal-link" onclick="switchForm('register')">Create one free</button></p>
+    </div>
+
+    <!-- Register form -->
+    <div id="form-register" class="hidden">
+      <div class="modal-header">
+        <div class="modal-mark">P</div>
+        <h2 class="modal-title">Create account</h2>
+        <p class="modal-sub">Free forever. No credit card needed.</p>
+      </div>
+      <div class="modal-form">
+        <div id="register-error" class="error-msg hidden">
+          <span>⚠</span><span id="register-error-msg">Error</span>
+        </div>
+        <div class="form-field">
+          <label class="form-label" for="reg-username">Username</label>
+          <input class="form-input" type="text" id="reg-username" placeholder="choose a username" autocomplete="username" />
+        </div>
+        <div class="form-field">
+          <label class="form-label" for="reg-email">Email</label>
+          <input class="form-input" type="email" id="reg-email" placeholder="you@email.com" autocomplete="email" />
+        </div>
+        <div class="form-field">
+          <label class="form-label" for="reg-password">Password</label>
+          <input class="form-input" type="password" id="reg-password" placeholder="at least 4 characters" autocomplete="new-password" />
+        </div>
+        <button class="btn-modal-submit" id="btn-do-register">Create free account</button>
+      </div>
+      <p class="modal-switch">Already have an account? <button class="modal-link" onclick="switchForm('signin')">Sign in</button></p>
+    </div>
+  </div>
+</div>
+
+<!-- ════════ TOAST ROOT ════════ -->
+<div id="toast-root" aria-live="polite"></div>
+
+<!-- ════════ JAVASCRIPT ════════ -->
+<script>
+  /* ═══════════════════════════════════
+     TICKER TAPE — LIVE MARKET PRICES
+  ═══════════════════════════════════ */
+
+  // ── Asset definitions ──
+  const CRYPTO_LIST = [
+    { id:'bitcoin',       sym:'BTC',  icon:'₿', color:'#f7931a', bg:'rgba(247,147,26,0.18)' },
+    { id:'ethereum',      sym:'ETH',  icon:'Ξ', color:'#627eea', bg:'rgba(98,126,234,0.18)' },
+    { id:'solana',        sym:'SOL',  icon:'◎', color:'#9945ff', bg:'rgba(153,69,255,0.18)' },
+    { id:'binancecoin',   sym:'BNB',  icon:'B', color:'#f3ba2f', bg:'rgba(243,186,47,0.18)' },
+    { id:'ripple',        sym:'XRP',  icon:'✕', color:'#00aae4', bg:'rgba(0,170,228,0.18)' },
+    { id:'cardano',       sym:'ADA',  icon:'₳', color:'#3cc8c8', bg:'rgba(60,200,200,0.18)' },
+    { id:'dogecoin',      sym:'DOGE', icon:'Ð', color:'#c2a633', bg:'rgba(194,166,51,0.18)' },
+    { id:'avalanche-2',   sym:'AVAX', icon:'A', color:'#e84142', bg:'rgba(232,65,66,0.18)'  },
+    { id:'chainlink',     sym:'LINK', icon:'⬡', color:'#2a5ada', bg:'rgba(42,90,218,0.18)'  },
+    { id:'polkadot',      sym:'DOT',  icon:'●', color:'#e6007a', bg:'rgba(230,0,122,0.18)'  },
+  ];
+
+  const STOCK_LIST = [
+    { sym:'AAPL',  name:'Apple',     icon:'',  color:'#a8b0be', bg:'rgba(168,176,190,0.15)' },
+    { sym:'TSLA',  name:'Tesla',     icon:'',  color:'#e31937', bg:'rgba(227,25,55,0.15)'   },
+    { sym:'NVDA',  name:'Nvidia',    icon:'',  color:'#76b900', bg:'rgba(118,185,0,0.15)'   },
+    { sym:'MSFT',  name:'Microsoft', icon:'',  color:'#00a4ef', bg:'rgba(0,164,239,0.15)'   },
+    { sym:'AMZN',  name:'Amazon',    icon:'',  color:'#ff9900', bg:'rgba(255,153,0,0.15)'   },
+    { sym:'GOOGL', name:'Alphabet',  icon:'',  color:'#4285f4', bg:'rgba(66,133,244,0.15)'  },
+    { sym:'META',  name:'Meta',      icon:'',  color:'#0082fb', bg:'rgba(0,130,251,0.15)'   },
+    { sym:'JPM',   name:'JPMorgan',  icon:'',  color:'#005eb8', bg:'rgba(0,94,184,0.18)'    },
+    { sym:'NVDA',  name:'Nvidia',    icon:'',  color:'#76b900', bg:'rgba(118,185,0,0.15)'   },
+    { sym:'V',     name:'Visa',      icon:'',  color:'#7673c0', bg:'rgba(118,115,192,0.18)' },
+  ].filter((s, i, a) => a.findIndex(x => x.sym === s.sym) === i); // dedupe
+
+  // ── Seed fallback values (approximate real prices Feb 2026) ──
+  const FALLBACK = {
+    BTC:96400, ETH:2650, SOL:178, BNB:605, XRP:2.58, ADA:0.82, DOGE:0.21, AVAX:29, LINK:16, DOT:7.2,
+    AAPL:228,  TSLA:365, NVDA:131, MSFT:420, AMZN:225, GOOGL:182, META:710, JPM:280, V:362,
+  };
+
+  // Stable random seed per symbol so fallback changes persist per session
+  const SESSION_SEEDS = {};
+  function getSessionSeed(sym) {
+    if (!SESSION_SEEDS[sym]) {
+      SESSION_SEEDS[sym] = (Math.random() * 6 - 3); // -3% to +3%
+    }
+    return SESSION_SEEDS[sym];
+  }
+
+  let tickerData    = {};  // sym -> { price: number, changePercent: number }
+  let tickerReady   = false;
+  let tickerDur     = 26;   // animation seconds, set after render
+
+  // ── Formatters ──
+  function fmtPrice(p) {
+    if (!p || isNaN(p)) return '—';
+    if (p >= 10000) return '$' + p.toLocaleString('en-US', { maximumFractionDigits: 0 });
+    if (p >= 100)   return '$' + p.toFixed(2);
+    if (p >= 1)     return '$' + p.toFixed(3);
+    return '$' + p.toFixed(5);
+  }
+
+  function fmtPct(pct) {
+    if (isNaN(pct)) return '0.00%';
+    const sign = pct >= 0 ? '+' : '';
+    return sign + pct.toFixed(2) + '%';
+  }
+
+  // ── Build DOM ──
+  function buildTickerItems(items) {
+    return items.map(item => {
+      const d = tickerData[item.sym];
+      if (!d) return '';
+      const dir    = d.changePercent > 0.04 ? 'up' : d.changePercent < -0.04 ? 'down' : 'flat';
+      const arrow  = dir === 'up' ? '▲' : dir === 'down' ? '▼' : '—';
+      const label  = item.icon || item.sym.slice(0, 3);
+      return `<div class="ticker-item" data-sym="${item.sym}">` +
+        `<div class="ticker-icon" style="background:${item.bg};color:${item.color}">${label}</div>` +
+        `<span class="ticker-symbol">${item.sym}</span>` +
+        `<span class="ticker-price">${fmtPrice(d.price)}</span>` +
+        `<span class="ticker-change ${dir}">${arrow} ${fmtPct(d.changePercent)}</span>` +
+        `</div>`;
+    }).join('');
+  }
+
+  function renderTicker() {
+    const allItems = [
+      ...CRYPTO_LIST,
+      ...STOCK_LIST,
+    ].filter(item => tickerData[item.sym]);
+
+    if (!allItems.length) return;
+
+    const track   = document.getElementById('ticker-track');
+    const loading = document.getElementById('ticker-loading');
+    const html    = buildTickerItems(allItems);
+
+    // Double the items for seamless infinite loop
+    track.innerHTML = html + html;
+
+    // Speed: ~180px per item, scroll at ~55px/s (half speed)
+    const halfPx = allItems.length * 180;
+    tickerDur = Math.max(32, Math.round(halfPx / 55));
+
+    if (!tickerReady) {
+      loading.style.display = 'none';
+      track.style.display   = 'flex';
+      tickerReady = true;
+      initTickerDrag(track);
+    }
+  }
+
+  // ── Smooth value refresh (no DOM rebuild) ──
+  function patchTickerDOM() {
+    document.querySelectorAll('#ticker-track .ticker-item').forEach(el => {
+      const d = tickerData[el.dataset.sym];
+      if (!d) return;
+      const dir    = d.changePercent > 0.04 ? 'up' : d.changePercent < -0.04 ? 'down' : 'flat';
+      const arrow  = dir === 'up' ? '▲' : dir === 'down' ? '▼' : '—';
+      const pEl    = el.querySelector('.ticker-price');
+      const cEl    = el.querySelector('.ticker-change');
+      if (pEl) pEl.textContent = fmtPrice(d.price);
+      if (cEl) { cEl.textContent = `${arrow} ${fmtPct(d.changePercent)}`; cEl.className = `ticker-change ${dir}`; }
+    });
+  }
+
+  // ── Drag & touch ──
+  // ── Physics-based drag with smooth velocity blend ──
+  function initTickerDrag(track) {
+    const outer = track.parentElement;
+
+    // Scroll speed in px/frame at 60fps (negative = left)
+    const AUTO_SPEED  = -(track.scrollWidth / 2) / (tickerDur * 60);
+    const FRICTION    = 0.88;   // velocity decay per frame when not dragging
+    const BLEND       = 0.045;  // how fast vel blends back to AUTO_SPEED
+
+    let pos       = 0;      // current translateX
+    let vel       = AUTO_SPEED;  // current velocity px/frame
+    let dragging  = false;
+    let startX    = 0;
+    let lastX     = 0;
+    let lastT     = 0;
+    let rafId     = null;
+
+    function halfW() { return track.scrollWidth / 2; }
+
+    function wrap(x) {
+      const h = halfW();
+      if (x > 0)  return x - h;
+      if (x < -h) return x + h;
+      return x;
+    }
+
+    // Continuous physics loop — always running
+    function loop() {
+      if (!dragging) {
+        // Blend current velocity toward auto-scroll speed
+        vel += (AUTO_SPEED - vel) * BLEND;
+        // If moving opposite direction (positive), extra friction to stop faster
+        if (vel > 0) vel *= FRICTION;
+      }
+      pos = wrap(pos + vel);
+      track.style.transform = `translateX(${pos}px)`;
+      rafId = requestAnimationFrame(loop);
+    }
+
+    // Kick off the loop (CSS animation off, JS takes over fully)
+    track.style.animation = 'none';
+    track.style.transform = `translateX(0)`;
+    loop();
+
+    function onStart(clientX) {
+      dragging = true;
+      startX   = clientX;
+      lastX    = clientX;
+      lastT    = Date.now();
+      vel      = 0;
+      outer.style.cursor = 'grabbing';
+    }
+
+    function onMove(clientX) {
+      if (!dragging) return;
+      const now = Date.now();
+      const dt  = Math.max(1, now - lastT);
+      // Instantaneous velocity this frame
+      vel    = (clientX - lastX) / dt * (1000 / 60); // normalise to 60fps
+      // Move pos directly by delta
+      pos    = wrap(pos + (clientX - lastX));
+      lastX  = clientX;
+      lastT  = now;
+    }
+
+    function onEnd() {
+      if (!dragging) return;
+      dragging = false;
+      outer.style.cursor = 'grab';
+      // vel is already set from last onMove — the loop will blend it to AUTO_SPEED
+    }
+
+    // Mouse
+    outer.addEventListener('mousedown', e => { onStart(e.clientX); e.preventDefault(); });
+    window.addEventListener('mousemove', e => { onMove(e.clientX); });
+    window.addEventListener('mouseup',   () => onEnd());
+
+    // Touch
+    outer.addEventListener('touchstart', e => {
+      if (e.touches.length === 1) onStart(e.touches[0].clientX);
+    }, { passive: true });
+    outer.addEventListener('touchmove', e => {
+      if (!dragging) return;
+      onMove(e.touches[0].clientX);
+      e.preventDefault();
+    }, { passive: false });
+    outer.addEventListener('touchend',    () => onEnd());
+    outer.addEventListener('touchcancel', () => onEnd());
+  }
+
+  // ── Data fetching ──
+  async function fetchCrypto() {
+    const ids = CRYPTO_LIST.map(c => c.id).join(',');
+    const url = `https://api.coingecko.com/api/v3/simple/price?ids=${ids}&vs_currencies=usd&include_24hr_change=true`;
+    try {
+      const res  = await fetch(url, { signal: AbortSignal.timeout(9000) });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const json = await res.json();
+      CRYPTO_LIST.forEach(c => {
+        const row = json[c.id];
+        if (row?.usd) {
+          tickerData[c.sym] = { price: row.usd, changePercent: row.usd_24h_change ?? 0 };
+        }
+      });
+    } catch {
+      // Fallback — only fill gaps
+      CRYPTO_LIST.forEach(c => {
+        if (!tickerData[c.sym] && FALLBACK[c.sym]) {
+          const seed = getSessionSeed(c.sym);
+          tickerData[c.sym] = {
+            price:         FALLBACK[c.sym] * (1 + seed / 100),
+            changePercent: seed,
+          };
+        }
+      });
+    }
+  }
+
+  async function fetchStocks() {
+    // Yahoo Finance v8 via CORS proxy
+    const syms    = STOCK_LIST.map(s => s.sym).join(',');
+    const yahooQ  = `https://query1.finance.yahoo.com/v8/finance/spark?symbols=${syms}&range=1d&interval=1d`;
+    const proxy   = `https://corsproxy.io/?url=${encodeURIComponent(yahooQ)}`;
+    try {
+      const res  = await fetch(proxy, { signal: AbortSignal.timeout(10000) });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const json = await res.json();
+      // v8 spark returns { symbol: { close: [...], previousClose: number, ... } }
+      STOCK_LIST.forEach(s => {
+        const row = json[s.sym];
+        if (!row) return;
+        const closes = row.close || [];
+        const price  = closes[closes.length - 1];
+        const prev   = row.previousClose || closes[0] || price;
+        if (price) {
+          tickerData[s.sym] = {
+            price,
+            changePercent: prev ? ((price - prev) / prev) * 100 : 0,
+          };
+        }
+      });
+    } catch {
+      // Fallback — only fill gaps
+      STOCK_LIST.forEach(s => {
+        if (!tickerData[s.sym] && FALLBACK[s.sym]) {
+          const seed = getSessionSeed(s.sym);
+          tickerData[s.sym] = {
+            price:         FALLBACK[s.sym] * (1 + seed / 100),
+            changePercent: seed,
+          };
+        }
+      });
+    }
+  }
+
+  async function initTicker() {
+    await Promise.all([fetchCrypto(), fetchStocks()]);
+    renderTicker();
+    setInterval(async () => {
+      await Promise.all([fetchCrypto(), fetchStocks()]);
+      patchTickerDOM();
+    }, 30000);
+  }
+
+  initTicker();
+
+  /* ═══════════════════════════════════════════════════════
+     ██████╗ ██████╗      ██████╗ ██████╗ ███╗   ██╗███████╗██╗ ██████╗
+     ─────────────────────────────────────────────────────────────────────
+     INTEGRATION GUIDE — change only this CONFIG block to swap backends.
+
+     ENDPOINTS expected:
+     POST /auth/register  body:{username,email,password}  → {token, user:{username,email,plan?}}
+     POST /auth/login     body:{username,password}        → {token, user:{username,email,plan?}}
+     GET  /auth/me        header:[AUTH_HEADER]            → {username,email,plan?}
+     POST /stripe/create-checkout  header+body:{plan}     → {checkout_url}
+
+     Errors always return { detail: string } or { message: string }
+  ═══════════════════════════════════════════════════════ */
+  const CONFIG = {
+    API_BASE:      'https://purp-production.up.railway.app',
+    ENDPOINTS: {
+      register: '/auth/register',
+      login:    '/auth/login',
+      me:       '/auth/me',
+      checkout: '/stripe/create-checkout',
+    },
+    TOKEN_KEY:     'token',        // key in login/register response JSON; alt: 'access_token'
+    AUTH_HEADER:   'X-Auth-Token', // header name for protected requests; alt: 'Authorization'
+    AUTH_PREFIX:   '',             // token prefix; use 'Bearer ' for OAuth2
+    STORAGE_TOKEN: 'purp_token',
+    STORAGE_USER:  'purp_user',
+    MIN_USERNAME:  3,
+    MIN_PASSWORD:  6,
+  };
+
+  function apiUrl(key) { return CONFIG.API_BASE + CONFIG.ENDPOINTS[key]; }
+  function authHeaders(token) {
+    return { 'Content-Type': 'application/json', [CONFIG.AUTH_HEADER]: CONFIG.AUTH_PREFIX + token };
+  }
+
+  /* ═══════════════════════════════════
+     STATE
+  ═══════════════════════════════════ */
+  let authToken = localStorage.getItem(CONFIG.STORAGE_TOKEN) || null;
+  let currentUser = null;
+  try { currentUser = JSON.parse(localStorage.getItem(CONFIG.STORAGE_USER) || 'null'); } catch(_) {}
+
+  /* ═══════════════════════════════════
+     TOAST
+  ═══════════════════════════════════ */
+  function toast(msg, type = 'info', ms = 3800) {
+    const icons = { success:'✓', error:'✕', info:'ℹ' };
+    const el = document.createElement('div');
+    el.className = `toast ${type}`;
+    el.innerHTML = `<span style="font-size:15px;">${icons[type]||'ℹ'}</span><span>${msg}</span>`;
+    document.getElementById('toast-root').appendChild(el);
+    setTimeout(() => {
+      el.style.animation = 'toastOut 0.3s ease forwards';
+      setTimeout(() => el.remove(), 320);
+    }, ms);
+  }
+
+  /* ═══════════════════════════════════
+     NAV — scroll shadow
+  ═══════════════════════════════════ */
+  const nav = document.getElementById('nav');
+  window.addEventListener('scroll', () => {
+    nav.classList.toggle('scrolled', window.scrollY > 10);
+  }, { passive: true });
+
+  /* ═══════════════════════════════════
+     HAMBURGER / DRAWER
+  ═══════════════════════════════════ */
+  const hamburger = document.getElementById('hamburger');
+  const drawer = document.getElementById('mobile-drawer');
+  const drawerOverlay = document.getElementById('drawer-overlay');
+
+  function toggleDrawer(force) {
+    const open = force !== undefined ? force : !drawer.classList.contains('open');
+    drawer.classList.toggle('open', open);
+    drawerOverlay.classList.toggle('active', open);
+    hamburger.classList.toggle('open', open);
+    hamburger.setAttribute('aria-expanded', open);
+    document.body.style.overflow = open ? 'hidden' : '';
+  }
+
+  hamburger.addEventListener('click', () => toggleDrawer());
+  drawerOverlay.addEventListener('click', () => toggleDrawer(false));
+  document.querySelectorAll('.mobile-nav-link').forEach(a => {
+    a.addEventListener('click', () => toggleDrawer(false));
+  });
+
+  /* ═══════════════════════════════════
+     SMOOTH SCROLL (nav links)
+  ═══════════════════════════════════ */
+  document.querySelectorAll('a[href^="#"]').forEach(a => {
+    a.addEventListener('click', e => {
+      const id = a.getAttribute('href');
+      if (id === '#') return;
+      const el = document.querySelector(id);
+      if (el) {
+        e.preventDefault();
+        el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    });
+  });
+
+  /* ═══════════════════════════════════
+     FEATURE CARD MOUSE EFFECT
+  ═══════════════════════════════════ */
+  document.querySelectorAll('.feature-card').forEach(card => {
+    card.addEventListener('mousemove', e => {
+      const rect = card.getBoundingClientRect();
+      const x = ((e.clientX - rect.left) / rect.width * 100).toFixed(1);
+      const y = ((e.clientY - rect.top) / rect.height * 100).toFixed(1);
+      card.style.setProperty('--mx', `${x}%`);
+      card.style.setProperty('--my', `${y}%`);
+    });
+  });
+
+  /* ═══════════════════════════════════
+     INTERSECTION OBSERVER — reveal
+  ═══════════════════════════════════ */
+  const revealObs = new IntersectionObserver((entries) => {
+    entries.forEach((e, i) => {
+      if (e.isIntersecting) {
+        const delay = e.target.dataset.delay || 0;
+        setTimeout(() => e.target.classList.add('visible'), +delay);
+        revealObs.unobserve(e.target);
+      }
+    });
+  }, { threshold: 0.1, rootMargin: '0px 0px -40px 0px' });
+
+  // Assign staggered delays
+  document.querySelectorAll('.reveal').forEach((el, i) => {
+    el.dataset.delay = i % 4 * 80;
+    revealObs.observe(el);
+  });
+  document.querySelectorAll('.feature-card, .step-card, .review-card, .plan-card').forEach((el, i) => {
+    el.dataset.delay = i % 3 * 100;
+    revealObs.observe(el);
+  });
+
+  /* ═══════════════════════════════════
+     COUNTER ANIMATION
+  ═══════════════════════════════════ */
+  const counterObs = new IntersectionObserver((entries) => {
+    entries.forEach(e => {
+      if (e.isIntersecting) {
+        animateCounter(e.target);
+        counterObs.unobserve(e.target);
+      }
+    });
+  }, { threshold: 0.3 });
+
+  document.querySelectorAll('.stat-num[data-target]').forEach(el => counterObs.observe(el));
+
+  function animateCounter(el) {
+    const target = parseFloat(el.dataset.target);
+    const prefix = el.dataset.prefix || '';
+    const suffix = el.dataset.suffix || '';
+    const duration = 1800;
+    const start = performance.now();
+
+    function step(now) {
+      const p = Math.min((now - start) / duration, 1);
+      const eased = 1 - Math.pow(1 - p, 3);
+      const val = target * eased;
+
+      let display;
+      if (target >= 1000000) {
+        display = '$' + (val / 1000000).toFixed(1) + 'M+';
+      } else if (target >= 1000) {
+        display = Math.round(val).toLocaleString() + suffix;
+      } else if (Number.isInteger(target)) {
+        display = Math.round(val) + suffix;
+      } else {
+        display = val.toFixed(1) + suffix;
+      }
+      el.textContent = display;
+
+      if (p < 1) requestAnimationFrame(step);
+    }
+    requestAnimationFrame(step);
+  }
+
+
+  /* ═══════════════════════════════════
+     AUTH STATE
+  ═══════════════════════════════════ */
+  function updateAuthUI() {
+    const authBtns    = document.getElementById('nav-auth-btns');
+    const userBtn     = document.getElementById('nav-user-btn');
+    const navUsername = document.getElementById('nav-username');
+    const navAvatar   = document.getElementById('nav-avatar-letter');
+    if (currentUser && authToken) {
+      authBtns.classList.add('hidden');
+      userBtn.classList.remove('hidden');
+      navUsername.textContent = currentUser.username;
+      navAvatar.textContent   = currentUser.username.charAt(0).toUpperCase();
+    } else {
+      authBtns.classList.remove('hidden');
+      userBtn.classList.add('hidden');
+    }
+  }
+
+  function saveSession(token, user) {
+    authToken   = token;
+    currentUser = user;
+    localStorage.setItem(CONFIG.STORAGE_TOKEN, token);
+    localStorage.setItem(CONFIG.STORAGE_USER, JSON.stringify(user));
+    updateAuthUI();
+  }
+
+  function clearSession() {
+    authToken   = null;
+    currentUser = null;
+    localStorage.removeItem(CONFIG.STORAGE_TOKEN);
+    localStorage.removeItem(CONFIG.STORAGE_USER);
+    updateAuthUI();
+  }
+
+  // Validate token on page load
+  if (authToken) {
+    fetch(apiUrl('me'), { headers: { [CONFIG.AUTH_HEADER]: CONFIG.AUTH_PREFIX + authToken } })
+      .then(r => r.ok ? r.json() : Promise.reject())
+      .then(user => { currentUser = user; updateAuthUI(); })
+      .catch(() => clearSession());
+  }
+  updateAuthUI();
+
+  // Logout — double-tap to confirm (no blocking confirm())
+  document.getElementById('nav-user-btn').addEventListener('click', () => {
+    if (!currentUser) return;
+    const name = currentUser.username;
+    if (!window.__logoutPending) {
+      window.__logoutPending = true;
+      toast(`Tap again to sign out of <b>${name}</b>`, 'info', 2800);
+      setTimeout(() => { window.__logoutPending = false; }, 2800);
+    } else {
+      window.__logoutPending = false;
+      clearSession();
+      toast('Signed out successfully', 'info');
+    }
+  });
+
+  /* ═══════════════════════════════════
+     AUTH MODAL
+  ═══════════════════════════════════ */
+  const authModal = document.getElementById('auth-modal');
+
+  function openAuthModal(mode = 'signin') {
+    authModal.classList.add('open');
+    switchForm(mode);
+    document.body.style.overflow = 'hidden';
+    setTimeout(() => {
+      const first = authModal.querySelector(`#form-${mode} input`);
+      if (first) first.focus();
+    }, 260);
+  }
+
+  function closeAuthModal() {
+    authModal.classList.remove('open');
+    document.body.style.overflow = '';
+    ['signin-error', 'register-error'].forEach(id =>
+      document.getElementById(id).classList.add('hidden'));
+  }
+
+  function switchForm(mode) {
+    document.getElementById('form-signin').classList.toggle('hidden',   mode !== 'signin');
+    document.getElementById('form-register').classList.toggle('hidden', mode !== 'register');
+  }
+
+  authModal.addEventListener('click', e => { if (e.target === authModal) closeAuthModal(); });
+  document.getElementById('modal-close-btn').addEventListener('click', closeAuthModal);
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') closeAuthModal(); });
+
+  ['btn-signin', 'mobile-signin'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener('click', () => { toggleDrawer(false); openAuthModal('signin'); });
+  });
+  ['btn-nav-start', 'btn-hero-start', 'btn-cta-start', 'mobile-start'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener('click', () => {
+      toggleDrawer(false);
+      if (currentUser) { toast("You\'re already signed in! 🎉", 'success'); return; }
+      openAuthModal('register');
+    });
+  });
+
+  // Switch links inside modal
+  document.getElementById('switch-to-register')?.addEventListener('click', () => switchForm('register'));
+  document.getElementById('switch-to-signin')?.addEventListener('click',   () => switchForm('signin'));
+
+  /* ═══════════════════════════════════
+     VALIDATION HELPERS
+  ═══════════════════════════════════ */
+  function showFieldError(containerId, msgId, msg) {
+    document.getElementById(containerId).classList.remove('hidden');
+    document.getElementById(msgId).textContent = msg;
+  }
+
+  function isValidEmail(v) {
+    return /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(v);
+  }
+
+  /* ═══════════════════════════════════
+     SIGN IN
+  ═══════════════════════════════════ */
+  async function handleSignIn() {
+    const username = document.getElementById('signin-username').value.trim();
+    const password = document.getElementById('signin-password').value;
+    const btn      = document.getElementById('btn-do-signin');
+    document.getElementById('signin-error').classList.add('hidden');
+
+    if (!username) { showFieldError('signin-error','signin-error-msg','Username is required'); return; }
+    if (!password) { showFieldError('signin-error','signin-error-msg','Password is required'); return; }
+
+    btn.disabled = true; btn.textContent = 'Signing in…';
+    try {
+      const res  = await fetch(apiUrl('login'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        const token = data[CONFIG.TOKEN_KEY] || data.token || data.access_token;
+        const user  = data.user || { username };
+        if (!token) throw new Error('No token in response');
+        saveSession(token, user);
+        closeAuthModal();
+        document.getElementById('signin-password').value = '';
+        toast(`Welcome back, ${user.username}! 👋`, 'success');
+      } else {
+        showFieldError('signin-error','signin-error-msg', data.detail || data.message || 'Incorrect username or password');
+      }
+    } catch {
+      showFieldError('signin-error','signin-error-msg','Connection error. Please try again.');
+    } finally {
+      btn.disabled = false; btn.textContent = 'Sign in to Purp';
+    }
+  }
+
+  document.getElementById('btn-do-signin').addEventListener('click', handleSignIn);
+  document.getElementById('signin-username').addEventListener('keydown', e => { if (e.key === 'Enter') document.getElementById('signin-password').focus(); });
+  document.getElementById('signin-password').addEventListener('keydown', e => { if (e.key === 'Enter') handleSignIn(); });
+
+  /* ═══════════════════════════════════
+     REGISTER
+  ═══════════════════════════════════ */
+  async function handleRegister() {
+    const username = document.getElementById('reg-username').value.trim();
+    const email    = document.getElementById('reg-email').value.trim();
+    const password = document.getElementById('reg-password').value;
+    const btn      = document.getElementById('btn-do-register');
+    document.getElementById('register-error').classList.add('hidden');
+
+    if (!username) { showFieldError('register-error','register-error-msg','Username is required'); return; }
+    if (username.length < CONFIG.MIN_USERNAME) {
+      showFieldError('register-error','register-error-msg',`Username must be at least ${CONFIG.MIN_USERNAME} characters`); return;
+    }
+    if (!email || !isValidEmail(email)) {
+      showFieldError('register-error','register-error-msg','Please enter a valid email address'); return;
+    }
+    if (!password || password.length < CONFIG.MIN_PASSWORD) {
+      showFieldError('register-error','register-error-msg',`Password must be at least ${CONFIG.MIN_PASSWORD} characters`); return;
+    }
+
+    btn.disabled = true; btn.textContent = 'Creating account…';
+    try {
+      const res  = await fetch(apiUrl('register'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, email, password }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        const token = data[CONFIG.TOKEN_KEY] || data.token || data.access_token;
+        const user  = data.user || { username, email };
+        if (!token) throw new Error('No token in response');
+        saveSession(token, user);
+        closeAuthModal();
+        ['reg-username','reg-email','reg-password'].forEach(id => { document.getElementById(id).value = ''; });
+        toast(`Account created! Welcome to Purp, ${user.username} 🎉`, 'success', 5000);
+      } else {
+        showFieldError('register-error','register-error-msg', data.detail || data.message || 'Registration failed. Please try again.');
+      }
+    } catch {
+      showFieldError('register-error','register-error-msg','Connection error. Check your internet and try again.');
+    } finally {
+      btn.disabled = false; btn.textContent = 'Create free account';
+    }
+  }
+
+  document.getElementById('btn-do-register').addEventListener('click', handleRegister);
+  document.getElementById('reg-username').addEventListener('keydown', e => { if (e.key === 'Enter') document.getElementById('reg-email').focus(); });
+  document.getElementById('reg-email').addEventListener('keydown',    e => { if (e.key === 'Enter') document.getElementById('reg-password').focus(); });
+  document.getElementById('reg-password').addEventListener('keydown', e => { if (e.key === 'Enter') handleRegister(); });
+
+  /* ═══════════════════════════════════
+     PRICING — Stripe checkout
+  ═══════════════════════════════════ */
+  async function handlePlanUpgrade(plan) {
+    if (!authToken || !currentUser) {
+      openAuthModal('register');
+      toast('Create an account first to upgrade 👆', 'info');
+      return;
+    }
+    const alreadyOn = (plan === 'investor' && ['investor','tax_pro'].includes(currentUser.plan))
+                   || (plan === 'tax_pro'  && currentUser.plan === 'tax_pro');
+    if (alreadyOn) { toast("You\'re already on this plan or higher!", 'info'); return; }
+
+    const btnId    = plan === 'investor' ? 'btn-plan-investor' : 'btn-plan-taxpro';
+    const btn      = document.getElementById(btnId);
+    const origText = btn.textContent;
+    btn.disabled = true; btn.textContent = 'Loading…';
+
+    try {
+      const res  = await fetch(apiUrl('checkout'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', [CONFIG.AUTH_HEADER]: CONFIG.AUTH_PREFIX + authToken },
+        body: JSON.stringify({ plan }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.checkout_url) {
+        window.open(data.checkout_url, '_blank');
+      } else {
+        toast(data.detail || data.message || 'Could not initiate checkout. Try again.', 'error');
+      }
+    } catch {
+      toast('Connection error. Please try again.', 'error');
+    } finally {
+      btn.disabled = false; btn.textContent = origText;
+    }
+  }
+
+  document.getElementById('btn-plan-investor').addEventListener('click', () => handlePlanUpgrade('investor'));
+  document.getElementById('btn-plan-taxpro').addEventListener('click',   () => handlePlanUpgrade('tax_pro'));
+
+  document.querySelectorAll('.btn-plan[data-plan="free"]').forEach(b => {
+    b.addEventListener('click', () => {
+      if (currentUser) { toast('You already have a Purp account!', 'info'); return; }
+      openAuthModal('register');
+    });
+  });
+
+
+  /* ═══════════════════════════════════
+     STARS ANIMATION (reviews)
+  ═══════════════════════════════════ */
+  document.querySelectorAll('.review-card').forEach((card, i) => {
+    card.dataset.delay = i * 80;
+  });
+
+  /* ═══════════════════════════════════
+     HERO — pulsing dot
+  ═══════════════════════════════════ */
+  // Animate balance number in mock
+  function animateMockBalance() {
+    const el = document.querySelector('.balance-num');
+    if (!el) return;
+    let base = 61284.40;
+    setInterval(() => {
+      base += (Math.random() - 0.48) * 60;
+      el.textContent = '$' + base.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
+    }, 3500);
+  }
+  animateMockBalance();
+</script>
+</body>
+</html>
