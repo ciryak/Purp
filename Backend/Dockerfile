@@ -30,8 +30,8 @@ COPY static/ static/
 EXPOSE 8080
 
 # Health check interno do Docker
-HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
-    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')"
+#HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
+#    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')"
 
 # Comando de start — usa $PORT do Railway ou 8080 como fallback
 CMD uvicorn main:app --host 0.0.0.0 --port ${PORT:-8080}
