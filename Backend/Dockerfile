@@ -23,6 +23,7 @@ COPY main.py .
 COPY models.py .
 COPY services.py .
 COPY static/ static/
+RUN mv static/index2.html static/index.html
 
 
 # Porta exposta
