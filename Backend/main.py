@@ -329,7 +329,7 @@ app.add_middleware(
 # landing page
 @app.get("/")
 async def read_index():
-    return FileResponse('static\index.html')
+    return FileResponse('static/index.html')
 
 
 def get_session():

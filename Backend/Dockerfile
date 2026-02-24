@@ -22,6 +22,8 @@ RUN pip install --no-cache-dir --upgrade pip && \
 COPY main.py .
 COPY models.py .
 COPY services.py .
+COPY static/ static/
+
 
 # Porta exposta
 EXPOSE 8080
