@@ -2,7 +2,7 @@
 <html lang="en" class="scroll-smooth">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0">
     <title>Purp - AI Smart Wallet for Stocks</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
@@ -191,14 +191,27 @@
             animation-delay: 3s;
         }
         
-        /* Mobile menu animation */
+        /* Mobile menu animations */
         .mobile-menu {
             transform: translateX(100%);
-            transition: transform 0.3s ease-in-out;
+            transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+            box-shadow: -10px 0 30px -15px rgba(0, 0, 0, 0.5);
         }
         
         .mobile-menu.active {
             transform: translateX(0);
+        }
+        
+        /* Menu overlay */
+        .menu-overlay {
+            transition: opacity 0.3s ease;
+            opacity: 0;
+            pointer-events: none;
+        }
+        
+        .menu-overlay.active {
+            opacity: 1;
+            pointer-events: auto;
         }
         
         /* Smooth scroll behavior */
@@ -222,6 +235,23 @@
         
         ::-webkit-scrollbar-thumb:hover {
             background: #7c3aed;
+        }
+
+        /* Responsive tweaks */
+        @media (max-width: 640px) {
+            .hero-bg .floating-element {
+                animation-duration: 8s;
+            }
+            .stat-card p:first-child {
+                font-size: 2rem;
+            }
+        }
+
+        /* Prevent content shift when menu opens */
+        body.menu-open {
+            overflow: hidden;
+            position: fixed;
+            width: 100%;
         }
     </style>
 </head>
@@ -257,18 +287,21 @@
                 </div>
 
                 <!-- Mobile menu button -->
-                <button class="md:hidden p-2 rounded-lg bg-purp-800/50 border border-purp-600/30" onclick="toggleMobileMenu()">
+                <button class="md:hidden p-2 rounded-lg bg-purp-800/50 border border-purp-600/30" onclick="toggleMobileMenu()" aria-label="Menu">
                     <i data-lucide="menu" class="w-6 h-6 text-gray-300"></i>
                 </button>
             </div>
         </div>
 
-        <!-- Mobile Menu -->
-        <div id="mobileMenu" class="mobile-menu fixed top-0 right-0 w-80 h-full bg-[#0a0a0f] border-l border-purp-700/30 z-50 md:hidden">
+        <!-- Mobile Menu Overlay -->
+        <div id="menuOverlay" class="menu-overlay fixed inset-0 bg-black/60 backdrop-blur-sm z-40 md:hidden" onclick="toggleMobileMenu()"></div>
+
+        <!-- Mobile Menu Panel -->
+        <div id="mobileMenu" class="mobile-menu fixed top-0 right-0 w-80 max-w-full h-full bg-[#0a0a0f] border-l border-purp-700/30 z-50 md:hidden overflow-y-auto">
             <div class="p-6">
                 <div class="flex justify-between items-center mb-8">
                     <span class="text-xl font-bold text-white">Menu</span>
-                    <button onclick="toggleMobileMenu()" class="p-2 rounded-lg bg-purp-800/50">
+                    <button onclick="toggleMobileMenu()" class="p-2 rounded-lg bg-purp-800/50 hover:bg-purp-700/50 transition-colors">
                         <i data-lucide="x" class="w-6 h-6 text-gray-300"></i>
                     </button>
                 </div>
@@ -290,20 +323,20 @@
 
     <!-- Hero Section -->
     <section class="relative min-h-screen flex items-center hero-bg noise pt-20">
-        <!-- Background Elements -->
+        <!-- Background Elements (optimized for mobile) -->
         <div class="absolute inset-0 overflow-hidden pointer-events-none">
-            <div class="absolute top-1/4 left-1/4 w-96 h-96 bg-purp-600/20 rounded-full blur-3xl floating-element"></div>
-            <div class="absolute bottom-1/4 right-1/4 w-96 h-96 bg-gold-500/10 rounded-full blur-3xl floating-element-delayed"></div>
-            <div class="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] bg-purp-600/10 rounded-full blur-3xl"></div>
+            <div class="absolute top-1/4 left-1/4 w-48 sm:w-96 h-48 sm:h-96 bg-purp-600/20 rounded-full blur-3xl floating-element"></div>
+            <div class="absolute bottom-1/4 right-1/4 w-48 sm:w-96 h-48 sm:h-96 bg-gold-500/10 rounded-full blur-3xl floating-element-delayed"></div>
+            <div class="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-[300px] sm:w-[800px] h-[300px] sm:h-[800px] bg-purp-600/10 rounded-full blur-3xl"></div>
         </div>
 
         <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10 w-full">
-            <div class="grid lg:grid-cols-2 gap-12 lg:gap-16 items-center">
+            <div class="grid lg:grid-cols-2 gap-8 lg:gap-16 items-center">
                 <!-- Left Content -->
-                <div class="space-y-8 text-center lg:text-left">
-                    <div class="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-purp-800/50 border border-purp-600/30 mb-4">
+                <div class="space-y-6 sm:space-y-8 text-center lg:text-left">
+                    <div class="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-purp-800/50 border border-purp-600/30 mx-auto lg:mx-0">
                         <span class="w-2 h-2 rounded-full bg-gold-400 animate-pulse"></span>
-                        <span class="text-sm font-medium text-purp-300">AI-Powered Finance</span>
+                        <span class="text-xs sm:text-sm font-medium text-purp-300">AI-Powered Finance</span>
                     </div>
                     
                     <h1 class="text-4xl sm:text-5xl lg:text-7xl font-bold leading-tight">
@@ -311,42 +344,42 @@
                         <span class="gradient-text">Smarter with AI</span>
                     </h1>
                     
-                    <p class="text-lg sm:text-xl text-gray-400 max-w-2xl mx-auto lg:mx-0 leading-relaxed">
+                    <p class="text-base sm:text-lg lg:text-xl text-gray-400 max-w-2xl mx-auto lg:mx-0 leading-relaxed">
                         Purp integrates your stocks, crypto, and assets with intelligent AI analysis. Get real-time insights, smart portfolio balancing, and predictive market alerts.
                     </p>
                     
-                    <div class="flex flex-col sm:flex-row gap-4 justify-center lg:justify-start">
-                        <button class="btn-gold px-8 py-4 rounded-full font-semibold text-base flex items-center justify-center gap-3 group">
+                    <div class="flex flex-col sm:flex-row gap-3 sm:gap-4 justify-center lg:justify-start">
+                        <button class="btn-gold px-6 sm:px-8 py-3 sm:py-4 rounded-full font-semibold text-sm sm:text-base flex items-center justify-center gap-3 group">
                             <i data-lucide="chrome" class="w-5 h-5"></i>
-                            Add to Chrome
+                            <span class="whitespace-nowrap">Add to Chrome</span>
                             <i data-lucide="arrow-right" class="w-5 h-5 group-hover:translate-x-1 transition-transform"></i>
                         </button>
-                        <button class="px-8 py-4 rounded-full font-semibold text-base border border-purp-600/50 text-white hover:bg-purp-800/30 transition-all flex items-center justify-center gap-3">
+                        <button class="px-6 sm:px-8 py-3 sm:py-4 rounded-full font-semibold text-sm sm:text-base border border-purp-600/50 text-white hover:bg-purp-800/30 transition-all flex items-center justify-center gap-3">
                             <i data-lucide="sparkles" class="w-5 h-5 text-gold-400"></i>
                             See How It Works
                         </button>
                     </div>
 
                     <!-- Trust Indicators -->
-                    <div class="flex flex-wrap justify-center lg:justify-start gap-6 pt-4 text-sm text-gray-500">
+                    <div class="flex flex-wrap justify-center lg:justify-start gap-4 sm:gap-6 pt-4 text-xs sm:text-sm text-gray-500">
                         <div class="flex items-center gap-2">
-                            <i data-lucide="puzzle" class="w-5 h-5 text-purp-400"></i>
+                            <i data-lucide="puzzle" class="w-4 sm:w-5 h-4 sm:h-5 text-purp-400"></i>
                             <span>Chrome Extension</span>
                         </div>
                         <div class="flex items-center gap-2">
-                            <i data-lucide="zap" class="w-5 h-5 text-gold-400"></i>
+                            <i data-lucide="zap" class="w-4 sm:w-5 h-4 sm:h-5 text-gold-400"></i>
                             <span>Real-time Data</span>
                         </div>
                         <div class="flex items-center gap-2">
-                            <i data-lucide="brain" class="w-5 h-5 text-purp-400"></i>
+                            <i data-lucide="brain" class="w-4 sm:w-5 h-4 sm:h-5 text-purp-400"></i>
                             <span>AI Analysis</span>
                         </div>
                     </div>
                 </div>
 
-                <!-- Right Content - Chrome Extension Mockup -->
-                <div class="relative flex justify-center lg:justify-end">
-                    <div class="relative w-full max-w-lg floating-element">
+                <!-- Right Content - Chrome Extension Mockup (unchanged, already responsive) -->
+                <div class="relative flex justify-center lg:justify-end mt-8 lg:mt-0">
+                    <div class="relative w-full max-w-md lg:max-w-lg floating-element">
                         <!-- Glow Effect -->
                         <div class="absolute inset-0 bg-gradient-to-tr from-purp-600/30 to-gold-500/20 blur-3xl rounded-full scale-110"></div>
                         
@@ -361,20 +394,20 @@
                                         <div class="w-3 h-3 rounded-full bg-yellow-500/80"></div>
                                         <div class="w-3 h-3 rounded-full bg-green-500/80"></div>
                                     </div>
-                                    <div class="flex-1 mx-4">
-                                        <div class="bg-[#0a0a0f] rounded-lg px-4 py-1.5 text-xs text-gray-500 flex items-center gap-2">
-                                            <i data-lucide="lock" class="w-3 h-3"></i>
-                                            robinhood.com/portfolio
+                                    <div class="flex-1 mx-2 sm:mx-4">
+                                        <div class="bg-[#0a0a0f] rounded-lg px-2 sm:px-4 py-1.5 text-xs text-gray-500 flex items-center gap-2 truncate">
+                                            <i data-lucide="lock" class="w-3 h-3 shrink-0"></i>
+                                            <span class="truncate">robinhood.com/portfolio</span>
                                         </div>
                                     </div>
-                                    <div class="flex gap-2">
+                                    <div class="flex gap-2 shrink-0">
                                         <div class="w-8 h-8 rounded-lg bg-purp-600/20 flex items-center justify-center border border-purp-500/30">
                                             <i data-lucide="puzzle" class="w-4 h-4 text-purp-400"></i>
                                         </div>
                                     </div>
                                 </div>
                                 
-                                <!-- Extension Popup -->
+                                <!-- Extension Popup (unchanged) -->
                                 <div class="p-5 space-y-4 bg-[#0a0a0f]">
                                     <!-- Extension Header -->
                                     <div class="flex items-center justify-between">
@@ -415,17 +448,11 @@
                                     </div>
 
                                     <!-- Chart -->
-                                    <div class="h-28 w-full bg-purp-900/30 rounded-xl relative overflow-hidden">
+                                    <div class="h-24 sm:h-28 w-full bg-purp-900/30 rounded-xl relative overflow-hidden">
                                         <div class="absolute inset-0 bg-gradient-to-t from-purp-600/20 to-transparent"></div>
                                         <svg class="w-full h-full" viewBox="0 0 300 100" preserveAspectRatio="none">
-                                            <path d="M0,60 Q50,55 100,45 T200,35 T300,25" 
-                                                  fill="none" 
-                                                  stroke="#fbbf24" 
-                                                  stroke-width="3" 
-                                                  stroke-linecap="round"/>
-                                            <path d="M0,60 Q50,55 100,45 T200,35 T300,25 L300,100 L0,100 Z" 
-                                                  fill="url(#chartGradient)" 
-                                                  opacity="0.3"/>
+                                            <path d="M0,60 Q50,55 100,45 T200,35 T300,25" fill="none" stroke="#fbbf24" stroke-width="3" stroke-linecap="round"/>
+                                            <path d="M0,60 Q50,55 100,45 T200,35 T300,25 L300,100 L0,100 Z" fill="url(#chartGradient)" opacity="0.3"/>
                                             <defs>
                                                 <linearGradient id="chartGradient" x1="0%" y1="0%" x2="0%" y2="100%">
                                                     <stop offset="0%" style="stop-color:#fbbf24;stop-opacity:0.5" />
@@ -442,30 +469,30 @@
                                     <div class="space-y-2">
                                         <p class="text-xs text-gray-500 uppercase tracking-wider mb-2">Connected Portfolios</p>
                                         <div class="flex items-center justify-between p-3 bg-purp-800/30 rounded-xl border border-purp-700/20">
-                                            <div class="flex items-center gap-3">
-                                                <div class="w-8 h-8 rounded-lg bg-green-500/20 flex items-center justify-center">
+                                            <div class="flex items-center gap-3 min-w-0">
+                                                <div class="w-8 h-8 rounded-lg bg-green-500/20 flex items-center justify-center shrink-0">
                                                     <i data-lucide="leaf" class="w-4 h-4 text-green-400"></i>
                                                 </div>
-                                                <div>
-                                                    <p class="text-sm font-medium text-white">Robinhood</p>
-                                                    <p class="text-xs text-gray-500">Imported 2 min ago</p>
+                                                <div class="min-w-0">
+                                                    <p class="text-sm font-medium text-white truncate">Robinhood</p>
+                                                    <p class="text-xs text-gray-500 truncate">Imported 2 min ago</p>
                                                 </div>
                                             </div>
-                                            <div class="text-right">
+                                            <div class="text-right shrink-0 ml-2">
                                                 <p class="text-sm font-medium text-white">$18,450</p>
                                             </div>
                                         </div>
                                         <div class="flex items-center justify-between p-3 bg-purp-800/30 rounded-xl border border-purp-700/20">
-                                            <div class="flex items-center gap-3">
-                                                <div class="w-8 h-8 rounded-lg bg-blue-500/20 flex items-center justify-center">
+                                            <div class="flex items-center gap-3 min-w-0">
+                                                <div class="w-8 h-8 rounded-lg bg-blue-500/20 flex items-center justify-center shrink-0">
                                                     <i data-lucide="building-2" class="w-4 h-4 text-blue-400"></i>
                                                 </div>
-                                                <div>
-                                                    <p class="text-sm font-medium text-white">Fidelity</p>
-                                                    <p class="text-xs text-gray-500">Imported 5 min ago</p>
+                                                <div class="min-w-0">
+                                                    <p class="text-sm font-medium text-white truncate">Fidelity</p>
+                                                    <p class="text-xs text-gray-500 truncate">Imported 5 min ago</p>
                                                 </div>
                                             </div>
-                                            <div class="text-right">
+                                            <div class="text-right shrink-0 ml-2">
                                                 <p class="text-sm font-medium text-white">$42,120</p>
                                             </div>
                                         </div>
@@ -487,14 +514,14 @@
                             </div>
                         </div>
                         
-                        <!-- Floating Badge -->
-                        <div class="absolute -bottom-4 -left-4 glass-card px-4 py-3 rounded-2xl border-l-4 border-gold-500 animate-pulse-slow">
-                            <div class="flex items-center gap-3">
-                                <div class="w-10 h-10 rounded-full bg-gold-400/20 flex items-center justify-center">
-                                    <i data-lucide="chrome" class="w-5 h-5 text-gold-400"></i>
+                        <!-- Floating Badge (adjusted for mobile) -->
+                        <div class="absolute -bottom-3 -left-3 sm:-bottom-4 sm:-left-4 glass-card px-3 sm:px-4 py-2 sm:py-3 rounded-2xl border-l-4 border-gold-500 animate-pulse-slow">
+                            <div class="flex items-center gap-2 sm:gap-3">
+                                <div class="w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-gold-400/20 flex items-center justify-center">
+                                    <i data-lucide="chrome" class="w-4 h-4 sm:w-5 sm:h-5 text-gold-400"></i>
                                 </div>
                                 <div>
-                                    <p class="text-sm font-bold text-white">Extension Active</p>
+                                    <p class="text-xs sm:text-sm font-bold text-white">Extension Active</p>
                                     <p class="text-xs text-gray-400">Analyzing portfolios...</p>
                                 </div>
                             </div>
@@ -508,29 +535,30 @@
     <!-- Stats Section -->
     <section class="py-16 sm:py-20 border-y border-purp-700/20 bg-purp-900/20">
         <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div class="grid grid-cols-2 lg:grid-cols-4 gap-6 sm:gap-8">
-                <div class="stat-card rounded-2xl p-6 text-center">
-                    <p class="text-3xl sm:text-4xl font-bold gradient-text mb-2">50K+</p>
-                    <p class="text-sm text-gray-400">Active Users</p>
+            <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-8">
+                <div class="stat-card rounded-2xl p-4 sm:p-6 text-center">
+                    <p class="text-2xl sm:text-3xl lg:text-4xl font-bold gradient-text mb-1 sm:mb-2">50K+</p>
+                    <p class="text-xs sm:text-sm text-gray-400">Active Users</p>
                 </div>
-                <div class="stat-card rounded-2xl p-6 text-center">
-                    <p class="text-3xl sm:text-4xl font-bold gradient-text mb-2">$2M+</p>
-                    <p class="text-sm text-gray-400">Assets Analyzed</p>
+                <div class="stat-card rounded-2xl p-4 sm:p-6 text-center">
+                    <p class="text-2xl sm:text-3xl lg:text-4xl font-bold gradient-text mb-1 sm:mb-2">$2M+</p>
+                    <p class="text-xs sm:text-sm text-gray-400">Assets Analyzed</p>
                 </div>
-                <div class="stat-card rounded-2xl p-6 text-center">
-                    <p class="text-3xl sm:text-4xl font-bold gradient-text mb-2">$3.2M+</p>
-                    <p class="text-sm text-gray-400">Tax Savings Generated</p>
+                <div class="stat-card rounded-2xl p-4 sm:p-6 text-center">
+                    <p class="text-2xl sm:text-3xl lg:text-4xl font-bold gradient-text mb-1 sm:mb-2">$3.2M+</p>
+                    <p class="text-xs sm:text-sm text-gray-400">Tax Savings Generated</p>
                 </div>
-                <div class="stat-card rounded-2xl p-6 text-center">
-                    <p class="text-3xl sm:text-4xl font-bold gradient-text mb-2">15+</p>
-                    <p class="text-sm text-gray-400">Portfolio Platforms</p>
+                <div class="stat-card rounded-2xl p-4 sm:p-6 text-center">
+                    <p class="text-2xl sm:text-3xl lg:text-4xl font-bold gradient-text mb-1 sm:mb-2">15+</p>
+                    <p class="text-xs sm:text-sm text-gray-400">Portfolio Platforms</p>
                 </div>
             </div>
         </div>
     </section>
 
-    <!-- Features Section -->
+    <!-- Features Section (unchanged, already responsive) -->
     <section id="features" class="py-20 sm:py-32 relative">
+        <!-- ... (features content unchanged) ... -->
         <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div class="text-center max-w-3xl mx-auto mb-16 sm:mb-20">
                 <span class="inline-block px-4 py-1.5 rounded-full bg-purp-800/50 border border-purp-600/30 text-sm font-medium text-purp-300 mb-4">Features</span>
@@ -553,7 +581,6 @@
                         Works seamlessly in your browser. Access AI insights with one click while browsing your portfolio platforms.
                     </p>
                 </div>
-
                 <!-- Feature 2 -->
                 <div class="feature-card glass-card rounded-2xl p-6 sm:p-8 border border-purp-600/20">
                     <div class="w-14 h-14 rounded-2xl bg-gradient-to-br from-gold-400/20 to-gold-500/10 flex items-center justify-center mb-6 border border-gold-500/20">
@@ -564,7 +591,6 @@
                         Our advanced AI analyzes your assets and wallet to provide personalized investment recommendations in real-time.
                     </p>
                 </div>
-
                 <!-- Feature 3 -->
                 <div class="feature-card glass-card rounded-2xl p-6 sm:p-8 border border-purp-600/20">
                     <div class="w-14 h-14 rounded-2xl bg-gradient-to-br from-purp-600/20 to-purp-500/10 flex items-center justify-center mb-6 border border-purp-500/20">
@@ -575,7 +601,6 @@
                         Easily import from Robinhood, Fidelity, and 15+ other platforms. No need to manually enter your holdings.
                     </p>
                 </div>
-
                 <!-- Feature 4 -->
                 <div class="feature-card glass-card rounded-2xl p-6 sm:p-8 border border-purp-600/20">
                     <div class="w-14 h-14 rounded-2xl bg-gradient-to-br from-purp-600/20 to-purp-500/10 flex items-center justify-center mb-6 border border-purp-500/20">
@@ -586,7 +611,6 @@
                         AI identifies tax-loss harvesting opportunities and strategies to legally minimize your tax burden.
                     </p>
                 </div>
-
                 <!-- Feature 5 -->
                 <div class="feature-card glass-card rounded-2xl p-6 sm:p-8 border border-purp-600/20">
                     <div class="w-14 h-14 rounded-2xl bg-gradient-to-br from-gold-400/20 to-gold-500/10 flex items-center justify-center mb-6 border border-gold-500/20">
@@ -597,7 +621,6 @@
                         Advanced tax AI that analyzes your entire financial picture to find deductions and optimize your tax strategy.
                     </p>
                 </div>
-
                 <!-- Feature 6 -->
                 <div class="feature-card glass-card rounded-2xl p-6 sm:p-8 border border-purp-600/20">
                     <div class="w-14 h-14 rounded-2xl bg-gradient-to-br from-purp-600/20 to-purp-500/10 flex items-center justify-center mb-6 border border-purp-500/20">
@@ -612,8 +635,9 @@
         </div>
     </section>
 
-    <!-- How It Works Section -->
+    <!-- How It Works Section (unchanged) -->
     <section id="how-it-works" class="py-20 sm:py-32 bg-gradient-to-b from-purp-900/20 to-transparent relative">
+        <!-- ... (content unchanged) ... -->
         <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div class="text-center max-w-3xl mx-auto mb-16 sm:mb-20">
                 <span class="inline-block px-4 py-1.5 rounded-full bg-purp-800/50 border border-purp-600/30 text-sm font-medium text-purp-300 mb-4">How It Works</span>
@@ -623,7 +647,6 @@
             </div>
 
             <div class="grid md:grid-cols-3 gap-8 sm:gap-12 relative">
-                <!-- Connecting Line (Desktop) -->
                 <div class="hidden md:block absolute top-1/3 left-0 w-full h-0.5 bg-gradient-to-r from-purp-600 via-gold-400 to-purp-600 opacity-30"></div>
 
                 <!-- Step 1 -->
@@ -668,7 +691,7 @@
         </div>
     </section>
 
-    <!-- Testimonials Section -->
+    <!-- Testimonials Section (unchanged) -->
     <section class="py-20 sm:py-32">
         <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div class="text-center max-w-3xl mx-auto mb-16">
@@ -751,7 +774,7 @@
         </div>
     </section>
 
-    <!-- Pricing Section -->
+    <!-- Pricing Section (updated prices) -->
     <section id="pricing" class="py-20 sm:py-32 bg-gradient-to-b from-transparent to-purp-900/20">
         <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div class="text-center max-w-3xl mx-auto mb-16">
@@ -765,7 +788,7 @@
             </div>
 
             <div class="grid md:grid-cols-3 gap-6 sm:gap-8 max-w-6xl mx-auto">
-                <!-- Free Plan -->
+                <!-- Free Plan (unchanged) -->
                 <div class="glass-card rounded-2xl p-6 sm:p-8 border border-purp-600/20 flex flex-col">
                     <h3 class="text-xl font-bold text-white mb-2">Free</h3>
                     <p class="text-gray-400 text-sm mb-6">Get started with basic tracking</p>
@@ -804,9 +827,9 @@
                     </button>
                 </div>
 
-                <!-- Investor Plan -->
+                <!-- Investor Plan (updated to $18.99) -->
                 <div class="glass-card rounded-2xl p-6 sm:p-8 border-2 border-gold-400/50 relative transform lg:scale-105 flex flex-col">
-                    <div class="absolute -top-4 left-1/2 transform -translate-x-1/2">
+                    <div class="absolute -top-4 left-1/2 transform -translate-x-1/2 whitespace-nowrap">
                         <span class="px-4 py-1 rounded-full bg-gradient-to-r from-gold-400 to-gold-500 text-black text-sm font-bold shadow-lg">
                             Most Popular
                         </span>
@@ -814,7 +837,7 @@
                     <h3 class="text-xl font-bold text-white mb-2">Investor</h3>
                     <p class="text-gray-400 text-sm mb-6">AI-powered portfolio analysis</p>
                     <div class="mb-6">
-                        <span class="text-4xl font-bold gradient-text">$15</span>
+                        <span class="text-4xl font-bold gradient-text">$18.99</span>
                         <span class="text-gray-400">/month</span>
                     </div>
                     <ul class="space-y-3 mb-8 flex-1">
@@ -848,9 +871,9 @@
                     </button>
                 </div>
 
-                <!-- TaxPro Plan -->
+                <!-- TaxPro Plan (updated to $29.99) -->
                 <div class="glass-card rounded-2xl p-6 sm:p-8 border border-gold-400/30 flex flex-col relative overflow-hidden">
-                    <div class="absolute -top-4 left-1/2 transform -translate-x-1/2">
+                    <div class="absolute -top-4 left-1/2 transform -translate-x-1/2 whitespace-nowrap">
                         <span class="px-4 py-1 rounded-full bg-gradient-to-r from-purp-500 to-purp-600 text-white text-sm font-bold shadow-lg border border-purp-400/50">
                             Max Savings
                         </span>
@@ -859,7 +882,7 @@
                     <h3 class="text-xl font-bold text-white mb-2">TaxPro</h3>
                     <p class="text-gray-400 text-sm mb-6">AI tax optimization included</p>
                     <div class="mb-6">
-                        <span class="text-4xl font-bold text-white">$39</span>
+                        <span class="text-4xl font-bold text-white">$29.99</span>
                         <span class="text-gray-400">/month</span>
                     </div>
                     <ul class="space-y-3 mb-8 flex-1">
@@ -916,12 +939,12 @@
                 </button>
             </div>
             <p class="text-sm text-gray-500 mt-6">
-                Free plan available. Upgrade to Investor ($15/mo) or TaxPro ($39/mo) for AI features.
+                Free plan available. Upgrade to Investor ($18.99/mo) or TaxPro ($29.99/mo) for AI features.
             </p>
         </div>
     </section>
 
-    <!-- Footer -->
+    <!-- Footer (fixed stray '>') -->
     <footer class="border-t border-purp-700/30 bg-[#030305] pt-16 pb-8">
         <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-8 mb-12">
@@ -933,7 +956,7 @@
                         </div>
                         <span class="text-2xl font-bold text-white">Purp</span>
                     </div>
-                    >
+                    <!-- Removed stray '>' on next line -->
                     <p class="text-gray-400 text-sm mb-6 max-w-xs">
                         AI-powered Chrome extension that analyzes your portfolios and finds tax savings. Import from Robinhood, Fidelity & more.
                     </p>
@@ -998,12 +1021,29 @@
         // Initialize Lucide icons
         lucide.createIcons();
 
-        // Mobile menu toggle
-        function toggleMobileMenu() {
-            const menu = document.getElementById('mobileMenu');
-            menu.classList.toggle('active');
-            document.body.style.overflow = menu.classList.contains('active') ? 'hidden' : '';
-        }
+        // Mobile menu elements
+        const mobileMenu = document.getElementById('mobileMenu');
+        const menuOverlay = document.getElementById('menuOverlay');
+        const body = document.body;
+
+        // Toggle mobile menu function
+        window.toggleMobileMenu = function() {
+            mobileMenu.classList.toggle('active');
+            menuOverlay.classList.toggle('active');
+            
+            if (mobileMenu.classList.contains('active')) {
+                body.classList.add('menu-open');
+            } else {
+                body.classList.remove('menu-open');
+            }
+        };
+
+        // Close menu on window resize (if open and screen becomes desktop)
+        window.addEventListener('resize', function() {
+            if (window.innerWidth >= 768 && mobileMenu.classList.contains('active')) {
+                toggleMobileMenu();
+            }
+        });
 
         // Smooth scroll for navigation links
         document.querySelectorAll('a[href^="#"]').forEach(anchor => {
@@ -1044,9 +1084,8 @@
 
         // Add click handlers for buttons that don't have specific actions
         document.querySelectorAll('button').forEach(button => {
-            if (!button.onclick && !button.closest('form')) {
+            if (!button.onclick && !button.closest('form') && !button.closest('.mobile-menu') && !button.closest('nav')) {
                 button.addEventListener('click', function(e) {
-                    // Prevent default if it's not a real link
                     if (this.getAttribute('href') === '#') {
                         e.preventDefault();
                     }
@@ -1089,29 +1128,21 @@
         document.head.appendChild(style);
 
         // Navbar background on scroll
-        let lastScroll = 0;
         window.addEventListener('scroll', () => {
             const nav = document.querySelector('nav');
-            const currentScroll = window.pageYOffset;
-            
-            if (currentScroll > 50) {
-                nav.classList.add('shadow-lg');
-                nav.classList.add('shadow-purp-900/20');
+            if (window.pageYOffset > 50) {
+                nav.classList.add('shadow-lg', 'shadow-purp-900/20');
             } else {
-                nav.classList.remove('shadow-lg');
-                nav.classList.remove('shadow-purp-900/20');
+                nav.classList.remove('shadow-lg', 'shadow-purp-900/20');
             }
-            
-            lastScroll = currentScroll;
         });
 
-        // Parallax effect for hero background elements
+        // Parallax effect for hero background elements (lightweight)
         window.addEventListener('scroll', () => {
             const scrolled = window.pageYOffset;
             const parallaxElements = document.querySelectorAll('.floating-element, .floating-element-delayed');
-            
             parallaxElements.forEach(el => {
-                const speed = 0.5;
+                const speed = 0.3;
                 el.style.transform = `translateY(${scrolled * speed}px)`;
             });
         });
