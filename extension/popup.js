@@ -1,11 +1,6 @@
 /* ═══════════════════════════════════════════════════════════════
-   Purp — Extension Frontend v3
-   Bugs fixed:
-   - startRefresh: removed duplicate fetchPortfolio + loadMainChart calls in setInterval
-   - DOMContentLoaded: removed spurious extra closing `});` at end of file
-   - total-balance now correctly has sensitive-value class via JS
-   - loadMarketWatch: added to refresh cycle
-   - SECURITY: Migrated from localStorage to chrome.storage.local
+   Purp — Extension Frontend v4
+   Added: CSV import modal + broker CSV upload flow
    ════════════════════════════════════════════════════════════════ */
 
 // ── Config ───────────────────────────────────────────────────────
@@ -25,6 +20,10 @@ let portfolioCount   = 0;
 let portfolioSymbols = new Set();
 let hideSensitiveValues = true;
 let selectedAddAssetType = null;
+
+// CSV import state
+let importSelectedFile   = null;
+let importSelectedBroker = '';
 
 const FEATURED_STOCKS  = ['AAPL', 'MSFT', 'NVDA', 'AMZN', 'TSLA'];
 const FEATURED_CRYPTOS = ['BTC', 'ETH', 'SOL', 'BNB', 'XRP'];
@@ -137,7 +136,6 @@ async function apiFetch(path, opts = {}) {
 }
 
 // ── REFRESH ──────────────────────────────────────────────────────
-// FIX: only one set of calls in the interval — no duplicates
 function startRefresh() {
   stopRefresh();
   refreshTimer = setInterval(() => {
@@ -264,7 +262,6 @@ async function handleRegister() {
         try { errMsg = `HTTP ${res.status}: ${await res.text()}`; } catch {}
       }
       showError('register-error', errMsg);
-      console.error('Register error:', res.status, errMsg);
     }
   } finally {
     btn.disabled    = false;
@@ -282,7 +279,6 @@ async function handleLogout() {
   showLoginScreen();
 }
 
-// ── TOGGLE LOGIN/REGISTER ────────────────────────────────────────
 function toggleAuthMode() {
   const loginEl = $('login-form');
   const regEl   = $('register-form');
@@ -299,9 +295,13 @@ function updateProfileBar() {
   $('profile-username').textContent = name;
   $('profile-avatar').textContent   = name.charAt(0).toUpperCase();
 
+  const plan = currentUser?.plan || 'free';
   const planEl = $('profile-plan');
-  if (isPremium()) {
-    planEl.textContent = 'Premium';
+  if (plan === 'tax_pro') {
+    planEl.textContent = 'Tax Pro';
+    planEl.className   = 'plan-badge tax-pro';
+  } else if (plan === 'investor') {
+    planEl.textContent = 'Investor';
     planEl.className   = 'plan-badge premium';
   } else {
     planEl.textContent = 'Free';
@@ -313,6 +313,12 @@ function updateProfileBar() {
     : `${portfolioCount}/${FREE_ASSET_LIMIT} assets`;
 
   $('btn-upgrade').style.display = isPremium() ? 'none' : '';
+
+  // Show CSV import card only for paid users
+  const importCard = $('import-csv-card');
+  if (importCard) {
+    importCard.style.display = isPremium() ? '' : 'none';
+  }
 }
 
 // ── UPGRADE MODAL ────────────────────────────────────────────────
@@ -333,6 +339,7 @@ async function handleUpgrade() {
     const res = await apiFetch('/stripe/create-checkout', {
       method: 'POST',
       headers: authHeaders(),
+      body: JSON.stringify({ plan: 'investor' }),
     });
     if (!res) return;
 
@@ -1029,6 +1036,191 @@ async function handleAddAsset() {
   }
 }
 
+// ════════════════════════════════════════════════════════════════
+// CSV IMPORT
+// ════════════════════════════════════════════════════════════════
+
+const BROKER_HELP = {
+  coinbase: `<b>How to export:</b> Coinbase → Taxes → Transaction history → Generate Report → Download CSV`,
+  robinhood: `<b>How to export:</b> Robinhood app → Account (👤) → Statements → Activity → Export to CSV`,
+  fidelity: `<b>How to export:</b> Fidelity → Accounts → History → select date range → Download (CSV)`,
+  kraken: `<b>How to export:</b> Kraken → History → Export → Select <em>Ledgers</em> → Generate`,
+  schwab: `<b>How to export:</b> Schwab → Accounts → History → Export → CSV`,
+};
+
+function openImportModal() {
+  if (!isPremium()) {
+    showUpgradeModal('CSV import is available on Investor and Tax Pro plans.');
+    return;
+  }
+  // Reset state
+  importSelectedFile   = null;
+  importSelectedBroker = '';
+  $('import-broker-select').value = '';
+  $('file-drop-label').innerHTML  = '<span style="font-size:22px;">📂</span><br>Click to select a .csv file';
+  $('import-help-text').style.display  = 'none';
+  $('import-progress').style.display   = 'none';
+  $('import-result').style.display     = 'none';
+  $('btn-import-confirm').disabled     = true;
+  $('modal-import-csv').classList.add('active');
+}
+
+function closeImportModal() {
+  $('modal-import-csv').classList.remove('active');
+}
+
+function updateImportConfirmBtn() {
+  $('btn-import-confirm').disabled = !(importSelectedFile && importSelectedBroker);
+}
+
+function handleBrokerSelect() {
+  importSelectedBroker = $('import-broker-select').value;
+  const helpEl = $('import-help-text');
+  if (importSelectedBroker && BROKER_HELP[importSelectedBroker]) {
+    helpEl.innerHTML = BROKER_HELP[importSelectedBroker];
+    helpEl.style.display = 'block';
+  } else {
+    helpEl.style.display = 'none';
+  }
+  updateImportConfirmBtn();
+}
+
+function handleFileSelect(e) {
+  const file = e.target.files?.[0];
+  if (!file) return;
+  if (!file.name.toLowerCase().endsWith('.csv')) {
+    toast('Please select a .csv file', 'warning');
+    return;
+  }
+  if (file.size > 5 * 1024 * 1024) {
+    toast('File too large. Maximum size is 5 MB.', 'error');
+    return;
+  }
+  importSelectedFile = file;
+  $('file-drop-label').innerHTML = `
+    <span style="font-size:20px;">✅</span><br>
+    <span style="font-weight:700;color:var(--text);">${file.name}</span><br>
+    <span style="font-size:10px;color:var(--text3);">${(file.size / 1024).toFixed(1)} KB</span>`;
+  updateImportConfirmBtn();
+}
+
+async function handleImportConfirm() {
+  if (!importSelectedFile || !importSelectedBroker) return;
+  if (!authToken) { showLoginScreen(); return; }
+
+  const btn = $('btn-import-confirm');
+  btn.disabled = true;
+  btn.textContent = 'Importing…';
+
+  // Show progress
+  $('import-result').style.display   = 'none';
+  $('import-progress').style.display = 'block';
+  const fill   = $('import-progress-fill');
+  const status = $('import-status-text');
+  fill.style.width = '15%';
+  status.textContent = 'Uploading file…';
+
+  try {
+    const formData = new FormData();
+    formData.append('file', importSelectedFile);
+
+    fill.style.width = '40%';
+    status.textContent = 'Parsing transactions…';
+
+    const res = await fetch(
+      `${API_BASE}/import/csv?broker=${encodeURIComponent(importSelectedBroker)}`,
+      {
+        method: 'POST',
+        headers: { 'X-Auth-Token': authToken },
+        body: formData,
+      }
+    );
+
+    fill.style.width = '80%';
+    status.textContent = 'Processing…';
+
+    if (!res) {
+      toast('Network error during import.', 'error');
+      return;
+    }
+
+    const data = await res.json().catch(() => ({}));
+    fill.style.width = '100%';
+
+    if (res.status === 402) {
+      closeImportModal();
+      showUpgradeModal(data.detail || 'CSV import requires an Investor or Tax Pro plan.');
+      return;
+    }
+
+    if (!res.ok) {
+      $('import-progress').style.display = 'none';
+      showImportResult('error', data.detail || 'Import failed. Check the file format and try again.', null);
+      return;
+    }
+
+    $('import-progress').style.display = 'none';
+
+    const imported = data.imported ?? 0;
+    const skipped  = data.skipped  ?? 0;
+    const errors   = data.errors   ?? [];
+
+    showImportResult('success', null, { imported, skipped, errors, broker: importSelectedBroker });
+
+    if (imported > 0) {
+      fetchPortfolio();
+      loadMainChart(true);
+      toast(`Imported ${imported} transaction${imported !== 1 ? 's' : ''} from ${importSelectedBroker} ✓`, 'success', 5000);
+    }
+
+  } catch (err) {
+    $('import-progress').style.display = 'none';
+    showImportResult('error', `Unexpected error: ${err.message}`, null);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Import';
+  }
+}
+
+function showImportResult(type, errorMsg, summary) {
+  const el = $('import-result');
+  el.style.display = 'block';
+
+  if (type === 'error') {
+    el.innerHTML = `
+      <div class="import-result-error">
+        <div style="font-size:20px;margin-bottom:6px;">❌</div>
+        <div style="font-size:12px;color:var(--red);">${errorMsg}</div>
+      </div>`;
+    return;
+  }
+
+  // Success summary
+  const { imported, skipped, errors, broker } = summary;
+  const errHtml = errors.length
+    ? `<details style="margin-top:10px;">
+        <summary style="font-size:10px;color:var(--text3);cursor:pointer;">
+          ${errors.length} row${errors.length !== 1 ? 's' : ''} skipped/errored
+        </summary>
+        <ul style="margin:6px 0 0;padding-left:16px;font-size:10px;color:var(--text3);">
+          ${errors.slice(0, 10).map((e) => `<li>${e}</li>`).join('')}
+          ${errors.length > 10 ? `<li>…and ${errors.length - 10} more</li>` : ''}
+        </ul>
+      </details>`
+    : '';
+
+  el.innerHTML = `
+    <div class="import-result-success">
+      <div style="font-size:24px;margin-bottom:8px;">${imported > 0 ? '🎉' : '⚠️'}</div>
+      <div class="import-stat-row">
+        <div class="import-stat"><div class="import-stat-val">${imported}</div><div class="import-stat-label">Imported</div></div>
+        <div class="import-stat"><div class="import-stat-val">${skipped}</div><div class="import-stat-label">Skipped</div></div>
+      </div>
+      ${imported === 0 ? `<div style="font-size:11px;color:var(--text2);margin-top:8px;">No transactions were imported. Check that the broker matches your file.</div>` : ''}
+      ${errHtml}
+    </div>`;
+}
+
 // ── INIT & LISTENERS ─────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
   loadSession((hasSession) => {
@@ -1079,7 +1271,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Upgrade
   $('btn-upgrade')?.addEventListener('click', () =>
-    showUpgradeModal('Unlock unlimited assets, AI analysis, and more for $15/mo.')
+    showUpgradeModal('Unlock unlimited assets, AI analysis, CSV import, and more.')
   );
   $('btn-upgrade-cancel')?.addEventListener('click',  hideUpgradeModal);
   $('btn-upgrade-confirm')?.addEventListener('click', handleUpgrade);
@@ -1133,4 +1325,38 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   $('btn-sell-cancel')?.addEventListener('click',  closeSellModal);
   $('btn-sell-confirm')?.addEventListener('click', confirmSell);
+
+  // ── CSV Import modal ─────────────────────────────────────────
+  $('btn-open-import')?.addEventListener('click', openImportModal);
+  $('btn-import-cancel')?.addEventListener('click', closeImportModal);
+  $('btn-import-confirm')?.addEventListener('click', handleImportConfirm);
+
+  $('import-broker-select')?.addEventListener('change', handleBrokerSelect);
+
+  // File picker — click on the drop area label
+  $('file-drop-area')?.addEventListener('click', () => {
+    $('import-file-input')?.click();
+  });
+  $('import-file-input')?.addEventListener('change', handleFileSelect);
+
+  // Drag-and-drop
+  const dropArea = $('file-drop-area');
+  if (dropArea) {
+    dropArea.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      dropArea.classList.add('drag-over');
+    });
+    dropArea.addEventListener('dragleave', () => dropArea.classList.remove('drag-over'));
+    dropArea.addEventListener('drop', (e) => {
+      e.preventDefault();
+      dropArea.classList.remove('drag-over');
+      const file = e.dataTransfer.files?.[0];
+      if (file) handleFileSelect({ target: { files: [file] } });
+    });
+  }
+
+  // Close import modal on backdrop click
+  $('modal-import-csv')?.addEventListener('click', (e) => {
+    if (e.target === $('modal-import-csv')) closeImportModal();
+  });
 });

@@ -132,7 +132,6 @@
       <span class="perf-pill" data-period="1y">12M: —</span>
     </div>
 
-    <!-- FIX: only ONE benchmark-select, no duplicate -->
     <div class="chart-controls">
       <select id="benchmark-select" class="select-ctrl">
         <option value="^GSPC">S&amp;P 500</option>
@@ -173,7 +172,7 @@
     <button type="button" id="btn-portfolio-ai" class="btn-ai">✨ Analyze Portfolio</button>
   </div>
 
-  <!-- Assets — FIX: only ONE assets-list here -->
+  <!-- Assets -->
   <div class="section-heading-row">
     <div class="section-heading">Your Assets</div>
     <button type="button" id="btn-export-csv" class="btn-export-csv">Export CSV</button>
@@ -241,6 +240,20 @@
       Save Asset
     </button>
   </div>
+
+  <!-- ── Import CSV card (investor/tax_pro only) ── -->
+  <div id="import-csv-card" class="import-card" style="display:none;">
+    <div class="import-card-header">
+      <div class="import-card-icon">📥</div>
+      <div>
+        <div class="import-card-title">Import from Broker</div>
+        <div class="import-card-sub">Coinbase · Robinhood · Fidelity · Kraken · Schwab</div>
+      </div>
+    </div>
+    <button type="button" id="btn-open-import" class="btn-import-open">
+      Import CSV
+    </button>
+  </div>
 </div>
 
 <!-- ═══ DETAIL VIEW ═══ -->
@@ -301,18 +314,69 @@
     <div class="modal-title">Go Premium</div>
     <div id="upgrade-reason" class="upgrade-reason">Unlock advanced features.</div>
     <div class="upgrade-price-card">
-      <div class="upgrade-price">$15<span class="upgrade-per">/mo</span></div>
+      <div class="upgrade-price">$19<span class="upgrade-per">/mo</span></div>
       <ul class="upgrade-list">
-        <li>✓ Unlimited assets</li>
-        <li>✓ AI analysis per asset</li>
-        <li>✓ AI portfolio summary</li>
-        <li>✓ Full transaction history</li>
+        <li>✓ Unlimited assets, watchlist &amp; alerts</li>
+        <li>✓ AI analysis per asset &amp; portfolio</li>
+        <li>✓ CSV import from brokers</li>
+        <li>✓ 2-year price history</li>
         <li>✓ Priority support</li>
       </ul>
     </div>
     <div class="modal-actions">
       <button class="btn-ghost"            id="btn-upgrade-cancel">Maybe later</button>
       <button class="btn-primary btn-gold" id="btn-upgrade-confirm">Get Premium</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ CSV IMPORT MODAL ═══ -->
+<div id="modal-import-csv" class="modal-overlay">
+  <div class="modal-box">
+    <div class="modal-title">📥 Import Transactions</div>
+    <p style="font-size:12px;color:var(--text2);text-align:center;margin:-8px 0 16px;">
+      Import your buy &amp; sell history from a broker CSV file.
+    </p>
+
+    <!-- Broker selector -->
+    <div class="field-group" style="margin-bottom:12px;">
+      <label class="field-label">Broker / Exchange</label>
+      <select id="import-broker-select" class="select-ctrl" style="width:100%;padding:9px 12px;font-size:12px;">
+        <option value="">— Select broker —</option>
+        <option value="coinbase">Coinbase</option>
+        <option value="robinhood">Robinhood</option>
+        <option value="fidelity">Fidelity</option>
+        <option value="kraken">Kraken</option>
+        <option value="schwab">Charles Schwab</option>
+      </select>
+    </div>
+
+    <!-- File input -->
+    <div class="field-group" style="margin-bottom:14px;">
+      <label class="field-label">CSV File</label>
+      <label class="file-drop-area" id="file-drop-area">
+        <input type="file" id="import-file-input" accept=".csv" style="display:none;">
+        <span id="file-drop-label">
+          <span style="font-size:22px;">📂</span><br>
+          Click to select a .csv file
+        </span>
+      </label>
+    </div>
+
+    <!-- Help text per broker (shown dynamically) -->
+    <div id="import-help-text" class="import-help" style="display:none;"></div>
+
+    <!-- Progress / result -->
+    <div id="import-progress" class="import-progress" style="display:none;">
+      <div class="import-progress-bar"><div id="import-progress-fill" class="import-progress-fill"></div></div>
+      <div id="import-status-text" style="font-size:11px;color:var(--text2);text-align:center;margin-top:6px;">Importing…</div>
+    </div>
+
+    <div id="import-result" class="import-result" style="display:none;"></div>
+
+    <div class="modal-actions" style="margin-top:16px;">
+      <button class="btn-ghost" id="btn-import-cancel">Cancel</button>
+      <button class="btn-primary" id="btn-import-confirm" disabled>Import</button>
     </div>
   </div>
 </div>

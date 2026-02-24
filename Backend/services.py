@@ -4,8 +4,12 @@ Novidades:
   - check_and_trigger_alerts: função para monitorar e disparar alertas
   - get_asset_data agora retorna 'name' do asset
   - Melhorias na cache e performance
+  - parse_broker_csv: import de transações CSV dos principais brokers
 """
+import csv
+import io
 import os
+import re
 import threading
 import time
 import yfinance as yf
@@ -454,43 +458,37 @@ def check_and_trigger_alerts(session, send_email_callback) -> None:
     """
     from models import PriceAlert, User
     from sqlmodel import select
-    from datetime import datetime
-    
+
     try:
-        # Busca todos os alertas ativos
         active_alerts = session.exec(
             select(PriceAlert).where(PriceAlert.active == True, PriceAlert.triggered == False)
         ).all()
-        
+
         if not active_alerts:
             print("📋 No active alerts to check")
             return
-        
+
         print(f"🔍 Checking {len(active_alerts)} active alerts...")
-        
-        # Agrupa alertas por symbol para otimizar chamadas de API
+
         alerts_by_symbol: dict[str, list] = {}
         for alert in active_alerts:
             if alert.symbol not in alerts_by_symbol:
                 alerts_by_symbol[alert.symbol] = []
             alerts_by_symbol[alert.symbol].append(alert)
-        
-        # Processa cada symbol
+
         for symbol, alerts in alerts_by_symbol.items():
             try:
-                # Busca dados atuais do asset
                 data = get_asset_data(symbol)
                 if not data:
                     print(f"⚠️  Could not fetch data for {symbol}")
                     continue
-                
+
                 current_price = data["current_price"]
                 percent_change = data["percent_change"]
-                
-                # Checa cada alerta desse symbol
+
                 for alert in alerts:
                     triggered = False
-                    
+
                     if alert.alert_type == "price_above" and current_price >= alert.target_value:
                         triggered = True
                     elif alert.alert_type == "price_below" and current_price <= alert.target_value:
@@ -499,22 +497,18 @@ def check_and_trigger_alerts(session, send_email_callback) -> None:
                         triggered = True
                     elif alert.alert_type == "percent_change_down" and percent_change <= -alert.target_value:
                         triggered = True
-                    
+
                     if triggered:
-                        # Atualiza alert
                         alert.triggered = True
                         alert.triggered_at = str(datetime.now())
-                        
-                        # Se não é recorrente, desativa
+
                         if not alert.recurring:
                             alert.active = False
                         else:
-                            # Se é recorrente, reseta o triggered para que possa disparar novamente
                             alert.triggered = False
-                        
+
                         session.add(alert)
-                        
-                        # Busca usuário para enviar email
+
                         user = session.get(User, alert.user_id)
                         if user and user.email and user.notification_email:
                             send_email_callback(
@@ -526,15 +520,284 @@ def check_and_trigger_alerts(session, send_email_callback) -> None:
                                 current_price
                             )
                             print(f"✅ Alert triggered for {user.username}: {symbol} {alert.alert_type}")
-                
+
             except Exception as e:
                 print(f"⚠️  Error processing alerts for {symbol}: {e}")
                 continue
-        
-        # Commit todas as mudanças
+
         session.commit()
         print("✅ Alert check completed")
-        
+
     except Exception as e:
         print(f"❌ Error in check_and_trigger_alerts: {e}")
         session.rollback()
+
+
+# ── CSV IMPORT ─────────────────────────────────────────────────────────────────
+# Supports: Coinbase, Robinhood, Fidelity, Kraken, Schwab
+
+def _clean_price(raw: str) -> float:
+    """Strip currency symbols, commas, whitespace and return absolute float."""
+    cleaned = re.sub(r"[^\d.\-]", "", str(raw).strip())
+    try:
+        return abs(float(cleaned))
+    except (ValueError, TypeError):
+        return 0.0
+
+
+def _normalize_date(raw: str, fmt_hints: list[str] | None = None) -> str:
+    """Try multiple datetime formats, always return YYYY-MM-DD."""
+    raw = str(raw).strip()
+    fmts = list(fmt_hints or [])
+    fmts += [
+        "%Y-%m-%dT%H:%M:%SZ",
+        "%Y-%m-%dT%H:%M:%S",
+        "%Y-%m-%d %H:%M:%S %Z",
+        "%Y-%m-%d %H:%M:%S",
+        "%Y-%m-%d",
+        "%m/%d/%Y",
+        "%m/%d/%y",
+        "%d/%m/%Y",
+        "%B %d, %Y",
+    ]
+    for fmt in fmts:
+        try:
+            return datetime.strptime(raw, fmt).strftime("%Y-%m-%d")
+        except ValueError:
+            continue
+    return raw[:10] if len(raw) >= 10 else raw
+
+
+def _sniff_delimiter(content: str) -> str:
+    """Detect CSV delimiter (comma vs semicolon)."""
+    sample = content[:2048]
+    return ";" if sample.count(";") > sample.count(",") else ","
+
+
+def _csv_rows(content: str) -> tuple[list[str], list[dict]]:
+    """Parse CSV content, skip comment/blank lines. Returns (headers, rows)."""
+    delimiter = _sniff_delimiter(content)
+    lines = [l for l in content.splitlines() if l.strip() and not l.strip().startswith("#")]
+    if not lines:
+        return [], []
+    reader = csv.DictReader(io.StringIO("\n".join(lines)), delimiter=delimiter)
+    rows = list(reader)
+    headers = list(reader.fieldnames or [])
+    return headers, rows
+
+
+def _parse_coinbase(content: str) -> list[dict]:
+    """
+    Coinbase Transaction History CSV.
+    Columns: Timestamp, Transaction Type, Asset, Quantity Transacted,
+             Spot Price Currency, Spot Price at Transaction, Subtotal, Total, Fees, Notes
+    """
+    buy_types  = {"buy", "advanced trade buy"}
+    sell_types = {"sell", "advanced trade sell"}
+
+    _, rows = _csv_rows(content)
+    results = []
+    for row in rows:
+        tx_type_raw = row.get("Transaction Type", "").strip().lower()
+        if tx_type_raw in buy_types:
+            tx_type = "buy"
+        elif tx_type_raw in sell_types:
+            tx_type = "sell"
+        else:
+            continue
+
+        symbol = row.get("Asset", "").strip().upper()
+        amount = _clean_price(row.get("Quantity Transacted", "0"))
+        price  = _clean_price(row.get("Spot Price at Transaction", "0"))
+        date   = _normalize_date(row.get("Timestamp", ""))
+
+        if not symbol or not amount:
+            continue
+
+        results.append({"symbol": symbol, "type": tx_type,
+                         "amount": amount, "price": price, "date": date})
+    return results
+
+
+def _parse_robinhood(content: str) -> list[dict]:
+    """
+    Robinhood Account History CSV.
+    Columns: Activity Date, Process Date, Settle Date, Instrument,
+             Description, Trans Code, Quantity, Price, Amount
+    """
+    buy_codes  = {"buy", "bto"}
+    sell_codes = {"sell", "sto", "stc"}
+
+    _, rows = _csv_rows(content)
+    results = []
+    for row in rows:
+        code = row.get("Trans Code", "").strip().lower()
+        if code in buy_codes:
+            tx_type = "buy"
+        elif code in sell_codes:
+            tx_type = "sell"
+        else:
+            continue
+
+        symbol = row.get("Instrument", "").strip().upper()
+        amount = _clean_price(row.get("Quantity", "0"))
+        price  = _clean_price(row.get("Price", "0"))
+        date   = _normalize_date(row.get("Activity Date", ""))
+
+        if not symbol or not amount:
+            continue
+
+        results.append({"symbol": symbol, "type": tx_type,
+                         "amount": amount, "price": price, "date": date})
+    return results
+
+
+def _parse_fidelity(content: str) -> list[dict]:
+    """
+    Fidelity Brokerage Transaction CSV.
+    Columns: Run Date, Account, Action, Symbol, Description,
+             Type, Quantity, Price, Commission, Amount
+    """
+    _, rows = _csv_rows(content)
+    results = []
+    for row in rows:
+        action = row.get("Action", "").strip().upper()
+        if "BOUGHT" in action:
+            tx_type = "buy"
+        elif "SOLD" in action:
+            tx_type = "sell"
+        else:
+            continue
+
+        symbol = row.get("Symbol", "").strip().upper()
+        amount = _clean_price(row.get("Quantity", "0"))
+        price  = _clean_price(row.get("Price", "0"))
+        date   = _normalize_date(row.get("Run Date", ""))
+
+        if not symbol or not amount:
+            continue
+
+        results.append({"symbol": symbol, "type": tx_type,
+                         "amount": amount, "price": price, "date": date})
+    return results
+
+
+def _parse_kraken(content: str) -> list[dict]:
+    """
+    Kraken Ledgers CSV export.
+    Columns: txid, refid, time, type, subtype, aclass, asset, amount, fee, balance
+    Positive amount = buy, negative = sell (for type='trade').
+    Kraken prefixes symbols with X (XXBT→BTC) or Z (ZUSD→USD); fiat legs are skipped.
+    """
+    _kraken_map = {
+        "XXBT": "BTC", "XETH": "ETH", "XLTC": "LTC", "XXRP": "XRP",
+        "XZEC": "ZEC", "XXLM": "XLM", "XDASH": "DASH", "XXMR": "XMR",
+        "XREP": "REP", "XXTZ": "XTZ",
+    }
+    FIAT = {"USD", "EUR", "GBP", "CAD", "AUD", "JPY", "CHF", "USDT", "USDC"}
+
+    def _clean_kraken_symbol(s: str) -> str:
+        s = s.strip().upper()
+        if s in _kraken_map:
+            return _kraken_map[s]
+        if len(s) == 4 and s[0] in ("X", "Z"):
+            return s[1:]
+        return s
+
+    _, rows = _csv_rows(content)
+    results = []
+    for row in rows:
+        if row.get("type", "").strip().lower() != "trade":
+            continue
+
+        asset = _clean_kraken_symbol(row.get("asset", ""))
+        if not asset or asset in FIAT:
+            continue
+
+        try:
+            raw_amount = float(row.get("amount", "0").replace(",", ""))
+        except ValueError:
+            continue
+
+        tx_type = "buy" if raw_amount > 0 else "sell"
+        amount  = abs(raw_amount)
+        if amount == 0:
+            continue
+
+        date = _normalize_date(row.get("time", ""))
+        # Kraken ledgers don't export a price column; price=0 triggers market fallback
+        results.append({"symbol": asset, "type": tx_type,
+                         "amount": amount, "price": 0.0, "date": date})
+    return results
+
+
+def _parse_schwab(content: str) -> list[dict]:
+    """
+    Charles Schwab Brokerage Transaction CSV.
+    Columns: Date, Action, Symbol, Description, Quantity, Price, Fees & Comm, Amount
+    """
+    _, rows = _csv_rows(content)
+    results = []
+    for row in rows:
+        action = row.get("Action", "").strip().upper()
+        if "BUY" in action:
+            tx_type = "buy"
+        elif "SELL" in action:
+            tx_type = "sell"
+        else:
+            continue
+
+        symbol = row.get("Symbol", "").strip().upper()
+        amount = _clean_price(row.get("Quantity", "0"))
+        price  = _clean_price(row.get("Price", "0"))
+        date   = _normalize_date(row.get("Date", ""))
+
+        if not symbol or not amount:
+            continue
+
+        results.append({"symbol": symbol, "type": tx_type,
+                         "amount": amount, "price": price, "date": date})
+    return results
+
+
+_BROKER_PARSERS = {
+    "coinbase":  _parse_coinbase,
+    "robinhood": _parse_robinhood,
+    "fidelity":  _parse_fidelity,
+    "kraken":    _parse_kraken,
+    "schwab":    _parse_schwab,
+}
+
+
+def parse_broker_csv(content: str, broker: str) -> list[dict]:
+    """
+    Parse a CSV export from a supported US broker and return a normalised list
+    of transaction dicts: {symbol, type, amount, price, date}
+
+    Supported brokers: coinbase, robinhood, fidelity, kraken, schwab
+
+    Raises ValueError with a descriptive message on failure.
+    """
+    broker_key = broker.strip().lower()
+    parser = _BROKER_PARSERS.get(broker_key)
+    if not parser:
+        supported = ", ".join(sorted(_BROKER_PARSERS.keys()))
+        raise ValueError(
+            f"Unsupported broker '{broker}'. Supported: {supported}"
+        )
+
+    try:
+        transactions = parser(content)
+    except Exception as exc:
+        raise ValueError(
+            f"Failed to parse {broker} CSV: {exc}. "
+            "Ensure you exported the Transaction History (not Portfolio) file."
+        ) from exc
+
+    if not transactions:
+        raise ValueError(
+            f"No buy/sell transactions found in this {broker} CSV. "
+            "Make sure you exported the correct Transaction History file."
+        )
+
+    return transactions
