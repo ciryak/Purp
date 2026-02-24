@@ -85,7 +85,7 @@ PRICE_PLAN_MAP: dict[str, str] = {}
 
 # ── Resend Email API ───────────────────────────────────────────────────────────
 RESEND_API_KEY = os.getenv("RESEND_API_KEY", "")
-FROM_EMAIL     = os.getenv("FROM_EMAIL", "Purp <noreply@purp.app>")
+FROM_EMAIL = os.getenv("FROM_EMAIL", "Purp <noreply@getpurpai.com>")
 
 
 # ── Permission helpers ─────────────────────────────────────────────────────────
