@@ -12,6 +12,8 @@ from datetime import date, datetime, timedelta
 
 from fastapi import FastAPI, HTTPException, Depends, Header, Request, BackgroundTasks, UploadFile, File, Query
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 from sqlmodel import Session, select, create_engine, SQLModel
 from pydantic import BaseModel, EmailStr
 import bcrypt
@@ -323,6 +325,11 @@ app = FastAPI(title="Purp API", version="5.1", on_startup=[create_db])
 app.add_middleware(
     CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"]
 )
+
+# landing page
+@app.get("/")
+async def read_index():
+    return FileResponse('static\index.html')
 
 
 def get_session():
