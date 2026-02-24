@@ -888,3 +888,175 @@
      text-align:center; font-size:12px; color:var(--text2);
      display:flex; align-items:center; justify-content:center; gap:4px;
    }
+/* ═══ TAX TOOLS ═══════════════════════════════════ */
+.plan-badge.tax-pro {
+  background: rgba(245,158,11,0.18);
+  color: var(--gold-l);
+  border-color: rgba(245,158,11,0.4);
+}
+
+.tax-card {
+  background: rgba(245,158,11,0.05);
+  border: 1px solid rgba(245,158,11,0.2);
+  border-radius: var(--r);
+  padding: 14px;
+  margin-bottom: 12px;
+}
+.tax-card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.tax-card-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--gold-l);
+}
+.tax-card-sub {
+  font-size: 10px;
+  color: var(--text2);
+  margin-top: 2px;
+}
+.tlh-total-badge {
+  flex-shrink: 0;
+  background: rgba(16,185,129,0.12);
+  border: 1px solid rgba(16,185,129,0.3);
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 11px;
+  font-weight: 800;
+  color: var(--green);
+  font-family: var(--mono);
+  white-space: nowrap;
+}
+.tlh-total-badge.loading {
+  color: var(--text3);
+  background: rgba(0,0,0,0.2);
+  border-color: var(--border);
+}
+.btn-tlh-refresh {
+  background: rgba(245,158,11,0.12);
+  border: 1px solid rgba(245,158,11,0.3);
+  color: var(--gold-l);
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.btn-tlh-refresh:hover { background: rgba(245,158,11,0.22); }
+
+/* TLH opportunity item */
+.tlh-item {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  padding: 11px 12px;
+  margin-bottom: 8px;
+}
+.tlh-item-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+.tlh-symbol {
+  font-weight: 800;
+  font-size: 14px;
+}
+.tlh-savings-badge {
+  background: rgba(16,185,129,0.12);
+  border: 1px solid rgba(16,185,129,0.3);
+  color: var(--green);
+  border-radius: 999px;
+  padding: 3px 10px;
+  font-size: 11px;
+  font-weight: 800;
+  font-family: var(--mono);
+}
+.tlh-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+.tlh-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.tlh-cell-label {
+  font-size: 9px;
+  color: var(--text3);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  font-weight: 700;
+}
+.tlh-cell-value {
+  font-size: 11px;
+  font-family: var(--mono);
+  color: var(--text);
+}
+.tlh-cell-value.loss { color: var(--red); }
+.tlh-cell-value.green { color: var(--green); }
+.tlh-replacement {
+  margin-top: 8px;
+  padding: 7px 10px;
+  background: rgba(124,58,237,0.07);
+  border: 1px solid rgba(124,58,237,0.18);
+  border-radius: 6px;
+  font-size: 11px;
+  color: var(--text2);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.tlh-replacement strong { color: var(--accent-l); }
+.tlh-gain-type {
+  display: inline-block;
+  font-size: 9px;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 999px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.tlh-gain-type.short {
+  background: rgba(239,68,68,0.12);
+  border: 1px solid rgba(239,68,68,0.3);
+  color: var(--red);
+}
+.tlh-gain-type.long {
+  background: rgba(16,185,129,0.1);
+  border: 1px solid rgba(16,185,129,0.3);
+  color: var(--green);
+}
+.tlh-empty {
+  text-align: center;
+  padding: 20px;
+  color: var(--text2);
+  font-size: 12px;
+}
+.tlh-empty-icon { font-size: 28px; margin-bottom: 6px; }
+
+/* Tax Pro CTA card */
+.tax-cta-card {
+  background: rgba(245,158,11,0.05);
+  border: 1px solid rgba(245,158,11,0.2);
+  border-radius: var(--r);
+  padding: 20px;
+  text-align: center;
+  margin-bottom: 12px;
+}
+.tax-cta-title {
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--gold-l);
+  margin-bottom: 6px;
+}
+.tax-cta-sub {
+  font-size: 11px;
+  color: var(--text2);
+  line-height: 1.6;
+}

@@ -319,6 +319,9 @@ function updateProfileBar() {
   if (importCard) {
     importCard.style.display = isPremium() ? '' : 'none';
   }
+
+  // Show/hide tax tools based on plan
+  updateTaxToolsVisibility();
 }
 
 // ── UPGRADE MODAL ────────────────────────────────────────────────
@@ -1221,6 +1224,164 @@ function showImportResult(type, errorMsg, summary) {
     </div>`;
 }
 
+// ════════════════════════════════════════════════════════════════
+// TAX TOOLS (tax_pro)
+// ════════════════════════════════════════════════════════════════
+
+function isTaxPro() { return currentUser?.plan === 'tax_pro'; }
+
+function updateTaxToolsVisibility() {
+  const taxSection = $('tax-tools-section');
+  const taxCta     = $('tax-pro-cta');
+  if (!taxSection || !taxCta) return;
+
+  if (isTaxPro()) {
+    taxSection.style.display = '';
+    taxCta.style.display     = 'none';
+    loadTaxLossHarvesting();
+  } else if (isPremium()) {
+    // Investor — show CTA to upgrade to Tax Pro
+    taxSection.style.display = 'none';
+    taxCta.style.display     = '';
+  } else {
+    // Free — hide both (upgrade modal on premium btn handles it)
+    taxSection.style.display = 'none';
+    taxCta.style.display     = 'none';
+  }
+}
+
+async function loadTaxLossHarvesting() {
+  if (!authToken || !isTaxPro()) return;
+
+  const listEl  = $('tlh-list');
+  const badgeEl = $('tlh-total-badge');
+  if (!listEl) return;
+
+  const bracket = $('tlh-bracket-select')?.value || '0.22';
+
+  badgeEl.textContent = 'Loading…';
+  badgeEl.classList.add('loading');
+  listEl.innerHTML = '<div class="tlh-empty"><div class="tlh-empty-icon">⏳</div>Fetching prices…</div>';
+
+  const res = await apiFetch(
+    `/portfolio/tax-loss-harvesting?tax_bracket=${bracket}`,
+    { headers: authHeaders() }
+  );
+  if (!res) { listEl.innerHTML = '<div class="tlh-empty">Could not load data.</div>'; return; }
+
+  if (res.status === 402) {
+    listEl.innerHTML = '<div class="tlh-empty">Tax Pro plan required.</div>';
+    return;
+  }
+  if (!res.ok) { listEl.innerHTML = '<div class="tlh-empty">Error loading opportunities.</div>'; return; }
+
+  const data = await res.json();
+  const opportunities = data.opportunities || [];
+
+  badgeEl.classList.remove('loading');
+  if (data.total_potential_savings > 0) {
+    badgeEl.textContent = `Save ${formatUSD(data.total_potential_savings)}`;
+  } else {
+    badgeEl.textContent = '✓ No losses';
+    badgeEl.style.background = 'rgba(0,0,0,0.2)';
+    badgeEl.style.color = 'var(--text3)';
+    badgeEl.style.borderColor = 'var(--border)';
+  }
+
+  listEl.innerHTML = '';
+
+  if (!opportunities.length) {
+    listEl.innerHTML = `
+      <div class="tlh-empty">
+        <div class="tlh-empty-icon">🎉</div>
+        <div>No harvestable losses right now.</div>
+        <div style="font-size:10px;margin-top:4px;color:var(--text3);">All positions are profitable or within the $50 threshold.</div>
+      </div>`;
+    return;
+  }
+
+  // Render each opportunity
+  opportunities.forEach((opp) => {
+    const isShort = opp.gain_type === 'short_term';
+    const item = document.createElement('div');
+    item.className = 'tlh-item';
+    item.innerHTML = `
+      <div class="tlh-item-top">
+        <div style="display:flex;align-items:center;gap:8px;">
+          <span class="tlh-symbol">${opp.symbol}</span>
+          <span class="tlh-gain-type ${isShort ? 'short' : 'long'}">${isShort ? 'Short-term' : 'Long-term'}</span>
+        </div>
+        <span class="tlh-savings-badge">Save ${formatUSD(opp.estimated_tax_saved)}</span>
+      </div>
+      <div class="tlh-grid">
+        <div class="tlh-cell">
+          <span class="tlh-cell-label">Unrealized Loss</span>
+          <span class="tlh-cell-value loss">${formatUSD(opp.unrealized_loss)}</span>
+        </div>
+        <div class="tlh-cell">
+          <span class="tlh-cell-label">Tax Rate Applied</span>
+          <span class="tlh-cell-value">${opp.effective_rate_pct}%</span>
+        </div>
+        <div class="tlh-cell">
+          <span class="tlh-cell-label">Holding Period</span>
+          <span class="tlh-cell-value">${opp.holding_days} days</span>
+        </div>
+        <div class="tlh-cell">
+          <span class="tlh-cell-label">Safe to Rebuy After</span>
+          <span class="tlh-cell-value">${opp.wash_sale_safe_date}</span>
+        </div>
+        <div class="tlh-cell">
+          <span class="tlh-cell-label">Current Price</span>
+          <span class="tlh-cell-value sensitive-value">${formatUSD(opp.current_price)}</span>
+        </div>
+        <div class="tlh-cell">
+          <span class="tlh-cell-label">Purchase Price</span>
+          <span class="tlh-cell-value sensitive-value">${formatUSD(opp.purchase_price)}</span>
+        </div>
+      </div>
+      ${opp.suggested_replacement ? `
+      <div class="tlh-replacement">
+        <span>⚠️ Wash-Sale Rule:</span>
+        Consider <strong>${opp.suggested_replacement}</strong> as a substitute while waiting 31 days.
+      </div>` : ''}`;
+    listEl.appendChild(item);
+  });
+  applyVisibilityMask();
+}
+
+// Tax Pro upgrade modal
+function showTaxProUpgradeModal() {
+  $('modal-upgrade-tax-pro').classList.add('active');
+}
+function hideTaxProUpgradeModal() {
+  $('modal-upgrade-tax-pro').classList.remove('active');
+}
+
+async function handleTaxProUpgrade() {
+  hideTaxProUpgradeModal();
+  const btn = $('btn-taxpro-confirm');
+  btn.disabled = true;
+  btn.textContent = 'Loading…';
+  try {
+    const res = await apiFetch('/stripe/create-checkout', {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify({ plan: 'tax_pro' }),
+    });
+    if (!res) return;
+    if (res.ok) {
+      const data = await res.json();
+      if (data.checkout_url) window.open(data.checkout_url, '_blank');
+    } else {
+      const err = await res.json().catch(() => ({}));
+      toast(err.detail || 'Could not initiate payment.', 'error');
+    }
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Upgrade to Tax Pro';
+  }
+}
+
 // ── INIT & LISTENERS ─────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
   loadSession((hasSession) => {
@@ -1359,4 +1520,11 @@ document.addEventListener('DOMContentLoaded', () => {
   $('modal-import-csv')?.addEventListener('click', (e) => {
     if (e.target === $('modal-import-csv')) closeImportModal();
   });
+
+  // ── Tax Pro ─────────────────────────────────────────────────
+  $('btn-upgrade-tax-pro')?.addEventListener('click', () => showTaxProUpgradeModal());
+  $('btn-taxpro-cancel')?.addEventListener('click',   () => hideTaxProUpgradeModal());
+  $('btn-taxpro-confirm')?.addEventListener('click',  handleTaxProUpgrade);
+  $('btn-refresh-tlh')?.addEventListener('click',     loadTaxLossHarvesting);
+  $('tlh-bracket-select')?.addEventListener('change', loadTaxLossHarvesting);
 });

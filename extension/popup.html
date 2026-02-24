@@ -172,6 +172,54 @@
     <button type="button" id="btn-portfolio-ai" class="btn-ai">✨ Analyze Portfolio</button>
   </div>
 
+  <!-- Tax Tools (tax_pro only) -->
+  <div id="tax-tools-section" style="display:none;">
+    <div class="section-heading-row" style="margin-top:4px;">
+      <div class="section-heading" style="color:#fbbf24;">💼 Tax Tools</div>
+      <select id="cost-basis-method" class="select-ctrl" title="Cost basis method">
+        <option value="FIFO">FIFO</option>
+        <option value="LIFO">LIFO</option>
+        <option value="HIFO">HIFO</option>
+      </select>
+    </div>
+
+    <div class="tax-card">
+      <div class="tax-card-header">
+        <div>
+          <div class="tax-card-title">Tax Loss Harvesting</div>
+          <div class="tax-card-sub">Positions with harvestable losses this year</div>
+        </div>
+        <div id="tlh-total-badge" class="tlh-total-badge">Loading…</div>
+      </div>
+      <div id="tlh-bracket-row" style="margin-bottom:10px;display:flex;align-items:center;gap:8px;">
+        <span style="font-size:10px;color:var(--text2);">Tax bracket:</span>
+        <select id="tlh-bracket-select" class="select-ctrl">
+          <option value="0.10">10%</option>
+          <option value="0.12">12%</option>
+          <option value="0.22" selected>22%</option>
+          <option value="0.24">24%</option>
+          <option value="0.32">32%</option>
+          <option value="0.35">35%</option>
+          <option value="0.37">37%</option>
+        </select>
+        <button type="button" id="btn-refresh-tlh" class="btn-tlh-refresh" title="Refresh">↻</button>
+      </div>
+      <div id="tlh-list"></div>
+    </div>
+  </div>
+
+  <!-- Tax Pro CTA (non-tax_pro) -->
+  <div id="tax-pro-cta" style="display:none;">
+    <div class="tax-cta-card">
+      <div style="font-size:24px;margin-bottom:6px;">💼</div>
+      <div class="tax-cta-title">Tax Pro Features</div>
+      <div class="tax-cta-sub">Tax Loss Harvesting, cost-basis methods (FIFO/LIFO/HIFO), and Form 8949 export — exclusive to Tax Pro.</div>
+      <button type="button" id="btn-upgrade-tax-pro" class="btn-primary btn-gold" style="margin-top:12px;font-size:12px;padding:10px;">
+        Upgrade to Tax Pro — $29/mo
+      </button>
+    </div>
+  </div>
+
   <!-- Assets -->
   <div class="section-heading-row">
     <div class="section-heading">Your Assets</div>
@@ -326,6 +374,30 @@
     <div class="modal-actions">
       <button class="btn-ghost"            id="btn-upgrade-cancel">Maybe later</button>
       <button class="btn-primary btn-gold" id="btn-upgrade-confirm">Get Premium</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ TAX PRO UPGRADE MODAL ═══ -->
+<div id="modal-upgrade-tax-pro" class="modal-overlay">
+  <div class="modal-box">
+    <div class="upgrade-star">💼</div>
+    <div class="modal-title">Tax Pro Plan</div>
+    <div class="upgrade-reason">Advanced tax tools for serious investors.</div>
+    <div class="upgrade-price-card" style="background:rgba(245,158,11,.07);border-color:rgba(245,158,11,.22);">
+      <div class="upgrade-price" style="color:var(--gold-l);">$29<span class="upgrade-per">/mo</span></div>
+      <ul class="upgrade-list">
+        <li>✓ Everything in Investor</li>
+        <li>✓ Tax Loss Harvesting engine</li>
+        <li>✓ FIFO / LIFO / HIFO cost basis</li>
+        <li>✓ Wash-sale rule guidance</li>
+        <li>✓ Form 8949 export</li>
+        <li>✓ Replacement asset suggestions</li>
+      </ul>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-ghost"            id="btn-taxpro-cancel">Maybe later</button>
+      <button class="btn-primary btn-gold" id="btn-taxpro-confirm">Upgrade to Tax Pro</button>
     </div>
   </div>
 </div>

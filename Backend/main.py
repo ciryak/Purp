@@ -6,14 +6,11 @@ Plan tiers:
   tax_pro   $29/mo — everything in investor + Tax Loss Harvesting + Form 8949 export
 """
 import os
-import smtplib
 import threading
 import concurrent.futures
 from datetime import date, datetime, timedelta
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
 
-from fastapi import FastAPI, HTTPException, Depends, Header, Request, BackgroundTasks
+from fastapi import FastAPI, HTTPException, Depends, Header, Request, BackgroundTasks, UploadFile, File, Query
 from fastapi.middleware.cors import CORSMiddleware
 from sqlmodel import Session, select, create_engine, SQLModel
 from pydantic import BaseModel, EmailStr
@@ -30,6 +27,9 @@ from services import (
     get_portfolio_ai_analysis,
     get_ai_status,
     check_and_trigger_alerts,
+    parse_broker_csv,
+    calculate_tax_loss_harvesting,
+    calculate_cost_basis,
 )
 
 # ── Config ─────────────────────────────────────────────────────────────────────
@@ -65,12 +65,12 @@ FREE_WATCHLIST_LIMIT   = 10
 FREE_ALERT_LIMIT       = 2
 FREE_HISTORY_DAYS      = 30     # 1 month
 INVESTOR_HISTORY_DAYS  = 730    # 2 years
+CSV_MAX_BYTES          = 5 * 1024 * 1024   # 5 MB
 
 # Price IDs for each paid plan (set these in your .env)
 PRICE_ID_INVESTOR = os.getenv("STRIPE_PRICE_ID_INVESTOR", "")
 PRICE_ID_TAX_PRO  = os.getenv("STRIPE_PRICE_ID_TAX_PRO",  "")
 
-# Mapping price_id → plan name (populated at startup when IDs are present)
 def _build_price_plan_map() -> dict[str, str]:
     m: dict[str, str] = {}
     if PRICE_ID_INVESTOR:
@@ -79,25 +79,20 @@ def _build_price_plan_map() -> dict[str, str]:
         m[PRICE_ID_TAX_PRO] = "tax_pro"
     return m
 
-PRICE_PLAN_MAP: dict[str, str] = {}   # filled in create_db / startup
+PRICE_PLAN_MAP: dict[str, str] = {}
 
-# ── SMTP ───────────────────────────────────────────────────────────────────────
-SMTP_HOST  = os.getenv("SMTP_HOST", "smtp.gmail.com")
-SMTP_PORT  = int(os.getenv("SMTP_PORT", 587))
-SMTP_USER  = os.getenv("SMTP_USER", "")
-SMTP_PASS  = os.getenv("SMTP_PASS", "")
-FROM_EMAIL = os.getenv("FROM_EMAIL", SMTP_USER)
+# ── Resend Email API ───────────────────────────────────────────────────────────
+RESEND_API_KEY = os.getenv("RESEND_API_KEY", "")
+FROM_EMAIL     = os.getenv("FROM_EMAIL", "Purp <noreply@purp.app>")
 
 
 # ── Permission helpers ─────────────────────────────────────────────────────────
 
 def has_plan(user: User, *plans: str) -> bool:
-    """Return True if user's current plan is in the given set."""
     return user.plan in plans
 
 
 def require_investor(user: User) -> None:
-    """Raise 402 if user does not have investor or tax_pro plan."""
     if not has_plan(user, "investor", "tax_pro"):
         raise HTTPException(
             402,
@@ -107,7 +102,6 @@ def require_investor(user: User) -> None:
 
 
 def require_tax_pro(user: User) -> None:
-    """Raise 402 if user does not have the tax_pro plan."""
     if not has_plan(user, "tax_pro"):
         raise HTTPException(
             402,
@@ -119,23 +113,35 @@ def require_tax_pro(user: User) -> None:
 # ── Email helpers ──────────────────────────────────────────────────────────────
 
 def _send_email(to_email: str, subject: str, html: str) -> None:
-    if not SMTP_USER or not SMTP_PASS:
-        print("⚠️  SMTP not configured — skipping email")
+    """Send transactional email via Resend API (https://resend.com)."""
+    if not RESEND_API_KEY:
+        print("⚠️  RESEND_API_KEY not configured — skipping email")
         return
 
-    msg = MIMEMultipart("alternative")
-    msg["Subject"] = subject
-    msg["From"]    = f"Purp <{FROM_EMAIL}>"
-    msg["To"]      = to_email
-    msg.attach(MIMEText(html, "html"))
+    import urllib.request, json as _json
 
+    payload = _json.dumps({
+        "from":    FROM_EMAIL,
+        "to":      [to_email],
+        "subject": subject,
+        "html":    html,
+    }).encode()
+
+    req = urllib.request.Request(
+        "https://api.resend.com/emails",
+        data=payload,
+        headers={
+            "Authorization": f"Bearer {RESEND_API_KEY}",
+            "Content-Type":  "application/json",
+        },
+        method="POST",
+    )
     try:
-        with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=10) as s:
-            s.ehlo(); s.starttls(); s.login(SMTP_USER, SMTP_PASS)
-            s.sendmail(FROM_EMAIL, to_email, msg.as_string())
-        print(f"✅ Email sent → {to_email}")
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            status = resp.getcode()
+            print(f"✅ Email sent via Resend → {to_email} (HTTP {status})")
     except Exception as e:
-        print(f"⚠️  Email failed ({to_email}): {e}")
+        print(f"⚠️  Resend email failed ({to_email}): {e}")
 
 
 def _send_welcome_email(to_email: str, username: str) -> None:
@@ -298,7 +304,6 @@ def create_db() -> None:
     except Exception as e:
         print(f"⚠️  Email index: {e}")
 
-    # Ensure user #1 is always investor-tier (owner)
     try:
         with Session(engine) as s:
             u = s.get(User, 1)
@@ -314,7 +319,7 @@ def create_db() -> None:
 
 
 # ── App ────────────────────────────────────────────────────────────────────────
-app = FastAPI(title="Purp API", version="5.0", on_startup=[create_db])
+app = FastAPI(title="Purp API", version="5.1", on_startup=[create_db])
 app.add_middleware(
     CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"]
 )
@@ -351,7 +356,6 @@ def verify_pw(pw: str, hashed: str) -> bool:
 
 
 def _history_days_for_user(user: User) -> int:
-    """Return the max history look-back in days allowed for the user's plan."""
     if has_plan(user, "investor", "tax_pro"):
         return INVESTOR_HISTORY_DAYS
     return FREE_HISTORY_DAYS
@@ -381,12 +385,12 @@ class WatchlistAddInput(BaseModel):
 
 class AlertCreateInput(BaseModel):
     symbol: str
-    alert_type: str  # 'price_above' | 'price_below' | 'percent_change_up' | 'percent_change_down'
+    alert_type: str
     target_value: float
     recurring: bool = False
 
 class CheckoutInput(BaseModel):
-    plan: str = "investor"   # "investor" | "tax_pro"
+    plan: str = "investor"
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -462,7 +466,7 @@ def _user_payload(user: User) -> dict:
         "id":         user.id,
         "username":   user.username,
         "plan":       user.plan,
-        "is_premium": has_plan(user, "investor", "tax_pro"),   # back-compat field
+        "is_premium": has_plan(user, "investor", "tax_pro"),
     }
 
 
@@ -798,6 +802,173 @@ def sell_asset(
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# CSV IMPORT
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@app.post("/import/csv")
+async def import_csv(
+    file: UploadFile = File(...),
+    broker: str = Query(..., description="Broker name: coinbase, robinhood, fidelity, kraken, schwab"),
+    user_id: int = Depends(get_current_user),
+    session: Session = Depends(get_session),
+):
+    """
+    Import transactions from a broker CSV export.
+    Requires Investor or Tax Pro plan.
+    Returns {"imported": N, "skipped": M, "errors": [...]}
+    """
+    # ── 1. Plan gate ─────────────────────────────────────────────
+    user = session.get(User, user_id)
+    if not user:
+        raise HTTPException(404, "User not found")
+    require_investor(user)   # raises 402 for free users
+
+    # ── 2. File validation ───────────────────────────────────────
+    filename = (file.filename or "").lower()
+    if not filename.endswith(".csv"):
+        raise HTTPException(400, "Only .csv files are accepted.")
+
+    raw_bytes = await file.read()
+    if len(raw_bytes) > CSV_MAX_BYTES:
+        raise HTTPException(413, f"File too large. Maximum allowed size is 5 MB.")
+    if not raw_bytes:
+        raise HTTPException(400, "Uploaded file is empty.")
+
+    try:
+        content = raw_bytes.decode("utf-8-sig")   # strip BOM if present
+    except UnicodeDecodeError:
+        try:
+            content = raw_bytes.decode("latin-1")
+        except Exception:
+            raise HTTPException(400, "Could not decode file. Please ensure it is UTF-8 or Latin-1 encoded.")
+
+    # ── 3. Parse ─────────────────────────────────────────────────
+    try:
+        transactions = parse_broker_csv(content, broker)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+    if not transactions:
+        raise HTTPException(400, f"No valid buy/sell transactions found in the {broker} CSV.")
+
+    # ── 4. Import each transaction ────────────────────────────────
+    imported = 0
+    skipped  = 0
+    errors: list[str] = []
+
+    for i, tx in enumerate(transactions):
+        sym    = tx["symbol"].strip().upper()
+        amount = float(tx["amount"])
+        price  = float(tx["price"])
+        tx_date= tx["date"]
+        tx_type= tx["type"]   # "buy" or "sell"
+
+        if amount <= 0:
+            skipped += 1
+            continue
+
+        # For buy transactions — resolve symbol and upsert asset
+        if tx_type == "buy":
+            # If broker didn't supply a price (e.g. Kraken), fall back to current market price
+            if price <= 0:
+                mkt = get_asset_data(sym)
+                price = mkt["current_price"] if mkt else 0.0
+
+            if price <= 0:
+                errors.append(f"Row {i+1} [{sym}]: could not determine price — skipped.")
+                skipped += 1
+                continue
+
+            try:
+                m = get_asset_data(sym)
+                if not m:
+                    errors.append(f"Row {i+1} [{sym}]: symbol not found — skipped.")
+                    skipped += 1
+                    continue
+
+                real_sym = m["real_symbol"]
+
+                existing = session.exec(
+                    select(Asset).where(Asset.symbol == real_sym, Asset.user_id == user_id)
+                ).first()
+
+                if existing:
+                    total_cost = existing.amount * existing.purchase_price + amount * price
+                    total_qty  = existing.amount + amount
+                    existing.amount = total_qty
+                    existing.purchase_price = total_cost / total_qty
+                    session.add(existing)
+                else:
+                    new_asset = Asset(
+                        symbol=real_sym, amount=amount, type=m["type"],
+                        purchase_price=price, purchase_date=tx_date, user_id=user_id,
+                    )
+                    session.add(new_asset)
+
+                session.add(Transaction(
+                    user_id=user_id, symbol=real_sym, type="buy",
+                    amount=amount, price=price, total_usd=amount * price,
+                    date=tx_date, created_at=str(date.today()),
+                ))
+                session.commit()
+                imported += 1
+
+            except Exception as e:
+                session.rollback()
+                errors.append(f"Row {i+1} [{sym}]: {e}")
+                skipped += 1
+
+        # For sell transactions — record in transaction history only
+        elif tx_type == "sell":
+            try:
+                m = get_asset_data(sym)
+                real_sym = m["real_symbol"] if m else sym
+
+                if price <= 0:
+                    mkt_price = m["current_price"] if m else 0.0
+                    price = mkt_price
+
+                sell_total = amount * price
+
+                # Try to find a matching asset to compute realized P&L
+                asset = session.exec(
+                    select(Asset).where(Asset.symbol == real_sym, Asset.user_id == user_id)
+                ).first()
+
+                realized_pnl: float | None = None
+                if asset:
+                    realized_pnl = (price - asset.purchase_price) * amount
+                    new_qty = round(asset.amount - amount, 8)
+                    if new_qty <= 1e-9:
+                        session.delete(asset)
+                    else:
+                        asset.amount = new_qty
+                        session.add(asset)
+
+                session.add(Transaction(
+                    user_id=user_id, symbol=real_sym, type="sell",
+                    amount=amount, price=price, total_usd=sell_total,
+                    realized_pnl=realized_pnl,
+                    date=tx_date, created_at=str(date.today()),
+                ))
+                session.commit()
+                imported += 1
+
+            except Exception as e:
+                session.rollback()
+                errors.append(f"Row {i+1} [{sym}]: {e}")
+                skipped += 1
+
+    return {
+        "imported": imported,
+        "skipped":  skipped,
+        "errors":   errors[:20],   # cap error list to avoid huge payloads
+        "total_parsed": len(transactions),
+        "broker": broker,
+    }
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # PORTFOLIO
 # ═══════════════════════════════════════════════════════════════════════════════
 
@@ -863,7 +1034,6 @@ def portfolio_history(
 ):
     user = session.get(User, user_id)
 
-    # Enforce history limit for free users
     if not has_plan(user, "investor", "tax_pro"):
         period_day_map = {
             "1d": 1, "5d": 5, "1mo": 30, "3mo": 90,
@@ -923,12 +1093,88 @@ def portfolio_summary(
 # TAX (Tax Pro only)
 # ═══════════════════════════════════════════════════════════════════════════════
 
+@app.get("/portfolio/tax-loss-harvesting")
+def portfolio_tax_loss_harvesting(
+    tax_bracket: float = Query(default=0.22, ge=0.0, le=0.37),
+    user_id: int = Depends(get_current_user),
+    session: Session = Depends(get_session),
+):
+    """
+    Full tax-loss harvesting engine: wash-sale dates, gain type, replacement
+    suggestions, and estimated tax savings. Requires tax_pro plan.
+    tax_bracket: user's federal marginal rate (0.10–0.37)
+    """
+    user = session.get(User, user_id)
+    if not user:
+        raise HTTPException(404, "User not found")
+    require_tax_pro(user)
+
+    assets = session.exec(select(Asset).where(Asset.user_id == user_id)).all()
+    if not assets:
+        return {"opportunities": [], "total_potential_savings": 0.0, "tax_bracket": tax_bracket}
+
+    def fetch(a: Asset):
+        d = get_asset_data(a.symbol)
+        if not d:
+            return None
+        return {
+            "symbol":         a.symbol,
+            "amount":         a.amount,
+            "purchase_price": a.purchase_price,
+            "current_price":  d["current_price"],
+            "purchase_date":  a.purchase_date or str(date.today()),
+        }
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=8) as ex:
+        enriched = [r for r in ex.map(fetch, assets) if r]
+
+    opportunities = calculate_tax_loss_harvesting(enriched, tax_bracket=tax_bracket)
+    total_savings  = sum(o["estimated_tax_saved"] for o in opportunities)
+
+    return {
+        "opportunities":          opportunities,
+        "total_potential_savings": round(total_savings, 2),
+        "tax_bracket":            tax_bracket,
+        "opportunity_count":      len(opportunities),
+    }
+
+
+@app.get("/portfolio/cost-basis")
+def portfolio_cost_basis(
+    method: str = Query(default="FIFO"),
+    symbol: str | None = Query(default=None),
+    user_id: int = Depends(get_current_user),
+    session: Session = Depends(get_session),
+):
+    """
+    Calculate cost basis and realized gains/losses.
+    Methods: FIFO (default), LIFO, HIFO, SPEC. Requires tax_pro plan.
+    """
+    user = session.get(User, user_id)
+    if not user:
+        raise HTTPException(404, "User not found")
+    require_tax_pro(user)
+
+    q = select(Transaction).where(Transaction.user_id == user_id)
+    if symbol:
+        q = q.where(Transaction.symbol == symbol.upper().strip())
+    txs = session.exec(q.order_by(Transaction.date)).all()
+
+    tx_list = [
+        {"type": t.type, "amount": t.amount, "price": t.price, "date": t.date, "symbol": t.symbol}
+        for t in txs
+    ]
+    result = calculate_cost_basis(tx_list, method=method)
+    result["symbol_filter"] = symbol or "ALL"
+    return result
+
+
 @app.get("/tax/loss-harvesting")
 def tax_loss_harvesting(
     user_id: int = Depends(get_current_user),
     session: Session = Depends(get_session),
 ):
-    """Return positions with unrealised losses suitable for tax-loss harvesting."""
+    """Legacy simplified endpoint — basic unrealised-loss list (tax_pro only)."""
     user = session.get(User, user_id)
     if not user:
         raise HTTPException(404, "User not found")
@@ -973,7 +1219,6 @@ def form_8949_export(
     user_id: int = Depends(get_current_user),
     session: Session = Depends(get_session),
 ):
-    """Return all sell transactions formatted for IRS Form 8949."""
     user = session.get(User, user_id)
     if not user:
         raise HTTPException(404, "User not found")
@@ -994,7 +1239,7 @@ def form_8949_export(
             "cost_basis":       round(tx.amount * (tx.total_usd / tx.amount - (tx.realized_pnl or 0) / tx.amount), 2)
                                 if tx.amount else 0,
             "gain_loss":        round(tx.realized_pnl or 0, 2),
-            "short_or_long":    "SHORT",   # simplified; proper holding-period logic can be added
+            "short_or_long":    "SHORT",
         }
         for tx in txs
     ]
@@ -1151,7 +1396,6 @@ def create_checkout(
     if has_plan(user, "investor") and data.plan == "investor":
         raise HTTPException(400, "You already have the Investor plan.")
 
-    # Select the correct price ID
     if data.plan == "tax_pro":
         price_id = PRICE_ID_TAX_PRO
         plan_label = "Tax Pro"
@@ -1169,7 +1413,6 @@ def create_checkout(
     cancel_url  = os.getenv("STRIPE_CANCEL_URL",  "https://purp-production.up.railway.app/cancelled")
 
     try:
-        # Re-use existing Stripe customer if available, otherwise let Stripe create one
         customer_kwargs: dict = {}
         if user.stripe_customer_id:
             customer_kwargs["customer"] = user.stripe_customer_id
@@ -1186,7 +1429,6 @@ def create_checkout(
             **customer_kwargs,
         )
 
-        # Persist the Stripe customer ID as soon as we have it
         if session_obj.get("customer") and not user.stripe_customer_id:
             user.stripe_customer_id = session_obj["customer"]
             session.add(user); session.commit()
@@ -1211,7 +1453,6 @@ async def stripe_webhook(request: Request, session: Session = Depends(get_sessio
     except Exception:
         raise HTTPException(400, "Webhook processing error")
 
-    # ── Idempotency ─────────────────────────────────────────────
     event_id = event.get("id")
     if event_id:
         existing = session.get(ProcessedEvent, event_id)
@@ -1223,26 +1464,17 @@ async def stripe_webhook(request: Request, session: Session = Depends(get_sessio
 
     event_type = event["type"]
 
-    # ── checkout.session.completed → assign plan ─────────────────
     if event_type == "checkout.session.completed":
         obj     = event["data"]["object"]
         meta    = obj.get("metadata", {})
         user_id = int(meta.get("user_id", 0))
-        plan    = meta.get("plan", "investor")        # "investor" | "tax_pro"
-
-        # Fallback: derive plan from price_id if metadata missing
-        if not plan or plan == "investor":
-            line_items_price = obj.get("line_items", {})  # may not be expanded
-            price_id_from_obj = obj.get("line_items") and None  # expanded only via API
-            # Use PRICE_PLAN_MAP as the source of truth
-            # (metadata "plan" is reliable; this is just a safety net)
+        plan    = meta.get("plan", "investor")
 
         if user_id:
             u = session.get(User, user_id)
             if u:
                 u.plan       = plan
-                u.is_premium = True   # back-compat
-                # Save subscription / customer IDs if present
+                u.is_premium = True
                 if obj.get("subscription"):
                     u.stripe_subscription_id = obj["subscription"]
                 if obj.get("customer") and not u.stripe_customer_id:
@@ -1250,7 +1482,6 @@ async def stripe_webhook(request: Request, session: Session = Depends(get_sessio
                 session.add(u); session.commit()
                 print(f"✅ User {user_id} upgraded to plan='{plan}'")
 
-    # ── subscription cancelled / paused → downgrade to free ──────
     elif event_type in ["customer.subscription.deleted", "customer.subscription.paused"]:
         subscription = event["data"]["object"]
         user_id = None
@@ -1280,13 +1511,9 @@ async def stripe_webhook(request: Request, session: Session = Depends(get_sessio
                 u.stripe_subscription_id = None
                 session.add(u); session.commit()
                 print(f"✅ User {user_id} downgraded to free (event: {event_type})")
-        else:
-            print(f"⚠️  Could not find user for subscription event {event_type}")
 
-    # ── subscription updated (e.g. upgrade investor → tax_pro) ───
     elif event_type == "customer.subscription.updated":
         subscription = event["data"]["object"]
-        # Determine the new plan from the first subscription item's price
         try:
             items = subscription.get("items", {}).get("data", [])
             if items:
