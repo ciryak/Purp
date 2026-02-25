@@ -739,7 +739,7 @@ def create_alert(
     if data.target_value <= 0:
         raise HTTPException(400, "target_value must be positive")
 
-    symbol_to_store = "PORTFOLIO" if data.alert_type == "portfolio_down" else None
+    symbol_to_store = None
     if data.alert_type != "portfolio_down":
         if not data.symbol:
             raise HTTPException(400, "symbol is required for this alert_type")
