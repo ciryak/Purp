@@ -80,9 +80,21 @@
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
       Portfolio
     </button>
+    <button type="button" id="nav-market" class="nav-item">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 17l6-6 4 4 7-7"/><path d="M14 8h6v6"/></svg>
+      Market Watch
+    </button>
     <button type="button" id="nav-add" class="nav-item">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 8v8M8 12h8"/></svg>
       Add Asset
+    </button>
+    <button type="button" id="nav-alerts" class="nav-item">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 17h5l-1.4-1.4A2 2 0 0 1 18 14.2V11a6 6 0 1 0-12 0v3.2a2 2 0 0 1-.6 1.4L4 17h5"/><path d="M10 20a2 2 0 0 0 4 0"/></svg>
+      Alerts
+    </button>
+    <button type="button" id="nav-import" class="nav-item">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>
+      Import CSV
     </button>
     <button type="button" id="nav-transactions" class="nav-item">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 6h11M9 12h11M9 18h11"/><path d="M4 6h.01M4 12h.01M4 18h.01"/></svg>
@@ -92,6 +104,7 @@
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9"/></svg>
       Sign Out
     </button>
+    <a class="nav-footer-link" href="https://getpurpai.com" target="_blank" rel="noopener noreferrer">getpurpai.com</a>
   </nav>
 </header>
 
@@ -366,6 +379,15 @@
     </button>
   </div>
 
+</div>
+
+<!-- ═══ ALERTS ═══ -->
+<div id="alerts-page" class="page">
+  <div class="page-header">
+    <div class="page-title">Alerts</div>
+    <div class="page-sub">Create and manage your smart alerts</div>
+  </div>
+
   <div class="form-card" id="alerts-card">
     <div class="section-heading" style="margin-bottom:10px;">Advanced Alerts</div>
     <div class="field-group">
@@ -410,6 +432,14 @@
 
     <button type="button" id="btn-create-alert" class="btn-primary" title="Create alert based on selected rule.">Create Alert</button>
     <div id="alerts-list" style="margin-top:10px;"></div>
+  </div>
+</div>
+
+<!-- ═══ IMPORT CSV ═══ -->
+<div id="import-page" class="page">
+  <div class="page-header">
+    <div class="page-title">Import CSV</div>
+    <div class="page-sub">Import broker files from a dedicated page</div>
   </div>
 
   <!-- ── Import CSV card (investor/tax_pro only) ── -->
