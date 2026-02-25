@@ -13,7 +13,9 @@ jobs:
     steps:
       - name: Check and trigger price alerts
         run: |
-          curl -X POST ${{ secrets.APP_URL }}/alerts/check
+          curl -X POST \
+            -H "X-Cron-Secret: ${{ secrets.CRON_SECRET }}" \
+            ${{ secrets.APP_URL }}/alerts/check
           
       - name: Log completion
         run: |

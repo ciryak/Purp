@@ -9,15 +9,17 @@ New in v7:
 import io
 import os
 import csv
+import re
 import random
 import string
 import threading
 import concurrent.futures
 from datetime import date, datetime, timedelta, timezone
+import sentry_sdk
 import resend
 from fastapi import FastAPI, HTTPException, Depends, Header, Request, BackgroundTasks, UploadFile, File, Query
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse, JSONResponse
 from PIL import Image, ImageDraw, ImageFont
 from sqlmodel import Session, select, create_engine, SQLModel
 from pydantic import BaseModel, EmailStr
@@ -25,9 +27,15 @@ import bcrypt
 import stripe
 from jose import JWTError, jwt
 from fastapi.staticfiles import StaticFiles
+<<<<<<< HEAD
 import sentry_sdk
 from sentry_sdk.integrations.fastapi import FastApiIntegration
 from sentry_sdk.integrations.starlette import StarletteIntegration
+=======
+from slowapi import Limiter
+from slowapi.errors import RateLimitExceeded
+from slowapi.util import get_remote_address
+>>>>>>> d0a4304cb37d4e0b836d141264559250d2767ea4
 
 from models import Asset, User, Transaction, PriceAlert, WatchlistItem, ProcessedEvent, Dividend, EmailVerification, NetWorthEntry
 from services import (
@@ -44,6 +52,12 @@ from services import (
     generate_form_8949,
     get_dividend_data,
     generate_weekly_digest,
+)
+
+sentry_sdk.init(
+    dsn=os.getenv("SENTRY_DSN", ""),
+    traces_sample_rate=0.1,
+    environment=os.getenv("ENVIRONMENT", "production"),
 )
 
 # ── Config ─────────────────────────────────────────────────────────────────────
@@ -67,6 +81,37 @@ else:
     print("⚠️  RESEND_API_KEY not set — emails disabled")
 
 VERIFICATION_EXPIRE_MINUTES = 15
+CRON_SECRET = os.getenv("CRON_SECRET", "")
+SYMBOL_PATTERN = re.compile(r"^[A-Z0-9.\-\^]+$")
+MAX_SYMBOL_LENGTH = 20
+MAX_USERNAME_LENGTH = 30
+
+
+def sanitize_username(username: str) -> str:
+    cleaned = username.strip()
+    if len(cleaned) < 3:
+        raise HTTPException(400, "Username must be at least 3 characters")
+    if len(cleaned) > MAX_USERNAME_LENGTH:
+        raise HTTPException(400, f"Username must be at most {MAX_USERNAME_LENGTH} characters")
+    return cleaned
+
+
+def sanitize_symbol(symbol: str) -> str:
+    cleaned = symbol.strip().upper()
+    if not cleaned:
+        raise HTTPException(400, "symbol is required")
+    if len(cleaned) > MAX_SYMBOL_LENGTH:
+        raise HTTPException(400, f"symbol must be at most {MAX_SYMBOL_LENGTH} characters")
+    if not SYMBOL_PATTERN.fullmatch(cleaned):
+        raise HTTPException(400, "symbol contains invalid characters")
+    return cleaned
+
+
+def sanitize_search_query(query: str) -> str:
+    cleaned = query.strip()
+    if len(cleaned) > 50:
+        raise HTTPException(400, "Search query must be at most 50 characters")
+    return cleaned
 
 
 def _build_engine():
@@ -479,6 +524,28 @@ app.add_middleware(
     CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"]
 )
 
+limiter = Limiter(key_func=get_remote_address)
+app.state.limiter = limiter
+
+
+@app.exception_handler(RateLimitExceeded)
+async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
+    return JSONResponse(
+        status_code=429,
+        content={"detail": "Too many requests. Please wait a moment and try again."},
+    )
+
+
+@app.middleware("http")
+async def add_security_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+    return response
+
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
 @app.get("/")
@@ -538,6 +605,10 @@ class VerifyEmailInput(BaseModel):
     code: str
 
 
+class ForgotPasswordInput(BaseModel):
+    email: EmailStr
+
+
 class ResendVerificationInput(BaseModel):
     email: EmailStr
 
@@ -577,15 +648,24 @@ class PreferencesInput(BaseModel):
     notification_browser: bool
 
 
+class NetWorthEntryInput(BaseModel):
+    category: str
+    label: str
+    value: float
+
+
+class RebalanceInput(BaseModel):
+    targets: dict[str, float]
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # AUTH
 # ═══════════════════════════════════════════════════════════════════════════════
 
 @app.post("/auth/register")
-def register(data: RegisterInput, session: Session = Depends(get_session)):
-    uname = data.username.strip()
-    if len(uname) < 3:
-        raise HTTPException(400, "Username must be at least 3 characters")
+@limiter.limit("5/minute")
+def register(request: Request, data: RegisterInput, session: Session = Depends(get_session)):
+    uname = sanitize_username(data.username)
     if len(data.password) < 4:
         raise HTTPException(400, "Password must be at least 4 characters")
     try:
@@ -623,8 +703,10 @@ def register(data: RegisterInput, session: Session = Depends(get_session)):
 
 
 @app.post("/auth/login")
-def login(data: LoginInput, session: Session = Depends(get_session)):
-    user = session.exec(select(User).where(User.username == data.username.strip())).first()
+@limiter.limit("10/minute")
+def login(request: Request, data: LoginInput, session: Session = Depends(get_session)):
+    username = sanitize_username(data.username)
+    user = session.exec(select(User).where(User.username == username)).first()
     if not user or not verify_pw(data.password, user.password_hash):
         raise HTTPException(401, "Incorrect username or password")
 
@@ -638,6 +720,13 @@ def login(data: LoginInput, session: Session = Depends(get_session)):
         }
 
     return {"token": create_token(user.id), "user": _user_payload(user), "requires_verification": False}
+
+
+@app.post("/auth/forgot-password")
+@limiter.limit("3/minute")
+def forgot_password(request: Request, data: ForgotPasswordInput):
+    _ = str(data.email).strip().lower()
+    return {"ok": True, "message": "If this email exists, a reset link will be sent."}
 
 
 @app.post("/auth/verify-email")
@@ -815,7 +904,7 @@ def add_to_watchlist(
     user = session.get(User, user_id)
     if not user or not user.is_verified:
         raise HTTPException(403, "Account not verified")
-    symbol   = data.symbol.strip().upper()
+    symbol = sanitize_symbol(data.symbol)
     existing = session.exec(
         select(WatchlistItem).where(WatchlistItem.user_id == user_id, WatchlistItem.symbol == symbol)
     ).first()
@@ -903,9 +992,10 @@ def create_alert(
     if data.alert_type != "portfolio_down":
         if not data.symbol:
             raise HTTPException(400, "symbol is required for this alert_type")
-        asset_data = get_asset_data(data.symbol)
+        sanitized_symbol = sanitize_symbol(data.symbol)
+        asset_data = get_asset_data(sanitized_symbol)
         if not asset_data:
-            raise HTTPException(404, f"Asset '{data.symbol}' not found")
+            raise HTTPException(404, f"Asset '{sanitized_symbol}' not found")
         symbol_to_store = asset_data["real_symbol"]
 
     if data.alert_type in ("rsi_oversold", "rsi_overbought") and (data.rsi_period is None or data.rsi_period <= 0):
@@ -956,7 +1046,10 @@ def toggle_alert(alert_id: int, user_id: int = Depends(get_current_user), sessio
 
 
 @app.post("/alerts/check")
-def check_alerts_endpoint(background_tasks: BackgroundTasks):
+@limiter.limit("4/hour")
+def check_alerts_endpoint(request: Request, background_tasks: BackgroundTasks):
+    if request.headers.get("X-Cron-Secret") != CRON_SECRET:
+        raise HTTPException(403, "Forbidden")
     background_tasks.add_task(_run_alert_check)
     return {"status": "checking alerts in background"}
 
@@ -1003,7 +1096,7 @@ def create_asset(
     user = session.get(User, user_id)
     if not user or not user.is_verified:
         raise HTTPException(403, "Account not verified")
-    sym = data.symbol.strip().upper()
+    sym = sanitize_symbol(data.symbol)
     if not sym:
         raise HTTPException(400, "Symbol is required")
     if data.amount <= 0:
@@ -1138,7 +1231,11 @@ async def import_csv(
     imported = 0; skipped = 0; errors: list[str] = []
 
     for i, tx in enumerate(transactions):
-        sym    = tx["symbol"].strip().upper()
+        try:
+            sym = sanitize_symbol(tx["symbol"])
+        except HTTPException as e:
+            errors.append(f"Row {i+1}: {e.detail} — skipped.")
+            continue
         amount = float(tx["amount"])
         price  = float(tx["price"])
         tx_date= tx["date"]
@@ -1463,7 +1560,7 @@ def portfolio_rebalance(
     if not user:
         raise HTTPException(404, "User not found")
 
-    targets = {k.strip().upper(): float(v) for k, v in (data.targets or {}).items() if k and float(v) >= 0}
+    targets = {sanitize_symbol(k): float(v) for k, v in (data.targets or {}).items() if k and float(v) >= 0}
     if not targets:
         raise HTTPException(400, "targets is required")
     total_target = sum(targets.values())
@@ -1700,7 +1797,7 @@ def portfolio_cost_basis(
     require_tax_pro(user)
     q = select(Transaction).where(Transaction.user_id == user_id)
     if symbol:
-        q = q.where(Transaction.symbol == symbol.upper().strip())
+        q = q.where(Transaction.symbol == sanitize_symbol(symbol))
     txs = session.exec(q.order_by(Transaction.date)).all()
     tx_list = [
         {"type": t.type, "amount": t.amount, "price": t.price, "date": t.date, "symbol": t.symbol}
@@ -1933,7 +2030,7 @@ def record_dividend(
     user_id: int = Depends(get_current_user),
     session: Session = Depends(get_session),
 ):
-    sym = data.symbol.strip().upper()
+    sym = sanitize_symbol(data.symbol)
     if data.amount_per_share <= 0:
         raise HTTPException(400, "amount_per_share must be positive")
     asset = session.exec(select(Asset).where(Asset.user_id == user_id, Asset.symbol == sym)).first()
@@ -1978,12 +2075,12 @@ def dividend_history(user_id: int = Depends(get_current_user), session: Session 
 def search(q: str):
     if not q or len(q.strip()) < 1:
         return []
-    return search_symbols(q.strip())
+    return search_symbols(sanitize_search_query(q))
 
 
 @app.get("/history/{symbol}")
 def history(symbol: str, period: str = "1mo"):
-    return get_historical_data(symbol, period)
+    return get_historical_data(sanitize_symbol(symbol), period)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -2046,7 +2143,7 @@ def ai_asset(
     if not user:
         raise HTTPException(404, "User not found")
     require_investor(user)
-    return {"analysis": get_ai_analysis(symbol, change)}
+    return {"analysis": get_ai_analysis(sanitize_symbol(symbol), change)}
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
