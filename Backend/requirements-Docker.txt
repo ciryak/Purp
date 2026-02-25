@@ -37,3 +37,4 @@ pytz==2025.2
 # landing page
 
 aiofiles
+slowapi==0.1.9
