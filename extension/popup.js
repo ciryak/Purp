@@ -36,7 +36,7 @@ const formatPct = (v) => `${v >= 0 ? '+' : ''}${(v || 0).toFixed(2)}%`;
 
 // ── Sentry ───────────────────────────────────────────────────────
 
-  import * as Sentry from "./sentry.bundle.min.js";
+
   Sentry.init({
     dsn: "SENTRY_DSN",
     integrations: [new Sentry.BrowserTracing()],
