@@ -1,10 +1,9 @@
 """
-Purp — Data & AI services v4.
+Purp — Data & AI services v5.
 Novidades:
-  - check_and_trigger_alerts: função para monitorar e disparar alertas
-  - get_asset_data agora retorna 'name' do asset
-  - Melhorias na cache e performance
-  - parse_broker_csv: parser de CSV para múltiplos brokers
+  - Binance API substituiu CoinGecko para maior estabilidade e sem rate-limits
+  - generate_form_8949: motor IRS Form 8949 (Part I / II, FIFO/HIFO/LIFO)
+  - Mantidas todas as funções anteriores com mesma assinatura pública
 """
 import os
 import csv
@@ -14,7 +13,7 @@ import time
 import yfinance as yf
 from google import genai
 import requests
-from datetime import datetime
+from datetime import datetime, date, timedelta
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -36,10 +35,11 @@ except Exception as e:
     print(f"⚠️  Gemini init error: {e}")
     _gemini_client = None
 
-# ── Price cache (60s TTL) ──────────────────────────────────────────────────────
+# ── Price cache (60 s TTL) ─────────────────────────────────────────────────────
 _price_cache: dict[str, tuple[dict, float]] = {}
 _price_cache_lock = threading.Lock()
 _PRICE_TTL = 60
+
 
 def _cache_get(key: str) -> dict | None:
     with _price_cache_lock:
@@ -48,26 +48,64 @@ def _cache_get(key: str) -> dict | None:
             return entry[0]
     return None
 
+
 def _cache_set(key: str, value: dict) -> None:
     with _price_cache_lock:
         _price_cache[key] = (value, time.time())
 
-# ── CoinGecko coin info cache ──────────────────────────────────────────────────
-_cg_cache: dict[str, dict | None] = {
-    "btc":      {"id": "bitcoin",       "symbol": "btc",  "name": "Bitcoin",   "thumb": "https://assets.coingecko.com/coins/images/1/thumb/bitcoin.png"},
-    "bitcoin":  {"id": "bitcoin",       "symbol": "btc",  "name": "Bitcoin",   "thumb": "https://assets.coingecko.com/coins/images/1/thumb/bitcoin.png"},
-    "eth":      {"id": "ethereum",      "symbol": "eth",  "name": "Ethereum",  "thumb": "https://assets.coingecko.com/coins/images/279/thumb/ethereum.png"},
-    "ethereum": {"id": "ethereum",      "symbol": "eth",  "name": "Ethereum",  "thumb": "https://assets.coingecko.com/coins/images/279/thumb/ethereum.png"},
-    "sol":      {"id": "solana",        "symbol": "sol",  "name": "Solana",    "thumb": "https://assets.coingecko.com/coins/images/4128/thumb/solana.png"},
-    "bnb":      {"id": "binancecoin",   "symbol": "bnb",  "name": "BNB",       "thumb": "https://assets.coingecko.com/coins/images/825/thumb/bnb-icon2_2x.png"},
-    "xrp":      {"id": "ripple",        "symbol": "xrp",  "name": "XRP",       "thumb": "https://assets.coingecko.com/coins/images/44/thumb/xrp-symbol-white-128.png"},
-    "ada":      {"id": "cardano",       "symbol": "ada",  "name": "Cardano",   "thumb": "https://assets.coingecko.com/coins/images/975/thumb/cardano.png"},
-    "doge":     {"id": "dogecoin",      "symbol": "doge", "name": "Dogecoin",  "thumb": "https://assets.coingecko.com/coins/images/5/thumb/dogecoin.png"},
-    "avax":     {"id": "avalanche-2",   "symbol": "avax", "name": "Avalanche", "thumb": "https://assets.coingecko.com/coins/images/12559/thumb/Avalanche_Circle_RedWhite_Trans.png"},
-    "dot":      {"id": "polkadot",      "symbol": "dot",  "name": "Polkadot",  "thumb": "https://assets.coingecko.com/coins/images/12171/thumb/polkadot.png"},
-    "link":     {"id": "chainlink",     "symbol": "link", "name": "Chainlink", "thumb": "https://assets.coingecko.com/coins/images/877/thumb/chainlink-new-logo.png"},
-    "matic":    {"id": "matic-network", "symbol": "matic","name": "Polygon",   "thumb": "https://assets.coingecko.com/coins/images/4713/thumb/matic-token-icon.png"},
-    "shib":     {"id": "shiba-inu",     "symbol": "shib", "name": "Shiba Inu", "thumb": "https://assets.coingecko.com/coins/images/11939/thumb/shiba.png"},
+
+# ══════════════════════════════════════════════════════════════════════════════
+# BINANCE  (substitui CoinGecko)
+# ══════════════════════════════════════════════════════════════════════════════
+
+_BINANCE_BASE    = "https://api.binance.com"
+_BINANCE_HEADERS = {"User-Agent": "Purp/2.0", "Accept": "application/json"}
+
+# Set of base assets trading against USDT on Binance
+_binance_usdt_assets: set[str] = set()
+_binance_pairs_loaded  = False
+_binance_pairs_lock    = threading.Lock()
+
+# Icon CDN — free, no API key (CoinCap)
+_ICON_BASE = "https://assets.coincap.io/assets/icons/{}@2x.png"
+
+# Hard-coded popular coin metadata (name + icon) so we don't need CoinGecko search
+_COIN_META: dict[str, dict] = {
+    "BTC":  {"name": "Bitcoin",       "id": "btc"},
+    "ETH":  {"name": "Ethereum",      "id": "eth"},
+    "SOL":  {"name": "Solana",        "id": "sol"},
+    "BNB":  {"name": "BNB",           "id": "bnb"},
+    "XRP":  {"name": "XRP",           "id": "xrp"},
+    "ADA":  {"name": "Cardano",       "id": "ada"},
+    "DOGE": {"name": "Dogecoin",      "id": "doge"},
+    "AVAX": {"name": "Avalanche",     "id": "avax"},
+    "DOT":  {"name": "Polkadot",      "id": "dot"},
+    "LINK": {"name": "Chainlink",     "id": "link"},
+    "MATIC":{"name": "Polygon",       "id": "matic"},
+    "SHIB": {"name": "Shiba Inu",     "id": "shib"},
+    "LTC":  {"name": "Litecoin",      "id": "ltc"},
+    "UNI":  {"name": "Uniswap",       "id": "uni"},
+    "ATOM": {"name": "Cosmos",        "id": "atom"},
+    "XLM":  {"name": "Stellar",       "id": "xlm"},
+    "ETC":  {"name": "Ethereum Classic","id": "etc"},
+    "NEAR": {"name": "NEAR Protocol", "id": "near"},
+    "APT":  {"name": "Aptos",         "id": "apt"},
+    "ARB":  {"name": "Arbitrum",      "id": "arb"},
+    "OP":   {"name": "Optimism",      "id": "op"},
+    "INJ":  {"name": "Injective",     "id": "inj"},
+    "SUI":  {"name": "Sui",           "id": "sui"},
+    "TRX":  {"name": "TRON",          "id": "trx"},
+    "SAND": {"name": "The Sandbox",   "id": "sand"},
+    "MANA": {"name": "Decentraland",  "id": "mana"},
+    "FTM":  {"name": "Fantom",        "id": "ftm"},
+    "ALGO": {"name": "Algorand",      "id": "algo"},
+    "AAVE": {"name": "Aave",          "id": "aave"},
+    "COMP": {"name": "Compound",      "id": "comp"},
+    "MKR":  {"name": "Maker",         "id": "mkr"},
+    "HBAR": {"name": "Hedera",        "id": "hbar"},
+    "VET":  {"name": "VeChain",       "id": "vet"},
+    "THETA":{"name": "Theta Network", "id": "theta"},
+    "GRT":  {"name": "The Graph",     "id": "grt"},
 }
 
 _KNOWN_STOCKS = {
@@ -79,7 +117,42 @@ _KNOWN_STOCKS = {
     "^GSPC","^IXIC","^DJI","^BVSP","^FTSE","^N225",
 }
 
-_CG_HEADERS = {"User-Agent": "Purp/2.0", "Accept": "application/json"}
+
+def _load_binance_pairs() -> None:
+    """Fetch all USDT spot trading pairs from Binance Exchange Info (once at startup)."""
+    global _binance_usdt_assets, _binance_pairs_loaded
+    with _binance_pairs_lock:
+        if _binance_pairs_loaded:
+            return
+        try:
+            r = requests.get(
+                f"{_BINANCE_BASE}/api/v3/exchangeInfo",
+                headers=_BINANCE_HEADERS,
+                timeout=12,
+            )
+            r.raise_for_status()
+            symbols = r.json().get("symbols", [])
+            _binance_usdt_assets = {
+                s["baseAsset"].upper()
+                for s in symbols
+                if s.get("quoteAsset") == "USDT" and s.get("status") == "TRADING"
+            }
+            _binance_pairs_loaded = True
+            print(f"✅ Binance: loaded {len(_binance_usdt_assets)} USDT pairs")
+        except Exception as e:
+            print(f"⚠️  Binance exchangeInfo failed: {e} — will retry on first price call")
+
+
+# Kick off pair loading in a background thread on import
+threading.Thread(target=_load_binance_pairs, daemon=True).start()
+
+
+def _is_binance_crypto(symbol: str) -> bool:
+    """True if symbol trades as {symbol}USDT on Binance."""
+    sym = symbol.upper().strip()
+    if not _binance_pairs_loaded:
+        _load_binance_pairs()
+    return sym in _binance_usdt_assets
 
 
 def _is_likely_stock(symbol: str) -> bool:
@@ -99,156 +172,173 @@ def _pct_from_series(series: list[float]) -> float:
     return ((series[-1] - series[0]) / series[0]) * 100
 
 
-def _cg_find(symbol: str) -> dict | None:
-    s = symbol.lower().strip()
-    if s in _cg_cache:
-        return _cg_cache[s]
+# ── Binance price ──────────────────────────────────────────────────────────────
 
-    try:
-        r = requests.get(
-            f"https://api.coingecko.com/api/v3/search?query={s}",
-            headers=_CG_HEADERS, timeout=6
-        )
-        r.raise_for_status()
-        coins = r.json().get("coins", []) or []
+def _binance_price(symbol: str) -> tuple[float | None, float | None]:
+    """Return (price_usd, change_24h_pct) from Binance 24 h ticker."""
+    sym  = symbol.upper().strip()
+    pair = f"{sym}USDT"
 
-        exact = [c for c in coins if (c.get("symbol") or "").lower() == s]
-        pool = exact if exact else coins[:3]
-
-        def rank(c):
-            rv = c.get("market_cap_rank")
-            return 999_999 if rv is None else int(rv)
-
-        best = sorted(pool, key=rank)[0] if pool else None
-        if best and best.get("id"):
-            result = {
-                "id": best["id"],
-                "symbol": (best.get("symbol") or "").lower(),
-                "name": best.get("name", ""),
-                "thumb": best.get("thumb") or best.get("large") or "",
-            }
-            _cg_cache[s] = result
-            return result
-
-        _cg_cache[s] = None
-        return None
-    except Exception as e:
-        print(f"⚠️  CoinGecko search '{s}': {e}")
-        _cg_cache[s] = None
-        return None
-
-
-def _cg_price(coin_id: str) -> tuple[float | None, float | None]:
-    """Return (price_usd, change_24h_pct)."""
-    cached = _cache_get(f"cg_price_{coin_id}")
+    cached = _cache_get(f"bnb_price_{sym}")
     if cached:
         return cached.get("price"), cached.get("change")
 
     try:
         r = requests.get(
-            "https://api.coingecko.com/api/v3/simple/price",
-            params={"ids": coin_id, "vs_currencies": "usd", "include_24hr_change": "true"},
-            headers=_CG_HEADERS, timeout=6
+            f"{_BINANCE_BASE}/api/v3/ticker/24hr",
+            params={"symbol": pair},
+            headers=_BINANCE_HEADERS,
+            timeout=5,
         )
         r.raise_for_status()
-        d = r.json().get(coin_id, {})
-        price = float(d["usd"]) if d.get("usd") else None
-        change = float(d["usd_24h_change"]) if d.get("usd_24h_change") is not None else None
-        if price:
-            _cache_set(f"cg_price_{coin_id}", {"price": price, "change": change})
+        d     = r.json()
+        price  = float(d["lastPrice"])
+        change = float(d["priceChangePercent"])
+        if price > 0:
+            _cache_set(f"bnb_price_{sym}", {"price": price, "change": change})
         return price, change
     except Exception as e:
-        print(f"⚠️  CoinGecko price '{coin_id}': {e}")
+        print(f"⚠️  Binance price '{sym}': {e}")
         return None, None
 
 
-def _cg_spark(coin_id: str, days: int = 1) -> list[float]:
-    """Return list of close prices for sparkline."""
+def _binance_mini_ticker_batch(symbols: list[str]) -> dict[str, dict]:
+    """
+    Fetch prices for multiple symbols at once using the bookTicker endpoint.
+    Returns {SYMBOL: {price, change}} dict.
+    """
     try:
         r = requests.get(
-            f"https://api.coingecko.com/api/v3/coins/{coin_id}/market_chart",
-            params={"vs_currency": "usd", "days": str(days)},
-            headers=_CG_HEADERS, timeout=8
+            f"{_BINANCE_BASE}/api/v3/ticker/24hr",
+            headers=_BINANCE_HEADERS,
+            timeout=10,
         )
         r.raise_for_status()
-        prices = r.json().get("prices", [])
-        return [float(p[1]) for p in prices if len(p) == 2]
+        result = {}
+        for d in r.json():
+            if not d["symbol"].endswith("USDT"):
+                continue
+            base = d["symbol"][:-4]
+            if base in symbols:
+                result[base] = {
+                    "price":  float(d["lastPrice"]),
+                    "change": float(d["priceChangePercent"]),
+                }
+        return result
     except Exception as e:
-        print(f"⚠️  CoinGecko spark '{coin_id}': {e}")
+        print(f"⚠️  Binance batch ticker: {e}")
+        return {}
+
+
+def _binance_klines(
+    symbol: str,
+    interval: str = "1h",
+    limit: int = 48,
+) -> list[float]:
+    """Return list of close prices from Binance klines."""
+    sym  = symbol.upper().strip()
+    pair = f"{sym}USDT"
+    try:
+        r = requests.get(
+            f"{_BINANCE_BASE}/api/v3/klines",
+            params={"symbol": pair, "interval": interval, "limit": limit},
+            headers=_BINANCE_HEADERS,
+            timeout=8,
+        )
+        r.raise_for_status()
+        return [float(k[4]) for k in r.json()]   # k[4] = close price
+    except Exception as e:
+        print(f"⚠️  Binance klines '{sym}': {e}")
         return []
 
 
-def _cg_history(coin_id: str, days: int) -> dict:
-    """Return {"dates": [...], "prices": [...]}."""
+def _binance_history(symbol: str, days: int) -> dict:
+    """Return {dates: [...], prices: [...]} from Binance klines."""
+    sym  = symbol.upper().strip()
+    pair = f"{sym}USDT"
+
+    if days <= 1:
+        interval, limit, fmt = "15m", 96, "%H:%M"
+    elif days <= 7:
+        interval, limit, fmt = "1h", days * 24, "%m/%d %H:%M"
+    elif days <= 90:
+        interval, limit, fmt = "1d", days, "%m/%d"
+    elif days <= 365:
+        interval, limit, fmt = "1d", days, "%m/%d"
+    else:
+        interval, limit, fmt = "3d", min(days // 3, 1000), "%m/%d/%y"
+
     try:
         r = requests.get(
-            f"https://api.coingecko.com/api/v3/coins/{coin_id}/market_chart",
-            params={"vs_currency": "usd", "days": str(days)},
-            headers=_CG_HEADERS, timeout=10
+            f"{_BINANCE_BASE}/api/v3/klines",
+            params={"symbol": pair, "interval": interval, "limit": limit},
+            headers=_BINANCE_HEADERS,
+            timeout=10,
         )
         r.raise_for_status()
-        raw = r.json().get("prices", [])
-        is_intraday = days <= 5
-        fmt = "%H:%M" if is_intraday else "%m/%d"
-        dates, vals = [], []
-        for ms, price in raw:
-            try:
-                dates.append(datetime.fromtimestamp(ms / 1000).strftime(fmt))
-                vals.append(float(price))
-            except Exception:
-                continue
-        return {"dates": dates, "prices": vals}
+        dates, prices = [], []
+        for k in r.json():
+            ts = int(k[0]) / 1000
+            dates.append(datetime.fromtimestamp(ts).strftime(fmt))
+            prices.append(float(k[4]))
+        return {"dates": dates, "prices": prices}
     except Exception as e:
-        print(f"⚠️  CoinGecko history '{coin_id}': {e}")
+        print(f"⚠️  Binance history '{sym}': {e}")
         return {"dates": [], "prices": []}
+
+
+def _coin_icon(symbol: str) -> str:
+    """Return icon URL for a crypto symbol (CoinCap CDN, free / no key)."""
+    meta = _COIN_META.get(symbol.upper(), {})
+    coin_id = meta.get("id") or symbol.lower()
+    return _ICON_BASE.format(coin_id)
 
 
 # ── Public API ─────────────────────────────────────────────────────────────────
 
 def get_asset_data(symbol: str) -> dict | None:
-    """Fetch current price, 24h change, sparkline, name and icon for any asset."""
+    """Fetch current price, 24 h change, sparkline, name and icon for any asset."""
     if not symbol:
         return None
 
     symbol = symbol.upper().strip()
-    base = symbol.replace("-USD", "").strip()
+    base   = symbol.replace("-USD", "").strip()
 
     cached = _cache_get(f"asset_{base}")
     if cached:
         return cached
 
-    # ── 1) CoinGecko for crypto
-    if not _is_likely_stock(base):
+    # ── 1) Binance for crypto ──────────────────────────────────────────────────
+    if not _is_likely_stock(base) and _is_binance_crypto(base):
         try:
-            coin = _cg_find(base)
-            if coin and coin.get("id"):
-                price, change = _cg_price(coin["id"])
-                if price and price > 0:
-                    spark = _cg_spark(coin["id"], days=1)
-                    result = {
-                        "symbol": base,
-                        "real_symbol": base,
-                        "name": coin.get("name", base),
-                        "current_price": price,
-                        "percent_change": change or _pct_from_series(spark) or 0.0,
-                        "history": spark[-40:] if spark else [price],
-                        "type": "crypto",
-                        "icon": coin.get("thumb") or "",
-                    }
-                    _cache_set(f"asset_{base}", result)
-                    return result
+            price, change = _binance_price(base)
+            if price and price > 0:
+                spark  = _binance_klines(base, interval="1h", limit=40)
+                meta   = _COIN_META.get(base, {})
+                result = {
+                    "symbol":         base,
+                    "real_symbol":    base,
+                    "name":           meta.get("name", base),
+                    "current_price":  price,
+                    "percent_change": change if change is not None else _pct_from_series(spark),
+                    "history":        spark[-40:] if spark else [price],
+                    "type":           "crypto",
+                    "icon":           _coin_icon(base),
+                }
+                _cache_set(f"asset_{base}", result)
+                return result
         except Exception as e:
-            print(f"⚠️  CoinGecko asset '{base}': {e}")
+            print(f"⚠️  Binance asset '{base}': {e}")
 
-    # ── 2) Yahoo Finance fallback
+    # ── 2) Yahoo Finance fallback (stocks, indices, coins not on Binance) ──────
     for sym in [symbol, base, f"{base}-USD"]:
         try:
             ticker = yf.Ticker(sym)
-            hist = ticker.history(period="1d", interval="15m")
+            hist   = ticker.history(period="1d", interval="15m")
             if hist.empty:
                 continue
 
-            price = float(hist["Close"].iloc[-1])
+            price  = float(hist["Close"].iloc[-1])
             closes = [float(v) for v in hist["Close"].tolist() if v is not None]
             change = _pct_from_series(closes)
 
@@ -259,21 +349,23 @@ def get_asset_data(symbol: str) -> dict | None:
                 pass
 
             quote_type = info.get("quoteType", "")
-            is_crypto = "CRYPTOCURRENCY" in quote_type or sym.endswith("-USD")
+            is_crypto  = "CRYPTOCURRENCY" in quote_type or sym.endswith("-USD")
             asset_type = "crypto" if is_crypto else "stock"
-            real_sym = sym if is_crypto else base
-            icon = info.get("logo_url") or info.get("image") or ""
+            real_sym   = sym if is_crypto else base
+            icon       = info.get("logo_url") or info.get("image") or (
+                _coin_icon(base) if is_crypto else ""
+            )
             name = info.get("shortName") or info.get("longName") or base
 
             result = {
-                "symbol": base,
-                "real_symbol": real_sym,
-                "name": name,
-                "current_price": price,
+                "symbol":         base,
+                "real_symbol":    real_sym,
+                "name":           name,
+                "current_price":  price,
                 "percent_change": change,
-                "history": closes[-40:] if closes else [price],
-                "type": asset_type,
-                "icon": icon,
+                "history":        closes[-40:] if closes else [price],
+                "type":           asset_type,
+                "icon":           icon,
             }
             _cache_set(f"asset_{base}", result)
             return result
@@ -286,25 +378,24 @@ def get_asset_data(symbol: str) -> dict | None:
 
 
 def get_historical_data(symbol: str, period: str = "1mo") -> dict:
-    """Return {"dates": [...], "prices": [...]} for a symbol over a period."""
+    """Return {dates: [...], prices: [...]} for a symbol over a period."""
     if not symbol or symbol == "PORTFOLIO":
         return {"dates": [], "prices": []}
 
-    base = symbol.upper().strip().replace("-USD", "")
+    base     = symbol.upper().strip().replace("-USD", "")
     days_map = {"1d": 1, "5d": 5, "1mo": 30, "3mo": 90, "6mo": 180, "1y": 365, "2y": 730}
 
-    if not _is_likely_stock(base):
+    # ── Binance crypto ─────────────────────────────────────────────────────────
+    if not _is_likely_stock(base) and _is_binance_crypto(base):
         try:
-            coin = _cg_find(base)
-            if coin and coin.get("id"):
-                days = days_map.get(period, 30)
-                result = _cg_history(coin["id"], days)
-                if result["prices"]:
-                    return result
+            days   = days_map.get(period, 30)
+            result = _binance_history(base, days)
+            if result["prices"]:
+                return result
         except Exception as e:
-            print(f"⚠️  CoinGecko history '{base}': {e}")
+            print(f"⚠️  Binance history '{base}': {e}")
 
-    # Yahoo Finance
+    # ── Yahoo Finance (stocks + coins not on Binance) ──────────────────────────
     yf_interval = "60m" if period == "1d" else "1d"
     for sym in [symbol, base, f"{base}-USD"]:
         try:
@@ -314,8 +405,8 @@ def get_historical_data(symbol: str, period: str = "1mo") -> dict:
             if hist.empty:
                 continue
             is_intraday = period in ("1d", "5d")
-            fmt = "%H:%M" if is_intraday else "%m/%d"
-            dates = [d.strftime(fmt) for d in hist.index]
+            fmt    = "%H:%M" if is_intraday else "%m/%d"
+            dates  = [d.strftime(fmt) for d in hist.index]
             prices = hist["Close"].tolist()
             return {"dates": dates, "prices": prices}
         except Exception as e:
@@ -326,45 +417,51 @@ def get_historical_data(symbol: str, period: str = "1mo") -> dict:
 
 
 def search_symbols(query: str) -> list[dict]:
-    """Search CoinGecko and Yahoo Finance. Returns list of {"symbol","name","type","icon"}."""
+    """Search Binance (crypto) + Yahoo Finance (stocks). Returns list of result dicts."""
     results: list[dict] = []
-    seen: set[str] = set()
+    seen:    set[str]   = set()
 
+    q_upper = query.upper().strip()
+
+    # ── 1) Binance symbol match ────────────────────────────────────────────────
+    if not _binance_pairs_loaded:
+        _load_binance_pairs()
+
+    binance_matches = sorted(
+        [s for s in _binance_usdt_assets if s.startswith(q_upper)],
+        key=lambda s: (0 if s == q_upper else 1, len(s)),
+    )[:6]
+
+    for sym in binance_matches:
+        if sym in seen:
+            continue
+        seen.add(sym)
+        meta = _COIN_META.get(sym, {})
+        results.append({
+            "symbol": sym,
+            "name":   meta.get("name", sym),
+            "type":   "CRYPTO",
+            "icon":   _coin_icon(sym),
+        })
+
+    # ── 2) Yahoo Finance stock/ETF search ──────────────────────────────────────
     try:
         r = requests.get(
-            f"https://api.coingecko.com/api/v3/search?query={query}",
-            headers=_CG_HEADERS, timeout=4
-        )
-        coins = r.json().get("coins", [])[:5]
-        for c in coins:
-            sym = (c.get("symbol") or "").upper()
-            if sym and sym not in seen:
-                seen.add(sym)
-                results.append({
-                    "symbol": sym,
-                    "name": c.get("name", ""),
-                    "type": "CRYPTO",
-                    "icon": c.get("thumb") or c.get("large") or "",
-                })
-    except Exception as e:
-        print(f"⚠️  CoinGecko search: {e}")
-
-    try:
-        r = requests.get(
-            f"https://query2.finance.yahoo.com/v1/finance/search?q={query}&quotesCount=6",
-            headers={"User-Agent": "Mozilla/5.0"}, timeout=4
+            f"https://query2.finance.yahoo.com/v1/finance/search?q={query}&quotesCount=8",
+            headers={"User-Agent": "Mozilla/5.0"},
+            timeout=4,
         )
         for q in r.json().get("quotes", []):
-            sym = (q.get("symbol") or "").upper()
+            sym   = (q.get("symbol") or "").upper()
             qtype = (q.get("quoteType") or "").upper()
             if not sym or sym in seen or qtype == "CRYPTOCURRENCY":
                 continue
             seen.add(sym)
             results.append({
                 "symbol": sym,
-                "name": q.get("shortname") or q.get("longname") or sym,
-                "type": "STOCK" if qtype in ("EQUITY", "ETF", "INDEX") else qtype or "STOCK",
-                "icon": "",
+                "name":   q.get("shortname") or q.get("longname") or sym,
+                "type":   "STOCK" if qtype in ("EQUITY", "ETF", "INDEX") else qtype or "STOCK",
+                "icon":   "",
             })
     except Exception as e:
         print(f"⚠️  Yahoo search: {e}")
@@ -372,13 +469,13 @@ def search_symbols(query: str) -> list[dict]:
     return results[:10]
 
 
-# ── AI ────────────────────────────────────────────────────────────────────────
+# ── AI ─────────────────────────────────────────────────────────────────────────
 
 def get_ai_status() -> dict:
     return {
-        "enabled": _gemini_client is not None,
-        "provider": "gemini",
-        "status": _gemini_status,
+        "enabled":        _gemini_client is not None,
+        "provider":       "gemini",
+        "status":         _gemini_status,
         "api_key_source": "GEMINI_API_KEY/GOOGLE_API_KEY",
     }
 
@@ -451,13 +548,8 @@ def get_portfolio_ai_analysis(portfolio_change: float, assets: list[dict]) -> st
 # ── ALERTS ─────────────────────────────────────────────────────────────────────
 
 def check_and_trigger_alerts(session, send_email_callback) -> None:
-    """
-    Checa todos os alertas ativos e dispara notificações quando as condições são atingidas.
-    Esta função deve ser chamada periodicamente (via cron job ou background task).
-    """
     from models import PriceAlert, User
     from sqlmodel import select
-    from datetime import datetime
 
     try:
         active_alerts = session.exec(
@@ -465,72 +557,203 @@ def check_and_trigger_alerts(session, send_email_callback) -> None:
         ).all()
 
         if not active_alerts:
-            print("📋 No active alerts to check")
             return
 
-        print(f"🔍 Checking {len(active_alerts)} active alerts...")
+        print(f"🔍 Checking {len(active_alerts)} active alerts…")
 
         alerts_by_symbol: dict[str, list] = {}
         for alert in active_alerts:
-            if alert.symbol not in alerts_by_symbol:
-                alerts_by_symbol[alert.symbol] = []
-            alerts_by_symbol[alert.symbol].append(alert)
+            alerts_by_symbol.setdefault(alert.symbol, []).append(alert)
 
         for symbol, alerts in alerts_by_symbol.items():
             try:
                 data = get_asset_data(symbol)
                 if not data:
-                    print(f"⚠️  Could not fetch data for {symbol}")
                     continue
 
-                current_price = data["current_price"]
-                percent_change = data["percent_change"]
+                current_price   = data["current_price"]
+                percent_change  = data["percent_change"]
 
                 for alert in alerts:
                     triggered = False
-
-                    if alert.alert_type == "price_above" and current_price >= alert.target_value:
+                    if   alert.alert_type == "price_above"        and current_price  >= alert.target_value:
                         triggered = True
-                    elif alert.alert_type == "price_below" and current_price <= alert.target_value:
+                    elif alert.alert_type == "price_below"        and current_price  <= alert.target_value:
                         triggered = True
-                    elif alert.alert_type == "percent_change_up" and percent_change >= alert.target_value:
+                    elif alert.alert_type == "percent_change_up"  and percent_change >= alert.target_value:
                         triggered = True
                     elif alert.alert_type == "percent_change_down" and percent_change <= -alert.target_value:
                         triggered = True
 
                     if triggered:
-                        alert.triggered = True
+                        alert.triggered    = True
                         alert.triggered_at = str(datetime.now())
-
                         if not alert.recurring:
                             alert.active = False
                         else:
                             alert.triggered = False
-
                         session.add(alert)
 
                         user = session.get(User, alert.user_id)
                         if user and user.email and user.notification_email:
                             send_email_callback(
-                                user.email,
-                                user.username,
-                                symbol,
-                                alert.alert_type,
-                                alert.target_value,
-                                current_price
+                                user.email, user.username, symbol,
+                                alert.alert_type, alert.target_value, current_price,
                             )
-                            print(f"✅ Alert triggered for {user.username}: {symbol} {alert.alert_type}")
+                            print(f"✅ Alert → {user.username}: {symbol} {alert.alert_type}")
 
             except Exception as e:
-                print(f"⚠️  Error processing alerts for {symbol}: {e}")
-                continue
+                print(f"⚠️  Alert processing for {symbol}: {e}")
 
         session.commit()
-        print("✅ Alert check completed")
 
     except Exception as e:
-        print(f"❌ Error in check_and_trigger_alerts: {e}")
+        print(f"❌ check_and_trigger_alerts: {e}")
         session.rollback()
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# IRS FORM 8949
+# ══════════════════════════════════════════════════════════════════════════════
+
+def generate_form_8949(
+    transactions: list[dict],
+    tax_year: int,
+    method: str = "FIFO",
+) -> dict:
+    """
+    Generate IRS Form 8949 data for a given tax year.
+
+    Parameters
+    ----------
+    transactions : list of {type, symbol, amount, price, date} dicts
+    tax_year     : e.g. 2024
+    method       : "FIFO" | "LIFO" | "HIFO"
+
+    Returns
+    -------
+    {
+        tax_year, method,
+        part_I  : [short-term rows],    # holding < 365 days
+        part_II : [long-term rows],     # holding >= 365 days
+        summary : {total_proceeds, total_cost_basis,
+                   net_short_term, net_long_term, total_net_gain_loss}
+    }
+
+    Each row:
+        description, date_acquired, date_sold, proceeds, cost_basis, gain_loss
+    """
+    method = method.upper().strip()
+    if method not in ("FIFO", "LIFO", "HIFO"):
+        method = "FIFO"
+
+    year_str = str(tax_year)
+
+    # ── Build open-lot ledger per symbol from ALL buy transactions ────────────
+    lots_by_sym: dict[str, list[dict]] = {}
+    for tx in sorted(transactions, key=lambda t: t.get("date") or ""):
+        if (tx.get("type") or "").lower() != "buy":
+            continue
+        sym    = (tx.get("symbol") or "").upper()
+        amount = float(tx.get("amount") or 0)
+        price  = float(tx.get("price")  or 0)
+        if amount <= 0 or price <= 0:
+            continue
+        lots_by_sym.setdefault(sym, []).append({
+            "date":      tx.get("date", ""),
+            "price":     price,
+            "remaining": amount,
+        })
+
+    # ── Process each sell in the target tax year ──────────────────────────────
+    part_I:  list[dict] = []
+    part_II: list[dict] = []
+
+    sells_in_year = [
+        t for t in transactions
+        if (t.get("type") or "").lower() == "sell"
+        and (t.get("date") or "")[:4] == year_str
+    ]
+    sells_in_year.sort(key=lambda t: t.get("date") or "")
+
+    for sell in sells_in_year:
+        sym          = (sell.get("symbol") or "").upper()
+        sell_amount  = float(sell.get("amount") or 0)
+        sell_price   = float(sell.get("price")  or 0)
+        sell_date    = sell.get("date", "")
+
+        if sell_amount <= 0 or sell_price <= 0:
+            continue
+
+        proceeds      = round(sell_amount * sell_price, 2)
+        lots          = lots_by_sym.get(sym, [])
+
+        # Sort lots per method (operate on copies to preserve original order)
+        if method == "FIFO":
+            ordered = sorted(lots, key=lambda l: l["date"])
+        elif method == "LIFO":
+            ordered = sorted(lots, key=lambda l: l["date"], reverse=True)
+        else:  # HIFO
+            ordered = sorted(lots, key=lambda l: l["price"], reverse=True)
+
+        remaining_sell = sell_amount
+        cost_total     = 0.0
+        acquire_dates: list[str] = []
+
+        for lot in ordered:
+            if lot["remaining"] <= 1e-9 or remaining_sell <= 1e-9:
+                break
+            used           = min(lot["remaining"], remaining_sell)
+            cost_total    += used * lot["price"]
+            remaining_sell -= used
+            lot["remaining"] -= used
+            acquire_dates.append(lot["date"])
+
+        cost_basis  = round(cost_total, 2)
+        gain_loss   = round(proceeds - cost_basis, 2)
+
+        # Determine holding period from first acquisition date
+        is_long = False
+        acq_display = "VARIOUS" if len(acquire_dates) > 1 else (acquire_dates[0] if acquire_dates else "VARIOUS")
+        if acquire_dates:
+            try:
+                first_acq = datetime.strptime(acquire_dates[0][:10], "%Y-%m-%d")
+                sold_dt   = datetime.strptime(sell_date[:10], "%Y-%m-%d")
+                is_long   = (sold_dt - first_acq).days >= 365
+            except Exception:
+                pass
+
+        row = {
+            "description":   f"{sell_amount:g} units of {sym}",
+            "date_acquired": acq_display,
+            "date_sold":     sell_date,
+            "proceeds":      proceeds,
+            "cost_basis":    cost_basis,
+            "gain_loss":     gain_loss,
+        }
+
+        (part_II if is_long else part_I).append(row)
+
+    # ── Summary ───────────────────────────────────────────────────────────────
+    all_rows         = part_I + part_II
+    total_proceeds   = round(sum(r["proceeds"]  for r in all_rows), 2)
+    total_cost_basis = round(sum(r["cost_basis"] for r in all_rows), 2)
+    net_short        = round(sum(r["gain_loss"]  for r in part_I),  2)
+    net_long         = round(sum(r["gain_loss"]  for r in part_II), 2)
+
+    return {
+        "tax_year": tax_year,
+        "method":   method,
+        "part_I":   part_I,
+        "part_II":  part_II,
+        "summary": {
+            "total_proceeds":    total_proceeds,
+            "total_cost_basis":  total_cost_basis,
+            "net_short_term":    net_short,
+            "net_long_term":     net_long,
+            "total_net_gain_loss": round(net_short + net_long, 2),
+        },
+    }
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -538,294 +761,196 @@ def check_and_trigger_alerts(session, send_email_callback) -> None:
 # ══════════════════════════════════════════════════════════════════════════════
 
 def _clean_price(raw: str) -> float:
-    """Remove currency symbols, commas, spaces and return float. Returns 0.0 on failure."""
     if not raw:
         return 0.0
     cleaned = raw.strip().replace("$", "").replace(",", "").replace(" ", "")
     try:
-        return abs(float(cleaned))   # abs: some brokers export negative amounts for sells
+        return abs(float(cleaned))
     except ValueError:
         return 0.0
 
 
 def _normalize_date(raw: str, fmt_hints: list[str] | None = None) -> str:
-    """
-    Try several datetime formats and return YYYY-MM-DD.
-    Falls back to today if parsing fails.
-    """
     if not raw:
         return str(datetime.today().date())
-
-    raw = raw.strip()
+    raw     = raw.strip()
     formats = fmt_hints or [
-        "%Y-%m-%dT%H:%M:%S%z",   # ISO 8601 with tz  (Coinbase)
-        "%Y-%m-%dT%H:%M:%SZ",    # ISO 8601 UTC
+        "%Y-%m-%dT%H:%M:%S%z",
+        "%Y-%m-%dT%H:%M:%SZ",
         "%Y-%m-%dT%H:%M:%S",
         "%Y-%m-%d %H:%M:%S %Z",
         "%Y-%m-%d %H:%M:%S",
-        "%m/%d/%Y",               # Robinhood / Fidelity
+        "%m/%d/%Y",
         "%m-%d-%Y",
         "%d/%m/%Y",
         "%Y-%m-%d",
         "%b %d, %Y",
         "%B %d, %Y",
     ]
-
     for fmt in formats:
         try:
             return datetime.strptime(raw, fmt).strftime("%Y-%m-%d")
         except ValueError:
             continue
-
-    # Last resort: try dateutil if available
     try:
         from dateutil import parser as du_parser
         return du_parser.parse(raw).strftime("%Y-%m-%d")
     except Exception:
         pass
-
     return str(datetime.today().date())
 
 
 def _sniff_delimiter(content: str) -> str:
-    """Detect CSV delimiter (comma or semicolon)."""
     first_line = content.split("\n")[0] if "\n" in content else content
     return ";" if first_line.count(";") > first_line.count(",") else ","
 
 
 def _csv_rows(content: str) -> tuple[list[str], list[dict]]:
-    """
-    Parse CSV content and return (headers_lower, rows_as_dicts).
-    Skips leading comment/blank lines (Coinbase adds a preamble).
-    """
     delimiter = _sniff_delimiter(content)
-    lines = content.splitlines()
-
-    # Find the header line: first line that has several delimiter-separated tokens
+    lines     = content.splitlines()
     start_idx = 0
     for i, line in enumerate(lines):
         stripped = line.strip()
         if stripped and len(stripped.split(delimiter)) >= 3:
             start_idx = i
             break
-
     clean_content = "\n".join(lines[start_idx:])
-    reader = csv.DictReader(io.StringIO(clean_content), delimiter=delimiter)
-    rows = list(reader)
+    reader  = csv.DictReader(io.StringIO(clean_content), delimiter=delimiter)
+    rows    = list(reader)
     headers = [h.strip().lower() for h in (reader.fieldnames or [])]
     return headers, rows
 
 
-# ─── Per-broker parsers ───────────────────────────────────────────────────────
-
 def _parse_coinbase(rows: list[dict]) -> list[dict]:
-    """
-    Columns: Timestamp, Transaction Type, Asset, Quantity Transacted,
-             Spot Price Currency, Spot Price at Transaction, Subtotal, Total, Fees, Notes
-    """
     TYPE_MAP = {"buy": "buy", "sell": "sell", "advanced trade buy": "buy", "advanced trade sell": "sell"}
-    results = []
+    results  = []
     for row in rows:
         raw_type = (row.get("Transaction Type") or row.get("transaction type") or "").strip().lower()
-        tx_type = TYPE_MAP.get(raw_type)
+        tx_type  = TYPE_MAP.get(raw_type)
         if not tx_type:
-            continue  # Skip Rewards, Conversions, etc.
-
-        symbol = (row.get("Asset") or row.get("asset") or "").strip().upper()
+            continue
+        symbol     = (row.get("Asset") or row.get("asset") or "").strip().upper()
         amount_raw = row.get("Quantity Transacted") or row.get("quantity transacted") or "0"
         price_raw  = row.get("Spot Price at Transaction") or row.get("spot price at transaction") or "0"
         date_raw   = row.get("Timestamp") or row.get("timestamp") or ""
-
         amount = _clean_price(amount_raw)
         price  = _clean_price(price_raw)
         date   = _normalize_date(date_raw)
-
         if not symbol or amount <= 0:
             continue
-
         results.append({"symbol": symbol, "type": tx_type, "amount": amount, "price": price, "date": date})
     return results
 
 
 def _parse_robinhood(rows: list[dict]) -> list[dict]:
-    """
-    Columns: Activity Date, Process Date, Settle Date, Instrument,
-             Description, Trans Code, Quantity, Price, Amount
-    """
     TYPE_MAP = {"buy": "buy", "sell": "sell", "bto": "buy", "sto": "sell"}
-    results = []
+    results  = []
     for row in rows:
         trans_code = (row.get("Trans Code") or row.get("trans code") or "").strip().lower()
-        tx_type = TYPE_MAP.get(trans_code)
+        tx_type    = TYPE_MAP.get(trans_code)
         if not tx_type:
             continue
-
         symbol   = (row.get("Instrument") or row.get("instrument") or "").strip().upper()
         qty_raw  = row.get("Quantity") or row.get("quantity") or "0"
-        price_raw= row.get("Price") or row.get("price") or "0"
+        price_raw= row.get("Price")    or row.get("price")    or "0"
         date_raw = row.get("Activity Date") or row.get("activity date") or ""
-
         amount = _clean_price(qty_raw)
         price  = _clean_price(price_raw)
         date   = _normalize_date(date_raw)
-
         if not symbol or amount <= 0:
             continue
-
         results.append({"symbol": symbol, "type": tx_type, "amount": amount, "price": price, "date": date})
     return results
 
 
 def _parse_fidelity(rows: list[dict]) -> list[dict]:
-    """
-    Columns: Run Date, Account, Action, Symbol, Description,
-             Type, Quantity, Price, Commission, Amount
-    Keeps only rows where Action contains BOUGHT or SOLD.
-    """
     results = []
     for row in rows:
         action = (row.get("Action") or row.get("action") or "").strip().upper()
-        if "BOUGHT" in action:
-            tx_type = "buy"
-        elif "SOLD" in action:
-            tx_type = "sell"
-        else:
-            continue
-
+        if   "BOUGHT" in action: tx_type = "buy"
+        elif "SOLD"   in action: tx_type = "sell"
+        else: continue
         symbol   = (row.get("Symbol") or row.get("symbol") or "").strip().upper()
         qty_raw  = row.get("Quantity") or row.get("quantity") or "0"
         price_raw= row.get("Price ($)") or row.get("Price") or row.get("price") or "0"
         date_raw = row.get("Run Date") or row.get("run date") or ""
-
         amount = _clean_price(qty_raw)
         price  = _clean_price(price_raw)
         date   = _normalize_date(date_raw)
-
         if not symbol or amount <= 0:
             continue
-
         results.append({"symbol": symbol, "type": tx_type, "amount": amount, "price": price, "date": date})
     return results
 
 
 def _parse_kraken(rows: list[dict]) -> list[dict]:
-    """
-    Columns: txid, refid, time, type, subtype, aclass, asset, amount, fee, balance
-    Keeps only rows where type == "trade".
-    Pairs buy/sell by sign of `amount`: positive → buy, negative → sell.
-    """
     results = []
     for row in rows:
-        tx_type_raw = (row.get("type") or "").strip().lower()
-        if tx_type_raw != "trade":
+        if (row.get("type") or "").strip().lower() != "trade":
             continue
-
         asset_raw = (row.get("asset") or "").strip().upper()
-        # Kraken uses symbols like XXBT (BTC), XETH (ETH) — strip leading X/Z
-        symbol = asset_raw
-        if len(symbol) == 4 and symbol[0] in ("X", "Z") and symbol[1:] in (
-            "BTC", "ETH", "LTC", "XRP", "XLM", "EOS", "BCH", "ADA"
-        ):
+        symbol    = asset_raw
+        if len(symbol) == 4 and symbol[0] in ("X", "Z"):
             symbol = symbol[1:]
         if symbol in ("XXBT", "XBT"):
             symbol = "BTC"
         if symbol in ("XETH",):
             symbol = "ETH"
-        if symbol.endswith(".S"):   # staking variants
+        if symbol.endswith(".S"):
             symbol = symbol[:-2]
-
-        amount_raw = (row.get("amount") or "0").strip()
         try:
-            raw_amount = float(amount_raw)
+            raw_amount = float((row.get("amount") or "0").strip())
         except ValueError:
             continue
-
-        # Determine direction from sign; skip fees/staking rows with 0 amount
         if raw_amount == 0:
             continue
         tx_type = "buy" if raw_amount > 0 else "sell"
-        amount = abs(raw_amount)
-
-        # Kraken doesn't include price per unit — compute from amount and total if available
-        # Fallback: use 0 (will be resolved at import time via market data)
-        price = 0.0
-        date_raw = row.get("time") or ""
-        date = _normalize_date(date_raw)
-
+        amount  = abs(raw_amount)
+        date    = _normalize_date(row.get("time") or "")
         if not symbol:
             continue
-
-        results.append({"symbol": symbol, "type": tx_type, "amount": amount, "price": price, "date": date})
+        results.append({"symbol": symbol, "type": tx_type, "amount": amount, "price": 0.0, "date": date})
     return results
 
 
 def _parse_schwab(rows: list[dict]) -> list[dict]:
-    """
-    Charles Schwab export.
-    Columns: Date, Action, Symbol, Description, Quantity, Price, Fees & Comm, Amount
-    Keeps Buy and Sell actions.
-    """
     results = []
     for row in rows:
-        action = (row.get("Action") or row.get("action") or "").strip()
-        action_upper = action.upper()
-        if "BUY" in action_upper:
-            tx_type = "buy"
-        elif "SELL" in action_upper:
-            tx_type = "sell"
-        else:
-            continue
-
+        action       = (row.get("Action") or row.get("action") or "").strip().upper()
+        if   "BUY"  in action: tx_type = "buy"
+        elif "SELL" in action: tx_type = "sell"
+        else: continue
         symbol    = (row.get("Symbol") or row.get("symbol") or "").strip().upper()
         qty_raw   = row.get("Quantity") or row.get("quantity") or "0"
-        price_raw = row.get("Price") or row.get("price") or "0"
-        date_raw  = row.get("Date") or row.get("date") or ""
-
+        price_raw = row.get("Price")    or row.get("price")    or "0"
+        date_raw  = row.get("Date")     or row.get("date")     or ""
         amount = _clean_price(qty_raw)
         price  = _clean_price(price_raw)
         date   = _normalize_date(date_raw)
-
         if not symbol or amount <= 0:
             continue
-
         results.append({"symbol": symbol, "type": tx_type, "amount": amount, "price": price, "date": date})
     return results
 
 
-# ─── Public entry point ───────────────────────────────────────────────────────
-
 SUPPORTED_BROKERS = ("coinbase", "robinhood", "fidelity", "kraken", "schwab")
 
+
 def parse_broker_csv(content: str, broker: str) -> list[dict]:
-    """
-    Parse a broker CSV export and return a list of normalised transaction dicts:
-        {symbol: str, type: "buy"|"sell", amount: float, price: float, date: "YYYY-MM-DD"}
-
-    Raises ValueError with a descriptive message for unrecognised brokers or
-    structurally invalid files.
-
-    Supported brokers: coinbase, robinhood, fidelity, kraken, schwab
-    """
     broker = broker.strip().lower()
-
     if broker not in SUPPORTED_BROKERS:
         raise ValueError(
-            f"Unsupported broker '{broker}'. "
-            f"Supported brokers: {', '.join(SUPPORTED_BROKERS)}."
+            f"Unsupported broker '{broker}'. Supported: {', '.join(SUPPORTED_BROKERS)}."
         )
-
     if not content or not content.strip():
         raise ValueError("CSV file is empty.")
-
     try:
         headers, rows = _csv_rows(content)
     except Exception as e:
         raise ValueError(f"Could not parse CSV file: {e}")
-
     if not rows:
         raise ValueError("CSV file contains no data rows.")
 
-    # Dispatch
     parsers = {
         "coinbase":  _parse_coinbase,
         "robinhood": _parse_robinhood,
@@ -833,13 +958,11 @@ def parse_broker_csv(content: str, broker: str) -> list[dict]:
         "kraken":    _parse_kraken,
         "schwab":    _parse_schwab,
     }
-
     try:
         transactions = parsers[broker](rows)
     except Exception as e:
         raise ValueError(f"Error parsing {broker} CSV: {e}")
 
-    # Basic validation: ensure required fields exist on every row
     validated = []
     for i, tx in enumerate(transactions):
         missing = [f for f in ("symbol", "type", "amount", "price", "date") if f not in tx]
@@ -847,27 +970,21 @@ def parse_broker_csv(content: str, broker: str) -> list[dict]:
             print(f"⚠️  Row {i} missing fields {missing} — skipped")
             continue
         if tx["type"] not in ("buy", "sell"):
-            print(f"⚠️  Row {i} invalid type '{tx['type']}' — skipped")
             continue
         validated.append(tx)
-
     return validated
 
 
 # ── TAX LOSS HARVESTING ────────────────────────────────────────────────────────
 
-# Suggested replacements for tax-loss harvesting (avoids wash sale rule)
 _TLH_REPLACEMENTS: dict[str, str] = {
-    # ETFs
     "SPY": "VOO", "VOO": "IVV", "IVV": "SPY", "QQQ": "QQQM",
     "QQQM": "QQQ", "IWM": "VB", "VB": "IWM", "GLD": "IAU",
     "IAU": "GLD", "SLV": "SIVR", "TLT": "IEF", "ARKK": "CTEC",
-    # Tech stocks
     "AAPL": "MSFT", "MSFT": "AAPL", "GOOGL": "META", "GOOG": "META",
     "META": "SNAP", "NVDA": "AMD", "AMD": "INTC", "TSLA": "RIVN",
     "AMZN": "SHOP", "NFLX": "DIS", "PYPL": "SQ", "SQ": "PYPL",
     "COIN": "MSTR",
-    # Crypto
     "BTC": "ETH", "ETH": "BTC", "SOL": "AVAX", "AVAX": "DOT",
     "DOT": "LINK", "LINK": "UNI", "BNB": "CRO", "XRP": "XLM",
     "ADA": "ALGO", "DOGE": "SHIB", "SHIB": "DOGE", "MATIC": "FTM",
@@ -878,22 +995,6 @@ def calculate_tax_loss_harvesting(
     assets: list[dict],
     tax_bracket: float = 0.22,
 ) -> list[dict]:
-    """
-    Identify tax-loss harvesting opportunities from a user's portfolio.
-
-    Parameters
-    ----------
-    assets      : list of dicts with keys:
-                  symbol, amount, purchase_price, current_price, purchase_date
-    tax_bracket : marginal federal tax rate (default 22 %)
-
-    Returns
-    -------
-    List of opportunity dicts, sorted by estimated_tax_saved descending.
-    Only positions with unrealized loss > $50 are included.
-    """
-    from datetime import date, datetime, timedelta
-
     today = date.today()
     opportunities: list[dict] = []
 
@@ -908,93 +1009,57 @@ def calculate_tax_loss_harvesting(
                 continue
 
             unrealized_loss = (current_price - purchase_price) * amount
-
-            # Only include if loss exceeds $50
             if unrealized_loss >= -50:
                 continue
 
-            # Holding period
             purchase_date_raw = asset.get("purchase_date") or str(today)
             try:
                 pd = datetime.strptime(str(purchase_date_raw)[:10], "%Y-%m-%d").date()
             except ValueError:
                 pd = today
 
-            holding_days = (today - pd).days
-            gain_type    = "short_term" if holding_days < 365 else "long_term"
+            holding_days  = (today - pd).days
+            gain_type     = "short_term" if holding_days < 365 else "long_term"
 
-            # Tax rate depends on gain type
-            # Long-term rate approximation: if bracket <= 22 % → 0 %, else 15 % or 20 %
             if gain_type == "long_term":
                 effective_rate = 0.0 if tax_bracket <= 0.12 else (0.15 if tax_bracket <= 0.35 else 0.20)
             else:
                 effective_rate = tax_bracket
 
-            estimated_tax_saved  = abs(unrealized_loss) * effective_rate
-            wash_sale_safe_date  = (today + timedelta(days=31)).strftime("%Y-%m-%d")
-            suggested_replacement = _TLH_REPLACEMENTS.get(symbol, f"{symbol}2")  # fallback hint
+            estimated_tax_saved   = abs(unrealized_loss) * effective_rate
+            wash_sale_safe_date   = (today + timedelta(days=31)).strftime("%Y-%m-%d")
+            suggested_replacement = _TLH_REPLACEMENTS.get(symbol, f"{symbol}2")
 
             opportunities.append({
-                "symbol":               symbol,
-                "unrealized_loss":      round(unrealized_loss, 2),
-                "estimated_tax_saved":  round(estimated_tax_saved, 2),
-                "holding_days":         holding_days,
-                "gain_type":            gain_type,
-                "wash_sale_safe_date":  wash_sale_safe_date,
+                "symbol":                symbol,
+                "unrealized_loss":       round(unrealized_loss, 2),
+                "estimated_tax_saved":   round(estimated_tax_saved, 2),
+                "holding_days":          holding_days,
+                "gain_type":             gain_type,
+                "wash_sale_safe_date":   wash_sale_safe_date,
                 "suggested_replacement": suggested_replacement,
-                "current_price":        round(current_price, 6),
-                "purchase_price":       round(purchase_price, 6),
-                "amount":               amount,
-                "effective_rate_pct":   round(effective_rate * 100, 1),
+                "current_price":         round(current_price, 6),
+                "purchase_price":        round(purchase_price, 6),
+                "amount":                amount,
+                "effective_rate_pct":    round(effective_rate * 100, 1),
             })
-
         except Exception as e:
             print(f"⚠️  TLH calc error for {asset.get('symbol')}: {e}")
-            continue
 
     opportunities.sort(key=lambda x: x["estimated_tax_saved"], reverse=True)
     return opportunities
 
 
-# ── COST BASIS METHODS ─────────────────────────────────────────────────────────
+# ── COST BASIS ─────────────────────────────────────────────────────────────────
 
 def calculate_cost_basis(
     transactions: list[dict],
     method: str = "FIFO",
 ) -> dict:
-    """
-    Calculate cost basis and realized gains/losses for a set of transactions.
-
-    Supported methods:
-        FIFO  — First In, First Out  (IRS default)
-        LIFO  — Last In, First Out
-        HIFO  — Highest In, First Out (minimizes taxes)
-        SPEC  — Specific Identification (uses lot_id field on each tx)
-
-    Parameters
-    ----------
-    transactions : list of dicts with keys:
-                   type ('buy'|'sell'), amount, price, date
-                   Optional: lot_id (for SPEC method)
-
-    Returns
-    -------
-    {
-        cost_basis       : total cost of remaining open lots,
-        realized_gains   : total gains from closed lots,
-        realized_losses  : total losses from closed lots (positive number),
-        net_gain_loss    : net realized P&L,
-        method_used      : method string,
-        open_lots        : list of remaining open lots,
-    }
-    """
-    from datetime import datetime
-
     method = method.upper().strip()
     if method not in ("FIFO", "LIFO", "HIFO", "SPEC"):
         method = "FIFO"
 
-    # Separate buys (lots) and sells, sorted by date
     buys  = sorted(
         [t for t in transactions if (t.get("type") or "").lower() == "buy"],
         key=lambda t: t.get("date") or "0000-00-00",
@@ -1004,21 +1069,20 @@ def calculate_cost_basis(
         key=lambda t: t.get("date") or "0000-00-00",
     )
 
-    # Build open lots list: each entry is a mutable dict
     lots = [
         {
-            "date":   b.get("date",  ""),
-            "price":  float(b.get("price",  0) or 0),
-            "amount": float(b.get("amount", 0) or 0),
-            "lot_id": b.get("lot_id", None),
+            "date":      b.get("date", ""),
+            "price":     float(b.get("price",  0) or 0),
+            "amount":    float(b.get("amount", 0) or 0),
+            "lot_id":    b.get("lot_id", None),
             "remaining": float(b.get("amount", 0) or 0),
         }
         for b in buys
         if float(b.get("amount", 0) or 0) > 0 and float(b.get("price", 0) or 0) > 0
     ]
 
-    realized_gains   = 0.0
-    realized_losses  = 0.0
+    realized_gains  = 0.0
+    realized_losses = 0.0
 
     for sell in sells:
         sell_amount = float(sell.get("amount", 0) or 0)
@@ -1028,14 +1092,13 @@ def calculate_cost_basis(
 
         remaining_to_sell = sell_amount
 
-        # Sort lots according to method
         if method == "FIFO":
             ordered = sorted(lots, key=lambda l: l["date"])
         elif method == "LIFO":
             ordered = sorted(lots, key=lambda l: l["date"], reverse=True)
         elif method == "HIFO":
             ordered = sorted(lots, key=lambda l: l["price"], reverse=True)
-        else:  # SPEC — match by lot_id, fallback to FIFO
+        else:
             target_id = sell.get("lot_id")
             if target_id:
                 ordered = [l for l in lots if l.get("lot_id") == target_id] + \
@@ -1046,20 +1109,16 @@ def calculate_cost_basis(
         for lot in ordered:
             if lot["remaining"] <= 0 or remaining_to_sell <= 1e-9:
                 break
-
             used = min(lot["remaining"], remaining_to_sell)
             pnl  = (sell_price - lot["price"]) * used
-
             if pnl >= 0:
-                realized_gains += pnl
+                realized_gains  += pnl
             else:
                 realized_losses += abs(pnl)
-
             lot["remaining"]  -= used
             remaining_to_sell -= used
 
-    # Sum remaining open lots for cost basis
-    open_lots = [l for l in lots if l["remaining"] > 1e-9]
+    open_lots  = [l for l in lots if l["remaining"] > 1e-9]
     cost_basis = sum(l["remaining"] * l["price"] for l in open_lots)
 
     return {
@@ -1071,7 +1130,7 @@ def calculate_cost_basis(
         "open_lots":       [
             {
                 "date":      l["date"],
-                "price":     round(l["price"], 6),
+                "price":     round(l["price"],     6),
                 "remaining": round(l["remaining"], 8),
                 "cost":      round(l["remaining"] * l["price"], 2),
             }

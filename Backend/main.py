@@ -1,19 +1,20 @@
 """
-Purp — FastAPI backend v5.
-Plan tiers:
-  free      $0/mo  — 4 assets, 10 watchlist, 2 alerts, 30-day history
-  investor  $19/mo — unlimited assets/watchlist/alerts, AI, CSV import, 2-year history
-  tax_pro   $29/mo — everything in investor + Tax Loss Harvesting + Form 8949 export
+Purp — FastAPI backend v6.
+New in v6:
+  - GET /tax/form-8949?year=YYYY&method=HIFO  → IRS Form 8949 CSV download
+  - GET /tax/summary?year=YYYY                 → tax year P&L summary + bracket estimates
+  - Binance-powered services (no change to API surface)
 """
+import io
 import os
+import csv
 import threading
 import concurrent.futures
 from datetime import date, datetime, timedelta
 
 from fastapi import FastAPI, HTTPException, Depends, Header, Request, BackgroundTasks, UploadFile, File, Query
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from sqlmodel import Session, select, create_engine, SQLModel
 from pydantic import BaseModel, EmailStr
 import bcrypt
@@ -32,6 +33,7 @@ from services import (
     parse_broker_csv,
     calculate_tax_loss_harvesting,
     calculate_cost_basis,
+    generate_form_8949,
 )
 
 # ── Config ─────────────────────────────────────────────────────────────────────
@@ -41,9 +43,10 @@ TOKEN_EXPIRE = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", 10080))
 
 stripe.api_key = os.getenv("STRIPE_SECRET_KEY", "")
 
-_raw_db_url = os.getenv("DATABASE_URL", "sqlite:///database.db")
+_raw_db_url  = os.getenv("DATABASE_URL", "sqlite:///database.db")
 DATABASE_URL = _raw_db_url.replace("postgres://", "postgresql://")
 _is_postgres = DATABASE_URL.startswith("postgresql://")
+
 
 def _build_engine():
     if _is_postgres:
@@ -59,19 +62,20 @@ def _build_engine():
         )
     return create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
 
+
 engine = _build_engine()
 
 # ── Plan limits ────────────────────────────────────────────────────────────────
-FREE_ASSET_LIMIT       = 4
-FREE_WATCHLIST_LIMIT   = 10
-FREE_ALERT_LIMIT       = 2
-FREE_HISTORY_DAYS      = 30     # 1 month
-INVESTOR_HISTORY_DAYS  = 730    # 2 years
-CSV_MAX_BYTES          = 5 * 1024 * 1024   # 5 MB
+FREE_ASSET_LIMIT      = 4
+FREE_WATCHLIST_LIMIT  = 10
+FREE_ALERT_LIMIT      = 2
+FREE_HISTORY_DAYS     = 30
+INVESTOR_HISTORY_DAYS = 730
+CSV_MAX_BYTES         = 5 * 1024 * 1024
 
-# Price IDs for each paid plan (set these in your .env)
 PRICE_ID_INVESTOR = os.getenv("STRIPE_PRICE_ID_INVESTOR", "")
 PRICE_ID_TAX_PRO  = os.getenv("STRIPE_PRICE_ID_TAX_PRO",  "")
+
 
 def _build_price_plan_map() -> dict[str, str]:
     m: dict[str, str] = {}
@@ -81,11 +85,11 @@ def _build_price_plan_map() -> dict[str, str]:
         m[PRICE_ID_TAX_PRO] = "tax_pro"
     return m
 
+
 PRICE_PLAN_MAP: dict[str, str] = {}
 
-# ── Resend Email API ───────────────────────────────────────────────────────────
 RESEND_API_KEY = os.getenv("RESEND_API_KEY", "")
-FROM_EMAIL = os.getenv("FROM_EMAIL", "Purp <noreply@getpurpai.com>")
+FROM_EMAIL     = os.getenv("FROM_EMAIL", "Purp <noreply@getpurpai.com>")
 
 
 # ── Permission helpers ─────────────────────────────────────────────────────────
@@ -115,100 +119,43 @@ def require_tax_pro(user: User) -> None:
 # ── Email helpers ──────────────────────────────────────────────────────────────
 
 def _send_email(to_email: str, subject: str, html: str) -> None:
-    """Send transactional email via Resend API (https://resend.com)."""
     if not RESEND_API_KEY:
         print("⚠️  RESEND_API_KEY not configured — skipping email")
         return
-
     import urllib.request, json as _json
-
     payload = _json.dumps({
-        "from":    FROM_EMAIL,
-        "to":      [to_email],
-        "subject": subject,
-        "html":    html,
+        "from": FROM_EMAIL, "to": [to_email], "subject": subject, "html": html,
     }).encode()
-
     req = urllib.request.Request(
         "https://api.resend.com/emails",
         data=payload,
-        headers={
-            "Authorization": f"Bearer {RESEND_API_KEY}",
-            "Content-Type":  "application/json",
-        },
+        headers={"Authorization": f"Bearer {RESEND_API_KEY}", "Content-Type": "application/json"},
         method="POST",
     )
     try:
         with urllib.request.urlopen(req, timeout=10) as resp:
-            status = resp.getcode()
-            print(f"✅ Email sent via Resend → {to_email} (HTTP {status})")
+            print(f"✅ Email sent → {to_email} (HTTP {resp.getcode()})")
     except Exception as e:
         print(f"⚠️  Resend email failed ({to_email}): {e}")
 
 
 def _send_welcome_email(to_email: str, username: str) -> None:
-    html = f"""<!DOCTYPE html>
-<html>
-<body style="margin:0;padding:0;background:#0a0914;font-family:'Segoe UI',Arial,sans-serif;">
-<table width="100%" cellpadding="0" cellspacing="0">
-  <tr><td align="center" style="padding:48px 16px;">
-    <table width="520" cellpadding="0" cellspacing="0"
-           style="background:#110f20;border-radius:20px;border:1px solid rgba(124,58,237,.25);overflow:hidden;">
-      <tr>
-        <td style="background:linear-gradient(135deg,#7c3aed,#a78bfa);padding:40px;text-align:center;">
-          <h1 style="margin:0;color:#fff;font-size:24px;font-weight:800;">Welcome to Purp 🚀</h1>
-          <p style="color:rgba(255,255,255,.8);margin:8px 0 0;font-size:13px;">Your AI-powered portfolio tracker</p>
-        </td>
-      </tr>
-      <tr>
-        <td style="padding:32px 36px;">
-          <p style="color:#f1f0f5;font-size:15px;margin:0 0 14px;">
-            Hey <strong style="color:#a78bfa;">{username}</strong> 👋
-          </p>
-          <p style="color:rgba(241,240,245,.7);font-size:13px;line-height:1.7;margin:0 0 22px;">
-            Your account is ready. You can track up to <strong style="color:#fff;">4 assets for free</strong> —
-            crypto, stocks and ETFs — all in one place with real-time prices.
-          </p>
-          <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:16px;">
-            <tr><td style="background:rgba(124,58,237,.1);border:1px solid rgba(124,58,237,.25);
-                            border-radius:12px;padding:18px;">
-              <p style="margin:0 0 10px;color:#a78bfa;font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;">Free Plan — $0/mo</p>
-              <p style="margin:3px 0;color:rgba(241,240,245,.8);font-size:12px;">✓ Up to 4 assets</p>
-              <p style="margin:3px 0;color:rgba(241,240,245,.8);font-size:12px;">✓ Real-time prices</p>
-              <p style="margin:3px 0;color:rgba(241,240,245,.8);font-size:12px;">✓ 10 watchlist items</p>
-              <p style="margin:3px 0;color:rgba(241,240,245,.8);font-size:12px;">✓ 2 price alerts</p>
-              <p style="margin:3px 0;color:rgba(241,240,245,.8);font-size:12px;">✓ 30-day history</p>
-            </td></tr>
-          </table>
-          <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:16px;">
-            <tr><td style="background:rgba(124,58,237,.07);border:1px solid rgba(124,58,237,.2);
-                            border-radius:12px;padding:18px;">
-              <p style="margin:0 0 10px;color:#a78bfa;font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;">⭐ Investor — $19/mo</p>
-              <p style="margin:3px 0;color:rgba(241,240,245,.8);font-size:12px;">✓ Unlimited assets, watchlist &amp; alerts</p>
-              <p style="margin:3px 0;color:rgba(241,240,245,.8);font-size:12px;">✓ AI analysis per asset &amp; portfolio</p>
-              <p style="margin:3px 0;color:rgba(241,240,245,.8);font-size:12px;">✓ CSV import</p>
-              <p style="margin:3px 0;color:rgba(241,240,245,.8);font-size:12px;">✓ 2-year price history</p>
-            </td></tr>
-          </table>
-          <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:24px;">
-            <tr><td style="background:rgba(245,158,11,.07);border:1px solid rgba(245,158,11,.2);
-                            border-radius:12px;padding:18px;">
-              <p style="margin:0 0 10px;color:#fbbf24;font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;">💼 Tax Pro — $29/mo</p>
-              <p style="margin:3px 0;color:rgba(241,240,245,.8);font-size:12px;">✓ Everything in Investor</p>
-              <p style="margin:3px 0;color:rgba(241,240,245,.8);font-size:12px;">✓ Tax Loss Harvesting</p>
-              <p style="margin:3px 0;color:rgba(241,240,245,.8);font-size:12px;">✓ Form 8949 export</p>
-            </td></tr>
-          </table>
-          <p style="color:rgba(241,240,245,.35);font-size:11px;margin:0;text-align:center;">
-            Questions? Just reply to this email &nbsp;·&nbsp; Purp team
-          </p>
-        </td>
-      </tr>
-    </table>
+    html = f"""<!DOCTYPE html><html><body style="margin:0;padding:0;background:#0a0914;font-family:'Segoe UI',Arial,sans-serif;">
+<table width="100%" cellpadding="0" cellspacing="0"><tr><td align="center" style="padding:48px 16px;">
+<table width="520" cellpadding="0" cellspacing="0"
+       style="background:#110f20;border-radius:20px;border:1px solid rgba(124,58,237,.25);overflow:hidden;">
+  <tr><td style="background:linear-gradient(135deg,#7c3aed,#a78bfa);padding:40px;text-align:center;">
+    <h1 style="margin:0;color:#fff;font-size:24px;font-weight:800;">Welcome to Purp 🚀</h1>
+    <p style="color:rgba(255,255,255,.8);margin:8px 0 0;font-size:13px;">Your AI-powered portfolio tracker</p>
   </td></tr>
-</table>
-</body>
-</html>"""
+  <tr><td style="padding:32px 36px;">
+    <p style="color:#f1f0f5;font-size:15px;margin:0 0 14px;">Hey <strong style="color:#a78bfa;">{username}</strong> 👋</p>
+    <p style="color:rgba(241,240,245,.7);font-size:13px;line-height:1.7;margin:0 0 22px;">
+      Your account is ready. Track up to <strong style="color:#fff;">4 assets for free</strong> across crypto and stocks.
+    </p>
+    <p style="color:rgba(241,240,245,.35);font-size:11px;margin:0;text-align:center;">Questions? Reply to this email · Purp team</p>
+  </td></tr>
+</table></td></tr></table></body></html>"""
     _send_email(to_email, "Welcome to Purp 🚀", html)
 
 
@@ -227,52 +174,40 @@ def _send_alert_email(
         "percent_change_down":f"fell {target}% or more",
     }
     emoji = emoji_map.get(alert_type, "🔔")
-    html = f"""<!DOCTYPE html>
-<html>
-<body style="margin:0;padding:0;background:#0a0914;font-family:'Segoe UI',Arial,sans-serif;">
-<table width="100%" cellpadding="0" cellspacing="0">
-  <tr><td align="center" style="padding:48px 16px;">
-    <table width="520" cellpadding="0" cellspacing="0"
-           style="background:#110f20;border-radius:20px;border:1px solid rgba(239,68,68,.35);overflow:hidden;">
-      <tr>
-        <td style="background:linear-gradient(135deg,#ef4444,#f87171);padding:40px;text-align:center;">
-          <div style="font-size:48px;margin-bottom:14px;">{emoji}</div>
-          <h1 style="margin:0;color:#fff;font-size:24px;font-weight:800;">Price Alert Triggered!</h1>
-        </td>
-      </tr>
-      <tr>
-        <td style="padding:32px 36px;">
-          <p style="color:#f1f0f5;font-size:15px;margin:0 0 14px;">
-            Hey <strong style="color:#a78bfa;">{username}</strong>,
-          </p>
-          <p style="color:rgba(241,240,245,.7);font-size:13px;line-height:1.7;margin:0 0 22px;">
-            Your alert for <strong style="color:#fff;">{symbol}</strong> has been triggered.
-          </p>
-          <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:24px;">
-            <tr><td style="background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.25);
-                            border-radius:12px;padding:18px;text-align:center;">
-              <p style="margin:0 0 8px;color:rgba(241,240,245,.5);font-size:11px;text-transform:uppercase;">Alert Condition</p>
-              <p style="margin:0;color:#fff;font-size:16px;font-weight:700;">{type_text.get(alert_type, "changed")}</p>
-              <p style="margin:12px 0 0;color:rgba(241,240,245,.5);font-size:11px;text-transform:uppercase;">Current Price</p>
-              <p style="margin:0;color:#a78bfa;font-size:24px;font-weight:900;">${current:,.2f}</p>
-            </td></tr>
-          </table>
-        </td>
-      </tr>
+    html  = f"""<!DOCTYPE html><html><body style="margin:0;padding:0;background:#0a0914;font-family:'Segoe UI',Arial,sans-serif;">
+<table width="100%" cellpadding="0" cellspacing="0"><tr><td align="center" style="padding:48px 16px;">
+<table width="520" cellpadding="0" cellspacing="0"
+       style="background:#110f20;border-radius:20px;border:1px solid rgba(239,68,68,.35);overflow:hidden;">
+  <tr><td style="background:linear-gradient(135deg,#ef4444,#f87171);padding:40px;text-align:center;">
+    <div style="font-size:48px;margin-bottom:14px;">{emoji}</div>
+    <h1 style="margin:0;color:#fff;font-size:24px;font-weight:800;">Price Alert Triggered!</h1>
+  </td></tr>
+  <tr><td style="padding:32px 36px;">
+    <p style="color:#f1f0f5;font-size:15px;margin:0 0 14px;">Hey <strong style="color:#a78bfa;">{username}</strong>,</p>
+    <p style="color:rgba(241,240,245,.7);font-size:13px;line-height:1.7;margin:0 0 22px;">
+      Your alert for <strong style="color:#fff;">{symbol}</strong> has been triggered.
+    </p>
+    <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:24px;">
+      <tr><td style="background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.25);
+                      border-radius:12px;padding:18px;text-align:center;">
+        <p style="margin:0 0 8px;color:rgba(241,240,245,.5);font-size:11px;text-transform:uppercase;">Condition</p>
+        <p style="margin:0;color:#fff;font-size:16px;font-weight:700;">{type_text.get(alert_type, "changed")}</p>
+        <p style="margin:12px 0 0;color:rgba(241,240,245,.5);font-size:11px;text-transform:uppercase;">Current Price</p>
+        <p style="margin:0;color:#a78bfa;font-size:24px;font-weight:900;">${current:,.2f}</p>
+      </td></tr>
     </table>
   </td></tr>
-</table>
-</body>
-</html>"""
-    _send_email(to_email, f"🔔 Price Alert: {symbol} {type_text.get(alert_type, 'changed')}", html)
+</table></td></tr></table></body></html>"""
+    _send_email(to_email, f"🔔 Price Alert: {symbol} {type_text.get(alert_type,'changed')}", html)
 
 
 def send_welcome_email_async(to_email: str, username: str) -> None:
     threading.Thread(target=_send_welcome_email, args=(to_email, username), daemon=True).start()
 
+
 def send_alert_email_async(
     to_email: str, username: str, symbol: str,
-    alert_type: str, target: float, current: float
+    alert_type: str, target: float, current: float,
 ) -> None:
     threading.Thread(
         target=_send_alert_email,
@@ -282,6 +217,7 @@ def send_alert_email_async(
 
 
 # ── DB ─────────────────────────────────────────────────────────────────────────
+
 def create_db() -> None:
     global PRICE_PLAN_MAP
     print(f"🗄️  DB: {DATABASE_URL[:50]}…")
@@ -321,15 +257,16 @@ def create_db() -> None:
 
 
 # ── App ────────────────────────────────────────────────────────────────────────
-app = FastAPI(title="Purp API", version="5.1", on_startup=[create_db])
+
+app = FastAPI(title="Purp API", version="6.0", on_startup=[create_db])
 app.add_middleware(
     CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"]
 )
 
-# landing page
+
 @app.get("/")
 async def read_index():
-    return FileResponse('static/index.html')
+    return FileResponse("static/index.html")
 
 
 def get_session():
@@ -355,6 +292,7 @@ def get_current_user(token: str | None = Header(None, alias="X-Auth-Token")) -> 
 def hash_pw(pw: str) -> str:
     return bcrypt.hashpw(pw.encode(), bcrypt.gensalt()).decode()
 
+
 def verify_pw(pw: str, hashed: str) -> bool:
     try:
         return bcrypt.checkpw(pw.encode(), hashed.encode())
@@ -363,20 +301,21 @@ def verify_pw(pw: str, hashed: str) -> bool:
 
 
 def _history_days_for_user(user: User) -> int:
-    if has_plan(user, "investor", "tax_pro"):
-        return INVESTOR_HISTORY_DAYS
-    return FREE_HISTORY_DAYS
+    return INVESTOR_HISTORY_DAYS if has_plan(user, "investor", "tax_pro") else FREE_HISTORY_DAYS
 
 
 # ── Schemas ────────────────────────────────────────────────────────────────────
+
 class RegisterInput(BaseModel):
     username: str
     password: str
     email: EmailStr
 
+
 class LoginInput(BaseModel):
     username: str
     password: str
+
 
 class AssetInput(BaseModel):
     symbol: str
@@ -384,17 +323,21 @@ class AssetInput(BaseModel):
     purchase_price: float
     purchase_date: str | None = None
 
+
 class SellInput(BaseModel):
     amount: float
 
+
 class WatchlistAddInput(BaseModel):
     symbol: str
+
 
 class AlertCreateInput(BaseModel):
     symbol: str
     alert_type: str
     target_value: float
     recurring: bool = False
+
 
 class CheckoutInput(BaseModel):
     plan: str = "investor"
@@ -411,20 +354,15 @@ def register(data: RegisterInput, session: Session = Depends(get_session)):
         raise HTTPException(400, "Username must be at least 3 characters")
     if len(data.password) < 4:
         raise HTTPException(400, "Password must be at least 4 characters")
-
     try:
         if session.exec(select(User).where(User.username == uname)).first():
             raise HTTPException(400, "Username already taken")
         email_norm = str(data.email).strip().lower()
         if session.exec(select(User).where(User.email == email_norm)).first():
             raise HTTPException(400, "Email already registered")
-
         user = User(
-            username=uname,
-            password_hash=hash_pw(data.password),
-            email=email_norm,
-            plan="free",
-            is_premium=False,
+            username=uname, password_hash=hash_pw(data.password),
+            email=email_norm, plan="free", is_premium=False,
             created_at=str(date.today()),
         )
         session.add(user); session.commit(); session.refresh(user)
@@ -433,15 +371,10 @@ def register(data: RegisterInput, session: Session = Depends(get_session)):
     except Exception as e:
         session.rollback()
         raise HTTPException(503, f"Database error during registration: {e}")
-
     if user.id is None:
         raise HTTPException(500, "Failed to create user — please try again")
-
     send_welcome_email_async(email_norm, uname)
-    return {
-        "token": create_token(user.id),
-        "user":  _user_payload(user),
-    }
+    return {"token": create_token(user.id), "user": _user_payload(user)}
 
 
 @app.post("/auth/login")
@@ -449,10 +382,7 @@ def login(data: LoginInput, session: Session = Depends(get_session)):
     user = session.exec(select(User).where(User.username == data.username.strip())).first()
     if not user or not verify_pw(data.password, user.password_hash):
         raise HTTPException(401, "Incorrect username or password")
-    return {
-        "token": create_token(user.id),
-        "user":  _user_payload(user),
-    }
+    return {"token": create_token(user.id), "user": _user_payload(user)}
 
 
 @app.get("/auth/me")
@@ -484,9 +414,7 @@ def _user_payload(user: User) -> dict:
 @app.get("/watchlist")
 def get_watchlist(user_id: int = Depends(get_current_user), session: Session = Depends(get_session)):
     items = session.exec(
-        select(WatchlistItem)
-        .where(WatchlistItem.user_id == user_id)
-        .order_by(WatchlistItem.order_index)
+        select(WatchlistItem).where(WatchlistItem.user_id == user_id).order_by(WatchlistItem.order_index)
     ).all()
     if not items:
         return {"items": []}
@@ -496,15 +424,10 @@ def get_watchlist(user_id: int = Depends(get_current_user), session: Session = D
         if not data:
             return None
         return {
-            "id":            item.id,
-            "symbol":        data["symbol"],
-            "real_symbol":   data["real_symbol"],
-            "name":          data.get("name", data["symbol"]),
-            "current_price": data["current_price"],
-            "percent_change":data["percent_change"],
-            "type":          data["type"],
-            "icon":          data.get("icon", ""),
-            "added_at":      item.added_at,
+            "id": item.id, "symbol": data["symbol"], "real_symbol": data["real_symbol"],
+            "name": data.get("name", data["symbol"]), "current_price": data["current_price"],
+            "percent_change": data["percent_change"], "type": data["type"],
+            "icon": data.get("icon", ""), "added_at": item.added_at,
         }
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=10) as ex:
@@ -518,37 +441,26 @@ def add_to_watchlist(
     user_id: int = Depends(get_current_user),
     session: Session = Depends(get_session),
 ):
-    symbol = data.symbol.strip().upper()
+    symbol   = data.symbol.strip().upper()
     existing = session.exec(
-        select(WatchlistItem).where(
-            WatchlistItem.user_id == user_id, WatchlistItem.symbol == symbol
-        )
+        select(WatchlistItem).where(WatchlistItem.user_id == user_id, WatchlistItem.symbol == symbol)
     ).first()
     if existing:
         raise HTTPException(400, f"{symbol} already in your watchlist")
 
     user = session.get(User, user_id)
     if not has_plan(user, "investor", "tax_pro"):
-        count = len(session.exec(
-            select(WatchlistItem).where(WatchlistItem.user_id == user_id)
-        ).all())
+        count = len(session.exec(select(WatchlistItem).where(WatchlistItem.user_id == user_id)).all())
         if count >= FREE_WATCHLIST_LIMIT:
-            raise HTTPException(
-                402,
-                f"Free plan limited to {FREE_WATCHLIST_LIMIT} watchlist items. "
-                "Upgrade to Investor for unlimited."
-            )
+            raise HTTPException(402, f"Free plan limited to {FREE_WATCHLIST_LIMIT} watchlist items.")
 
     asset_data = get_asset_data(symbol)
     if not asset_data:
         raise HTTPException(404, f"Asset '{symbol}' not found")
 
     item = WatchlistItem(
-        user_id=user_id,
-        symbol=asset_data["real_symbol"],
-        type=asset_data["type"],
-        added_at=str(date.today()),
-        order_index=0,
+        user_id=user_id, symbol=asset_data["real_symbol"], type=asset_data["type"],
+        added_at=str(date.today()), order_index=0,
     )
     session.add(item); session.commit(); session.refresh(item)
     return {"id": item.id, "symbol": item.symbol, "type": item.type}
@@ -574,22 +486,13 @@ def remove_from_watchlist(
 @app.get("/alerts")
 def get_alerts(user_id: int = Depends(get_current_user), session: Session = Depends(get_session)):
     alerts = session.exec(
-        select(PriceAlert)
-        .where(PriceAlert.user_id == user_id)
-        .order_by(PriceAlert.created_at.desc())
+        select(PriceAlert).where(PriceAlert.user_id == user_id).order_by(PriceAlert.created_at.desc())
     ).all()
     return {"alerts": [
-        {
-            "id":           a.id,
-            "symbol":       a.symbol,
-            "alert_type":   a.alert_type,
-            "target_value": a.target_value,
-            "triggered":    a.triggered,
-            "triggered_at": a.triggered_at,
-            "active":       a.active,
-            "recurring":    a.recurring,
-            "created_at":   a.created_at,
-        }
+        {"id": a.id, "symbol": a.symbol, "alert_type": a.alert_type,
+         "target_value": a.target_value, "triggered": a.triggered,
+         "triggered_at": a.triggered_at, "active": a.active,
+         "recurring": a.recurring, "created_at": a.created_at}
         for a in alerts
     ]}
 
@@ -603,54 +506,31 @@ def create_alert(
     user = session.get(User, user_id)
     if not user:
         raise HTTPException(404, "User not found")
-
     if not has_plan(user, "investor", "tax_pro"):
         count = len(session.exec(
-            select(PriceAlert).where(
-                PriceAlert.user_id == user_id, PriceAlert.active == True
-            )
+            select(PriceAlert).where(PriceAlert.user_id == user_id, PriceAlert.active == True)
         ).all())
         if count >= FREE_ALERT_LIMIT:
-            raise HTTPException(
-                402,
-                f"Free plan limited to {FREE_ALERT_LIMIT} price alerts. "
-                "Upgrade to Investor for unlimited alerts."
-            )
-
+            raise HTTPException(402, f"Free plan limited to {FREE_ALERT_LIMIT} price alerts.")
     valid_types = ["price_above", "price_below", "percent_change_up", "percent_change_down"]
     if data.alert_type not in valid_types:
         raise HTTPException(400, f"Invalid alert_type. Must be one of: {', '.join(valid_types)}")
     if data.target_value <= 0:
         raise HTTPException(400, "target_value must be positive")
-
     asset_data = get_asset_data(data.symbol)
     if not asset_data:
         raise HTTPException(404, f"Asset '{data.symbol}' not found")
-
     alert = PriceAlert(
-        user_id=user_id,
-        symbol=asset_data["real_symbol"],
-        alert_type=data.alert_type,
-        target_value=data.target_value,
-        recurring=data.recurring,
-        created_at=str(datetime.now()),
+        user_id=user_id, symbol=asset_data["real_symbol"], alert_type=data.alert_type,
+        target_value=data.target_value, recurring=data.recurring, created_at=str(datetime.now()),
     )
     session.add(alert); session.commit(); session.refresh(alert)
-    return {
-        "id":           alert.id,
-        "symbol":       alert.symbol,
-        "alert_type":   alert.alert_type,
-        "target_value": alert.target_value,
-        "recurring":    alert.recurring,
-    }
+    return {"id": alert.id, "symbol": alert.symbol, "alert_type": alert.alert_type,
+            "target_value": alert.target_value, "recurring": alert.recurring}
 
 
 @app.delete("/alerts/{alert_id}")
-def delete_alert(
-    alert_id: int,
-    user_id: int = Depends(get_current_user),
-    session: Session = Depends(get_session),
-):
+def delete_alert(alert_id: int, user_id: int = Depends(get_current_user), session: Session = Depends(get_session)):
     alert = session.get(PriceAlert, alert_id)
     if not alert or alert.user_id != user_id:
         raise HTTPException(404, "Alert not found")
@@ -659,11 +539,7 @@ def delete_alert(
 
 
 @app.post("/alerts/{alert_id}/toggle")
-def toggle_alert(
-    alert_id: int,
-    user_id: int = Depends(get_current_user),
-    session: Session = Depends(get_session),
-):
+def toggle_alert(alert_id: int, user_id: int = Depends(get_current_user), session: Session = Depends(get_session)):
     alert = session.get(PriceAlert, alert_id)
     if not alert or alert.user_id != user_id:
         raise HTTPException(404, "Alert not found")
@@ -700,45 +576,32 @@ def create_asset(
         raise HTTPException(400, "Amount must be greater than 0")
     if data.purchase_price <= 0:
         raise HTTPException(400, "Purchase price must be greater than 0")
-
     m = get_asset_data(sym)
     if not m:
-        raise HTTPException(404, f"Asset '{sym}' not found. Check the symbol and try again.")
-
+        raise HTTPException(404, f"Asset '{sym}' not found.")
     real_sym = m["real_symbol"]
-    p_date = data.purchase_date if data.purchase_date and len(data.purchase_date) >= 10 else str(date.today())
-
-    existing = session.exec(
-        select(Asset).where(Asset.symbol == real_sym, Asset.user_id == user_id)
-    ).first()
+    p_date   = data.purchase_date if data.purchase_date and len(data.purchase_date) >= 10 else str(date.today())
+    existing = session.exec(select(Asset).where(Asset.symbol == real_sym, Asset.user_id == user_id)).first()
     if existing:
         total_cost = existing.amount * existing.purchase_price + data.amount * data.purchase_price
         total_qty  = existing.amount + data.amount
-        existing.amount = total_qty
+        existing.amount         = total_qty
         existing.purchase_price = total_cost / total_qty
         session.add(existing)
         session.add(Transaction(
             user_id=user_id, symbol=real_sym, type="buy",
             amount=data.amount, price=data.purchase_price,
-            total_usd=data.amount * data.purchase_price,
-            date=p_date, created_at=str(date.today()),
+            total_usd=data.amount * data.purchase_price, date=p_date, created_at=str(date.today()),
         ))
         session.commit(); session.refresh(existing)
         return existing
-
     user = session.get(User, user_id)
     if not user:
         raise HTTPException(404, "User not found")
-
     if not has_plan(user, "investor", "tax_pro"):
         count = len(session.exec(select(Asset).where(Asset.user_id == user_id)).all())
         if count >= FREE_ASSET_LIMIT:
-            raise HTTPException(
-                402,
-                f"Free plan limit reached ({FREE_ASSET_LIMIT} assets). "
-                "Upgrade to Investor for unlimited assets."
-            )
-
+            raise HTTPException(402, f"Free plan limit reached ({FREE_ASSET_LIMIT} assets).")
     asset = Asset(
         symbol=real_sym, amount=data.amount, type=m["type"],
         purchase_price=data.purchase_price, purchase_date=p_date, user_id=user_id,
@@ -747,19 +610,14 @@ def create_asset(
     session.add(Transaction(
         user_id=user_id, symbol=real_sym, type="buy",
         amount=data.amount, price=data.purchase_price,
-        total_usd=data.amount * data.purchase_price,
-        date=p_date, created_at=str(date.today()),
+        total_usd=data.amount * data.purchase_price, date=p_date, created_at=str(date.today()),
     ))
     session.commit(); session.refresh(asset)
     return asset
 
 
 @app.delete("/assets/{asset_id}")
-def delete_asset(
-    asset_id: int,
-    user_id: int = Depends(get_current_user),
-    session: Session = Depends(get_session),
-):
+def delete_asset(asset_id: int, user_id: int = Depends(get_current_user), session: Session = Depends(get_session)):
     asset = session.get(Asset, asset_id)
     if asset and asset.user_id == user_id:
         session.delete(asset); session.commit()
@@ -783,16 +641,13 @@ def sell_asset(
     if data.amount > asset.amount + 1e-9:
         raise HTTPException(400, f"Cannot sell more than you hold ({asset.amount})")
     if asset.type.lower() == "stock" and not data.amount.is_integer():
-        raise HTTPException(
-            400,
-            f"For stocks, sell quantity must be a whole number. You entered {data.amount}.",
-        )
+        raise HTTPException(400, f"For stocks, sell quantity must be a whole number.")
 
-    m = get_asset_data(asset.symbol)
+    m             = get_asset_data(asset.symbol)
     current_price = m["current_price"] if m else asset.purchase_price
-    sell_total = data.amount * current_price
-    pnl = sell_total - data.amount * asset.purchase_price
-    new_amt = round(asset.amount - data.amount, 8)
+    sell_total    = data.amount * current_price
+    pnl           = sell_total - data.amount * asset.purchase_price
+    new_amt       = round(asset.amount - data.amount, 8)
 
     if new_amt <= 1e-9:
         session.delete(asset); status = "sold_all"
@@ -815,164 +670,101 @@ def sell_asset(
 @app.post("/import/csv")
 async def import_csv(
     file: UploadFile = File(...),
-    broker: str = Query(..., description="Broker name: coinbase, robinhood, fidelity, kraken, schwab"),
+    broker: str = Query(...),
     user_id: int = Depends(get_current_user),
     session: Session = Depends(get_session),
 ):
-    """
-    Import transactions from a broker CSV export.
-    Requires Investor or Tax Pro plan.
-    Returns {"imported": N, "skipped": M, "errors": [...]}
-    """
-    # ── 1. Plan gate ─────────────────────────────────────────────
     user = session.get(User, user_id)
     if not user:
         raise HTTPException(404, "User not found")
-    require_investor(user)   # raises 402 for free users
+    require_investor(user)
 
-    # ── 2. File validation ───────────────────────────────────────
     filename = (file.filename or "").lower()
     if not filename.endswith(".csv"):
         raise HTTPException(400, "Only .csv files are accepted.")
-
     raw_bytes = await file.read()
     if len(raw_bytes) > CSV_MAX_BYTES:
-        raise HTTPException(413, f"File too large. Maximum allowed size is 5 MB.")
+        raise HTTPException(413, "File too large. Maximum allowed size is 5 MB.")
     if not raw_bytes:
         raise HTTPException(400, "Uploaded file is empty.")
-
     try:
-        content = raw_bytes.decode("utf-8-sig")   # strip BOM if present
+        content = raw_bytes.decode("utf-8-sig")
     except UnicodeDecodeError:
         try:
             content = raw_bytes.decode("latin-1")
         except Exception:
-            raise HTTPException(400, "Could not decode file. Please ensure it is UTF-8 or Latin-1 encoded.")
+            raise HTTPException(400, "Could not decode file.")
 
-    # ── 3. Parse ─────────────────────────────────────────────────
     try:
         transactions = parse_broker_csv(content, broker)
     except ValueError as e:
         raise HTTPException(400, str(e))
-
     if not transactions:
-        raise HTTPException(400, f"No valid buy/sell transactions found in the {broker} CSV.")
+        raise HTTPException(400, f"No valid transactions found in the {broker} CSV.")
 
-    # ── 4. Import each transaction ────────────────────────────────
-    imported = 0
-    skipped  = 0
-    errors: list[str] = []
+    imported = 0; skipped = 0; errors: list[str] = []
 
     for i, tx in enumerate(transactions):
         sym    = tx["symbol"].strip().upper()
         amount = float(tx["amount"])
         price  = float(tx["price"])
         tx_date= tx["date"]
-        tx_type= tx["type"]   # "buy" or "sell"
+        tx_type= tx["type"]
 
         if amount <= 0:
-            skipped += 1
-            continue
+            skipped += 1; continue
 
-        # For buy transactions — resolve symbol and upsert asset
         if tx_type == "buy":
-            # If broker didn't supply a price (e.g. Kraken), fall back to current market price
             if price <= 0:
                 mkt = get_asset_data(sym)
                 price = mkt["current_price"] if mkt else 0.0
-
             if price <= 0:
                 errors.append(f"Row {i+1} [{sym}]: could not determine price — skipped.")
-                skipped += 1
-                continue
-
+                skipped += 1; continue
             try:
                 m = get_asset_data(sym)
                 if not m:
                     errors.append(f"Row {i+1} [{sym}]: symbol not found — skipped.")
-                    skipped += 1
-                    continue
-
+                    skipped += 1; continue
                 real_sym = m["real_symbol"]
-
-                existing = session.exec(
-                    select(Asset).where(Asset.symbol == real_sym, Asset.user_id == user_id)
-                ).first()
-
+                existing = session.exec(select(Asset).where(Asset.symbol == real_sym, Asset.user_id == user_id)).first()
                 if existing:
                     total_cost = existing.amount * existing.purchase_price + amount * price
                     total_qty  = existing.amount + amount
-                    existing.amount = total_qty
-                    existing.purchase_price = total_cost / total_qty
+                    existing.amount = total_qty; existing.purchase_price = total_cost / total_qty
                     session.add(existing)
                 else:
-                    new_asset = Asset(
-                        symbol=real_sym, amount=amount, type=m["type"],
-                        purchase_price=price, purchase_date=tx_date, user_id=user_id,
-                    )
-                    session.add(new_asset)
-
-                session.add(Transaction(
-                    user_id=user_id, symbol=real_sym, type="buy",
+                    session.add(Asset(symbol=real_sym, amount=amount, type=m["type"],
+                                      purchase_price=price, purchase_date=tx_date, user_id=user_id))
+                session.add(Transaction(user_id=user_id, symbol=real_sym, type="buy",
                     amount=amount, price=price, total_usd=amount * price,
-                    date=tx_date, created_at=str(date.today()),
-                ))
-                session.commit()
-                imported += 1
-
+                    date=tx_date, created_at=str(date.today())))
+                session.commit(); imported += 1
             except Exception as e:
-                session.rollback()
-                errors.append(f"Row {i+1} [{sym}]: {e}")
-                skipped += 1
+                session.rollback(); errors.append(f"Row {i+1} [{sym}]: {e}"); skipped += 1
 
-        # For sell transactions — record in transaction history only
         elif tx_type == "sell":
             try:
-                m = get_asset_data(sym)
+                m        = get_asset_data(sym)
                 real_sym = m["real_symbol"] if m else sym
-
                 if price <= 0:
-                    mkt_price = m["current_price"] if m else 0.0
-                    price = mkt_price
-
-                sell_total = amount * price
-
-                # Try to find a matching asset to compute realized P&L
-                asset = session.exec(
-                    select(Asset).where(Asset.symbol == real_sym, Asset.user_id == user_id)
-                ).first()
-
+                    price = m["current_price"] if m else 0.0
+                asset  = session.exec(select(Asset).where(Asset.symbol == real_sym, Asset.user_id == user_id)).first()
                 realized_pnl: float | None = None
                 if asset:
                     realized_pnl = (price - asset.purchase_price) * amount
                     new_qty = round(asset.amount - amount, 8)
-                    if new_qty <= 1e-9:
-                        session.delete(asset)
-                    else:
-                        asset.amount = new_qty
-                        session.add(asset)
-
-                session.add(Transaction(
-                    user_id=user_id, symbol=real_sym, type="sell",
-                    amount=amount, price=price, total_usd=sell_total,
-                    realized_pnl=realized_pnl,
-                    date=tx_date, created_at=str(date.today()),
-                ))
-                session.commit()
-                imported += 1
-
+                    if new_qty <= 1e-9: session.delete(asset)
+                    else: asset.amount = new_qty; session.add(asset)
+                session.add(Transaction(user_id=user_id, symbol=real_sym, type="sell",
+                    amount=amount, price=price, total_usd=amount * price,
+                    realized_pnl=realized_pnl, date=tx_date, created_at=str(date.today())))
+                session.commit(); imported += 1
             except Exception as e:
-                session.rollback()
-                errors.append(f"Row {i+1} [{sym}]: {e}")
-                skipped += 1
+                session.rollback(); errors.append(f"Row {i+1} [{sym}]: {e}"); skipped += 1
 
-    return {
-        "imported": imported,
-        "skipped":  skipped,
-        "errors":   errors[:20],   # cap error list to avoid huge payloads
-        "total_parsed": len(transactions),
-        "broker": broker,
-    }
+    return {"imported": imported, "skipped": skipped, "errors": errors[:20],
+            "total_parsed": len(transactions), "broker": broker}
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -980,10 +772,7 @@ async def import_csv(
 # ═══════════════════════════════════════════════════════════════════════════════
 
 @app.get("/portfolio/balance")
-def portfolio_balance(
-    user_id: int = Depends(get_current_user),
-    session: Session = Depends(get_session),
-):
+def portfolio_balance(user_id: int = Depends(get_current_user), session: Session = Depends(get_session)):
     assets = session.exec(select(Asset).where(Asset.user_id == user_id)).all()
     if not assets:
         return {"total_balance_usd": 0.0, "assets": []}
@@ -997,38 +786,25 @@ def portfolio_balance(
 
     details, total = [], 0.0
     for r in results:
-        if not r:
-            continue
+        if not r: continue
         a, m = r
         val    = m["current_price"] * a.amount
         profit = val - a.purchase_price * a.amount
         total += val
-
-        days = 0
+        days   = 0
         if a.purchase_date:
             try:
-                days = (
-                    date.today() - datetime.strptime(a.purchase_date, "%Y-%m-%d").date()
-                ).days
+                days = (date.today() - datetime.strptime(a.purchase_date, "%Y-%m-%d").date()).days
             except Exception:
                 pass
-
         details.append({
-            "id":             a.id,
-            "symbol":         m["symbol"],
-            "real_symbol":    a.symbol,
-            "amount":         a.amount,
-            "current_price":  m["current_price"],
-            "purchase_price": a.purchase_price,
-            "position_value": val,
-            "profit":         profit,
-            "percent_change": m["percent_change"],
-            "history":        m["history"],
-            "icon":           m.get("icon", ""),
-            "days_held":      days,
-            "type":           m.get("type", "stock"),
+            "id": a.id, "symbol": m["symbol"], "real_symbol": a.symbol,
+            "amount": a.amount, "current_price": m["current_price"],
+            "purchase_price": a.purchase_price, "position_value": val,
+            "profit": profit, "percent_change": m["percent_change"],
+            "history": m["history"], "icon": m.get("icon", ""),
+            "days_held": days, "type": m.get("type", "stock"),
         })
-
     return {"total_balance_usd": total, "assets": details}
 
 
@@ -1040,29 +816,17 @@ def portfolio_history(
     session: Session = Depends(get_session),
 ):
     user = session.get(User, user_id)
-
     if not has_plan(user, "investor", "tax_pro"):
-        period_day_map = {
-            "1d": 1, "5d": 5, "1mo": 30, "3mo": 90,
-            "6mo": 180, "1y": 365, "2y": 730,
-        }
-        requested_days = period_day_map.get(period, 30)
-        if requested_days > FREE_HISTORY_DAYS:
-            raise HTTPException(
-                402,
-                f"Free plan history is limited to {FREE_HISTORY_DAYS} days. "
-                "Upgrade to Investor to unlock up to 2 years of history."
-            )
-
+        period_day_map = {"1d": 1, "5d": 5, "1mo": 30, "3mo": 90, "6mo": 180, "1y": 365, "2y": 730}
+        if period_day_map.get(period, 30) > FREE_HISTORY_DAYS:
+            raise HTTPException(402, f"Free plan history is limited to {FREE_HISTORY_DAYS} days.")
     assets = session.exec(select(Asset).where(Asset.user_id == user_id)).all()
     if not assets:
         return {"dates": [], "portfolio": [], "benchmark": []}
-
     series, final_dates = None, []
     for a in assets:
         h = get_historical_data(a.symbol, period)
-        if not h["prices"]:
-            continue
+        if not h["prices"]: continue
         scaled = [p * a.amount for p in h["prices"]]
         if series is None:
             series, final_dates = scaled, h["dates"]
@@ -1070,34 +834,28 @@ def portfolio_history(
             n = min(len(series), len(scaled))
             series = [series[i] + scaled[i] for i in range(n)]
             final_dates = final_dates[:n]
-
     bench = get_historical_data(benchmark, period)
     return {
         "dates":     final_dates if series else [],
         "portfolio": series or [],
-        "benchmark": bench["prices"][: len(final_dates)] if series else [],
+        "benchmark": bench["prices"][:len(final_dates)] if series else [],
     }
 
 
 @app.get("/portfolio/summary")
-def portfolio_summary(
-    user_id: int = Depends(get_current_user),
-    session: Session = Depends(get_session),
-):
+def portfolio_summary(user_id: int = Depends(get_current_user), session: Session = Depends(get_session)):
     assets = session.exec(select(Asset).where(Asset.user_id == user_id)).all()
     txs    = session.exec(select(Transaction).where(Transaction.user_id == user_id)).all()
     total_invested = sum(a.amount * a.purchase_price for a in assets)
     realized_pnl   = sum(t.realized_pnl for t in txs if t.realized_pnl is not None)
     return {
-        "asset_count":       len(assets),
-        "total_invested":    total_invested,
-        "realized_pnl":      realized_pnl,
-        "transaction_count": len(txs),
+        "asset_count": len(assets), "total_invested": total_invested,
+        "realized_pnl": realized_pnl, "transaction_count": len(txs),
     }
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# TAX (Tax Pro only)
+# TAX  (tax_pro plan only)
 # ═══════════════════════════════════════════════════════════════════════════════
 
 @app.get("/portfolio/tax-loss-harvesting")
@@ -1106,43 +864,29 @@ def portfolio_tax_loss_harvesting(
     user_id: int = Depends(get_current_user),
     session: Session = Depends(get_session),
 ):
-    """
-    Full tax-loss harvesting engine: wash-sale dates, gain type, replacement
-    suggestions, and estimated tax savings. Requires tax_pro plan.
-    tax_bracket: user's federal marginal rate (0.10–0.37)
-    """
     user = session.get(User, user_id)
     if not user:
         raise HTTPException(404, "User not found")
     require_tax_pro(user)
-
     assets = session.exec(select(Asset).where(Asset.user_id == user_id)).all()
     if not assets:
         return {"opportunities": [], "total_potential_savings": 0.0, "tax_bracket": tax_bracket}
 
     def fetch(a: Asset):
         d = get_asset_data(a.symbol)
-        if not d:
-            return None
-        return {
-            "symbol":         a.symbol,
-            "amount":         a.amount,
-            "purchase_price": a.purchase_price,
-            "current_price":  d["current_price"],
-            "purchase_date":  a.purchase_date or str(date.today()),
-        }
+        if not d: return None
+        return {"symbol": a.symbol, "amount": a.amount, "purchase_price": a.purchase_price,
+                "current_price": d["current_price"], "purchase_date": a.purchase_date or str(date.today())}
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=8) as ex:
         enriched = [r for r in ex.map(fetch, assets) if r]
 
     opportunities = calculate_tax_loss_harvesting(enriched, tax_bracket=tax_bracket)
-    total_savings  = sum(o["estimated_tax_saved"] for o in opportunities)
-
     return {
-        "opportunities":          opportunities,
-        "total_potential_savings": round(total_savings, 2),
-        "tax_bracket":            tax_bracket,
-        "opportunity_count":      len(opportunities),
+        "opportunities": opportunities,
+        "total_potential_savings": round(sum(o["estimated_tax_saved"] for o in opportunities), 2),
+        "tax_bracket": tax_bracket,
+        "opportunity_count": len(opportunities),
     }
 
 
@@ -1153,20 +897,14 @@ def portfolio_cost_basis(
     user_id: int = Depends(get_current_user),
     session: Session = Depends(get_session),
 ):
-    """
-    Calculate cost basis and realized gains/losses.
-    Methods: FIFO (default), LIFO, HIFO, SPEC. Requires tax_pro plan.
-    """
     user = session.get(User, user_id)
     if not user:
         raise HTTPException(404, "User not found")
     require_tax_pro(user)
-
     q = select(Transaction).where(Transaction.user_id == user_id)
     if symbol:
         q = q.where(Transaction.symbol == symbol.upper().strip())
     txs = session.exec(q.order_by(Transaction.date)).all()
-
     tx_list = [
         {"type": t.type, "amount": t.amount, "price": t.price, "date": t.date, "symbol": t.symbol}
         for t in txs
@@ -1177,16 +915,12 @@ def portfolio_cost_basis(
 
 
 @app.get("/tax/loss-harvesting")
-def tax_loss_harvesting(
-    user_id: int = Depends(get_current_user),
-    session: Session = Depends(get_session),
-):
-    """Legacy simplified endpoint — basic unrealised-loss list (tax_pro only)."""
+def tax_loss_harvesting(user_id: int = Depends(get_current_user), session: Session = Depends(get_session)):
+    """Legacy simplified endpoint."""
     user = session.get(User, user_id)
     if not user:
         raise HTTPException(404, "User not found")
     require_tax_pro(user)
-
     assets = session.exec(select(Asset).where(Asset.user_id == user_id)).all()
     if not assets:
         return {"opportunities": []}
@@ -1200,64 +934,238 @@ def tax_loss_harvesting(
 
     opportunities = []
     for r in results:
-        if not r:
-            continue
+        if not r: continue
         a, m = r
         current_value  = m["current_price"] * a.amount
         cost_basis     = a.purchase_price * a.amount
         unrealised_pnl = current_value - cost_basis
         if unrealised_pnl < 0:
             opportunities.append({
-                "id":              a.id,
-                "symbol":          m["symbol"],
-                "amount":          a.amount,
-                "current_price":   m["current_price"],
-                "purchase_price":  a.purchase_price,
-                "unrealised_loss": unrealised_pnl,
-                "cost_basis":      cost_basis,
+                "id": a.id, "symbol": m["symbol"], "amount": a.amount,
+                "current_price": m["current_price"], "purchase_price": a.purchase_price,
+                "unrealised_loss": unrealised_pnl, "cost_basis": cost_basis,
             })
-
     opportunities.sort(key=lambda x: x["unrealised_loss"])
     return {"opportunities": opportunities}
 
 
 @app.get("/tax/form-8949")
-def form_8949_export(
+def form_8949_csv(
+    year:   int = Query(default=None, description="Tax year, e.g. 2024"),
+    method: str = Query(default="FIFO", description="Cost basis method: FIFO | HIFO | LIFO"),
     user_id: int = Depends(get_current_user),
     session: Session = Depends(get_session),
 ):
+    """
+    Download IRS Form 8949 as a CSV file.
+    Columns match the official IRS layout:
+      Description of property | Date acquired | Date sold or disposed |
+      Proceeds | Cost or other basis | Gain or (loss)
+    """
     user = session.get(User, user_id)
     if not user:
         raise HTTPException(404, "User not found")
     require_tax_pro(user)
 
-    txs = session.exec(
-        select(Transaction).where(
-            Transaction.user_id == user_id, Transaction.type == "sell"
-        ).order_by(Transaction.date)
-    ).all()
+    tax_year = year or date.today().year
 
-    rows = [
-        {
-            "description":      tx.symbol,
-            "date_acquired":    "VARIOUS",
-            "date_sold":        tx.date,
-            "proceeds":         round(tx.total_usd, 2),
-            "cost_basis":       round(tx.amount * (tx.total_usd / tx.amount - (tx.realized_pnl or 0) / tx.amount), 2)
-                                if tx.amount else 0,
-            "gain_loss":        round(tx.realized_pnl or 0, 2),
-            "short_or_long":    "SHORT",
-        }
-        for tx in txs
+    # Pull all transactions for this user
+    txs = session.exec(
+        select(Transaction).where(Transaction.user_id == user_id).order_by(Transaction.date)
+    ).all()
+    tx_list = [
+        {"type": t.type, "symbol": t.symbol, "amount": t.amount,
+         "price": t.price, "date": t.date or ""}
+        for t in txs
     ]
 
-    total_proceeds  = sum(r["proceeds"]  for r in rows)
-    total_gain_loss = sum(r["gain_loss"] for r in rows)
+    form = generate_form_8949(tx_list, tax_year=tax_year, method=method)
+
+    # ── Build CSV in-memory ───────────────────────────────────────────────────
+    output = io.StringIO()
+    writer = csv.writer(output)
+
+    # Header comment rows (not IRS columns — informational)
+    writer.writerow([f"IRS Form 8949 — Tax Year {tax_year}"])
+    writer.writerow([f"Cost Basis Method: {form['method']}"])
+    writer.writerow([f"Generated by Purp — {datetime.now().strftime('%Y-%m-%d %H:%M')}"])
+    writer.writerow([])
+
+    # ── Part I — Short-Term ───────────────────────────────────────────────────
+    writer.writerow(["Part I — Short-Term Capital Gains and Losses (assets held 1 year or less)"])
+    writer.writerow([
+        "Description of property",
+        "Date acquired",
+        "Date sold or disposed",
+        "Proceeds",
+        "Cost or other basis",
+        "Gain or (loss)",
+    ])
+    for row in form["part_I"]:
+        writer.writerow([
+            row["description"],
+            row["date_acquired"],
+            row["date_sold"],
+            f"{row['proceeds']:.2f}",
+            f"{row['cost_basis']:.2f}",
+            f"{row['gain_loss']:.2f}",
+        ])
+    writer.writerow(["", "", "Part I Totals:", "", "", f"{form['summary']['net_short_term']:.2f}"])
+    writer.writerow([])
+
+    # ── Part II — Long-Term ───────────────────────────────────────────────────
+    writer.writerow(["Part II — Long-Term Capital Gains and Losses (assets held more than 1 year)"])
+    writer.writerow([
+        "Description of property",
+        "Date acquired",
+        "Date sold or disposed",
+        "Proceeds",
+        "Cost or other basis",
+        "Gain or (loss)",
+    ])
+    for row in form["part_II"]:
+        writer.writerow([
+            row["description"],
+            row["date_acquired"],
+            row["date_sold"],
+            f"{row['proceeds']:.2f}",
+            f"{row['cost_basis']:.2f}",
+            f"{row['gain_loss']:.2f}",
+        ])
+    writer.writerow(["", "", "Part II Totals:", "", "", f"{form['summary']['net_long_term']:.2f}"])
+    writer.writerow([])
+
+    # ── Summary ───────────────────────────────────────────────────────────────
+    s = form["summary"]
+    writer.writerow(["SUMMARY"])
+    writer.writerow(["Total Proceeds",        f"${s['total_proceeds']:,.2f}"])
+    writer.writerow(["Total Cost Basis",      f"${s['total_cost_basis']:,.2f}"])
+    writer.writerow(["Net Short-Term",        f"${s['net_short_term']:,.2f}"])
+    writer.writerow(["Net Long-Term",         f"${s['net_long_term']:,.2f}"])
+    writer.writerow(["Total Net Gain/(Loss)", f"${s['total_net_gain_loss']:,.2f}"])
+
+    csv_content = output.getvalue()
+    output.close()
+
+    return StreamingResponse(
+        io.BytesIO(csv_content.encode("utf-8-sig")),
+        media_type="text/csv",
+        headers={
+            "Content-Disposition": f'attachment; filename="form-8949-{tax_year}.csv"',
+            "Cache-Control":       "no-store",
+        },
+    )
+
+
+@app.get("/tax/summary")
+def tax_summary(
+    year:    int = Query(default=None, description="Tax year, e.g. 2024"),
+    method:  str = Query(default="FIFO"),
+    user_id: int = Depends(get_current_user),
+    session: Session = Depends(get_session),
+):
+    """
+    Returns Form 8949 summary + estimated tax at common brackets (tax_pro only).
+    {
+      tax_year, method,
+      net_short_term, net_long_term, total_net_gain_loss,
+      total_proceeds, total_cost_basis,
+      estimated_tax_22pct, estimated_tax_24pct, estimated_tax_32pct,
+      short_term_count, long_term_count
+    }
+    """
+    user = session.get(User, user_id)
+    if not user:
+        raise HTTPException(404, "User not found")
+    require_tax_pro(user)
+
+    tax_year = year or date.today().year
+
+    txs = session.exec(
+        select(Transaction).where(Transaction.user_id == user_id).order_by(Transaction.date)
+    ).all()
+    tx_list = [
+        {"type": t.type, "symbol": t.symbol, "amount": t.amount,
+         "price": t.price, "date": t.date or ""}
+        for t in txs
+    ]
+
+    form = generate_form_8949(tx_list, tax_year=tax_year, method=method)
+    s    = form["summary"]
+
+    # Estimated tax: short-term taxed at ordinary rates; long-term at 0/15/20 %
+    # We show three common short-term bracket scenarios
+    def est_tax(bracket: float) -> float:
+        # long-term rate approximation
+        lt_rate = 0.0 if bracket <= 0.12 else (0.15 if bracket <= 0.35 else 0.20)
+        st = max(s["net_short_term"], 0) * bracket
+        lt = max(s["net_long_term"],  0) * lt_rate
+        return round(st + lt, 2)
+
     return {
-        "tax_year":      date.today().year,
-        "rows":          rows,
-        "total_proceeds":  round(total_proceeds,  2),
-        "total_gain_loss": round(total_gain_loss, 2),
+        "tax_year":              tax_year,
+        "method":                form["method"],
+        "net_short_term":        s["net_short_term"],
+        "net_long_term":         s["net_long_term"],
+        "total_net_gain_loss":   s["total_net_gain_loss"],
+        "total_proceeds":        s["total_proceeds"],
+        "total_cost_basis":      s["total_cost_basis"],
+        "estimated_tax_22pct":   est_tax(0.22),
+        "estimated_tax_24pct":   est_tax(0.24),
+        "estimated_tax_32pct":   est_tax(0.32),
+        "short_term_count":      len(form["part_I"]),
+        "long_term_count":       len(form["part_II"]),
+    }
+
+
+@app.get("/tax/form-8949-json")
+def form_8949_json(
+    year:    int = Query(default=None),
+    method:  str = Query(default="FIFO"),
+    user_id: int = Depends(get_current_user),
+    session: Session = Depends(get_session),
+):
+    """JSON version of Form 8949 — used by the extension UI."""
+    user = session.get(User, user_id)
+    if not user:
+        raise HTTPException(404, "User not found")
+    require_tax_pro(user)
+
+    tax_year = year or date.today().year
+    txs = session.exec(
+        select(Transaction).where(Transaction.user_id == user_id).order_by(Transaction.date)
+    ).all()
+    tx_list = [
+        {"type": t.type, "symbol": t.symbol, "amount": t.amount,
+         "price": t.price, "date": t.date or ""}
+        for t in txs
+    ]
+    return generate_form_8949(tx_list, tax_year=tax_year, method=method)
+
+
+# ── Legacy 8949 endpoint (keep for backward compat) ───────────────────────────
+@app.get("/tax/form-8949-legacy")
+def form_8949_export_legacy(user_id: int = Depends(get_current_user), session: Session = Depends(get_session)):
+    user = session.get(User, user_id)
+    if not user:
+        raise HTTPException(404, "User not found")
+    require_tax_pro(user)
+    txs = session.exec(
+        select(Transaction).where(Transaction.user_id == user_id, Transaction.type == "sell")
+        .order_by(Transaction.date)
+    ).all()
+    rows = [
+        {"description": tx.symbol, "date_acquired": "VARIOUS", "date_sold": tx.date,
+         "proceeds": round(tx.total_usd, 2),
+         "cost_basis": round(tx.amount * (tx.total_usd / tx.amount - (tx.realized_pnl or 0) / tx.amount), 2)
+                       if tx.amount else 0,
+         "gain_loss": round(tx.realized_pnl or 0, 2), "short_or_long": "SHORT"}
+        for tx in txs
+    ]
+    return {
+        "tax_year": date.today().year, "rows": rows,
+        "total_proceeds":  round(sum(r["proceeds"]  for r in rows), 2),
+        "total_gain_loss": round(sum(r["gain_loss"] for r in rows), 2),
     }
 
 
@@ -1282,15 +1190,11 @@ def history(symbol: str, period: str = "1mo"):
 # ═══════════════════════════════════════════════════════════════════════════════
 
 @app.get("/analysis/portfolio")
-def ai_portfolio(
-    user_id: int = Depends(get_current_user),
-    session: Session = Depends(get_session),
-):
+def ai_portfolio(user_id: int = Depends(get_current_user), session: Session = Depends(get_session)):
     user = session.get(User, user_id)
     if not user:
         raise HTTPException(404, "User not found")
     require_investor(user)
-
     assets = session.exec(select(Asset).where(Asset.user_id == user_id)).all()
     if not assets:
         return {"analysis": "Your portfolio is empty. Add some assets to get started.", "change_pct": 0.0}
@@ -1304,15 +1208,11 @@ def ai_portfolio(
 
     enriched, total_val = [], 0.0
     for r in results:
-        if not r:
-            continue
+        if not r: continue
         a, m = r
         val = m["current_price"] * a.amount
         total_val += val
-        enriched.append({
-            "symbol": m["symbol"], "type": m["type"],
-            "value": val, "change_pct": m["percent_change"],
-        })
+        enriched.append({"symbol": m["symbol"], "type": m["type"], "value": val, "change_pct": m["percent_change"]})
 
     if not enriched or total_val <= 0:
         return {"analysis": "Could not compute portfolio performance.", "change_pct": 0.0}
@@ -1321,18 +1221,12 @@ def ai_portfolio(
     for item in enriched:
         w = item["value"] / total_val
         weighted += w * item["change_pct"]
-        ai_assets.append({
-            "symbol":         item["symbol"],
-            "type":           item["type"],
-            "allocation_pct": w * 100,
-            "change_pct":     item["change_pct"],
-        })
-
+        ai_assets.append({"symbol": item["symbol"], "type": item["type"],
+                           "allocation_pct": w * 100, "change_pct": item["change_pct"]})
     try:
         text = get_portfolio_ai_analysis(weighted, ai_assets)
     except Exception as e:
         text = f"Analysis temporarily unavailable. ({e})"
-
     return {"analysis": text, "change_pct": weighted}
 
 
@@ -1343,8 +1237,7 @@ def ai_status():
 
 @app.get("/analysis/{symbol}")
 def ai_asset(
-    symbol: str,
-    change: float = 0.0,
+    symbol: str, change: float = 0.0,
     user_id: int = Depends(get_current_user),
     session: Session = Depends(get_session),
 ):
@@ -1360,27 +1253,14 @@ def ai_asset(
 # ═══════════════════════════════════════════════════════════════════════════════
 
 @app.get("/transactions")
-def list_transactions(
-    user_id: int = Depends(get_current_user),
-    session: Session = Depends(get_session),
-):
+def list_transactions(user_id: int = Depends(get_current_user), session: Session = Depends(get_session)):
     txs = session.exec(
-        select(Transaction)
-        .where(Transaction.user_id == user_id)
-        .order_by(Transaction.id.desc())
-        .limit(100)
+        select(Transaction).where(Transaction.user_id == user_id)
+        .order_by(Transaction.id.desc()).limit(100)
     ).all()
     return [
-        {
-            "id":           t.id,
-            "symbol":       t.symbol,
-            "type":         t.type,
-            "amount":       t.amount,
-            "price":        t.price,
-            "total_usd":    t.total_usd,
-            "realized_pnl": t.realized_pnl,
-            "date":         t.date,
-        }
+        {"id": t.id, "symbol": t.symbol, "type": t.type, "amount": t.amount,
+         "price": t.price, "total_usd": t.total_usd, "realized_pnl": t.realized_pnl, "date": t.date}
         for t in txs
     ]
 
@@ -1404,17 +1284,12 @@ def create_checkout(
         raise HTTPException(400, "You already have the Investor plan.")
 
     if data.plan == "tax_pro":
-        price_id = PRICE_ID_TAX_PRO
-        plan_label = "Tax Pro"
+        price_id, plan_label = PRICE_ID_TAX_PRO, "Tax Pro"
     else:
-        price_id = PRICE_ID_INVESTOR
-        plan_label = "Investor"
+        price_id, plan_label = PRICE_ID_INVESTOR, "Investor"
 
     if not price_id:
-        raise HTTPException(
-            500,
-            f"Stripe not configured (missing STRIPE_PRICE_ID_{data.plan.upper()})"
-        )
+        raise HTTPException(500, f"Stripe not configured (missing STRIPE_PRICE_ID_{data.plan.upper()})")
 
     success_url = os.getenv("STRIPE_SUCCESS_URL", "https://purp-production.up.railway.app/success")
     cancel_url  = os.getenv("STRIPE_CANCEL_URL",  "https://purp-production.up.railway.app/cancelled")
@@ -1435,13 +1310,10 @@ def create_checkout(
             metadata={"user_id": str(user_id), "plan": data.plan},
             **customer_kwargs,
         )
-
         if session_obj.get("customer") and not user.stripe_customer_id:
             user.stripe_customer_id = session_obj["customer"]
             session.add(user); session.commit()
-
         return {"checkout_url": session_obj.url, "plan": data.plan, "plan_label": plan_label}
-
     except stripe.StripeError as e:
         msg = getattr(e, "user_message", None) or str(e)
         raise HTTPException(500, f"Payment error: {msg}")
@@ -1452,7 +1324,6 @@ async def stripe_webhook(request: Request, session: Session = Depends(get_sessio
     payload    = await request.body()
     sig_header = request.headers.get("stripe-signature", "")
     secret     = os.getenv("STRIPE_WEBHOOK_SECRET", "")
-
     try:
         event = stripe.Webhook.construct_event(payload, sig_header, secret)
     except stripe.SignatureVerificationError:
@@ -1464,7 +1335,6 @@ async def stripe_webhook(request: Request, session: Session = Depends(get_sessio
     if event_id:
         existing = session.get(ProcessedEvent, event_id)
         if existing:
-            print(f"⚠️  Event {event_id} already processed at {existing.processed_at}")
             return {"ok": True}
         session.add(ProcessedEvent(event_id=event_id, processed_at=str(datetime.now())))
         session.commit()
@@ -1476,12 +1346,10 @@ async def stripe_webhook(request: Request, session: Session = Depends(get_sessio
         meta    = obj.get("metadata", {})
         user_id = int(meta.get("user_id", 0))
         plan    = meta.get("plan", "investor")
-
         if user_id:
             u = session.get(User, user_id)
             if u:
-                u.plan       = plan
-                u.is_premium = True
+                u.plan = plan; u.is_premium = True
                 if obj.get("subscription"):
                     u.stripe_subscription_id = obj["subscription"]
                 if obj.get("customer") and not u.stripe_customer_id:
@@ -1492,32 +1360,25 @@ async def stripe_webhook(request: Request, session: Session = Depends(get_sessio
     elif event_type in ["customer.subscription.deleted", "customer.subscription.paused"]:
         subscription = event["data"]["object"]
         user_id = None
-
         meta = subscription.get("metadata", {})
         if meta and "user_id" in meta:
             user_id = int(meta["user_id"])
-
         if not user_id:
             customer_id = subscription.get("customer")
             if customer_id:
                 try:
                     customer = stripe.Customer.retrieve(customer_id)
-                    email = customer.get("email", "").lower().strip()
+                    email    = customer.get("email", "").lower().strip()
                     if email:
                         u = session.exec(select(User).where(User.email == email)).first()
-                        if u:
-                            user_id = u.id
+                        if u: user_id = u.id
                 except Exception as e:
-                    print(f"⚠️  Could not retrieve Stripe customer: {e}")
-
+                    print(f"⚠️  Stripe customer retrieve: {e}")
         if user_id:
             u = session.get(User, user_id)
             if u and has_plan(u, "investor", "tax_pro"):
-                u.plan            = "free"
-                u.is_premium      = False
-                u.stripe_subscription_id = None
+                u.plan = "free"; u.is_premium = False; u.stripe_subscription_id = None
                 session.add(u); session.commit()
-                print(f"✅ User {user_id} downgraded to free (event: {event_type})")
 
     elif event_type == "customer.subscription.updated":
         subscription = event["data"]["object"]
@@ -1525,28 +1386,24 @@ async def stripe_webhook(request: Request, session: Session = Depends(get_sessio
             items = subscription.get("items", {}).get("data", [])
             if items:
                 new_price_id = items[0]["price"]["id"]
-                new_plan = PRICE_PLAN_MAP.get(new_price_id)
+                new_plan     = PRICE_PLAN_MAP.get(new_price_id)
                 if new_plan:
                     customer_id = subscription.get("customer")
                     u = None
                     if customer_id:
-                        u = session.exec(
-                            select(User).where(User.stripe_customer_id == customer_id)
-                        ).first()
+                        u = session.exec(select(User).where(User.stripe_customer_id == customer_id)).first()
                     if u:
-                        u.plan       = new_plan
-                        u.is_premium = True
+                        u.plan = new_plan; u.is_premium = True
                         session.add(u); session.commit()
-                        print(f"✅ User {u.id} plan updated to '{new_plan}'")
         except Exception as e:
-            print(f"⚠️  subscription.updated handler error: {e}")
+            print(f"⚠️  subscription.updated handler: {e}")
 
     return {"ok": True}
 
 
 @app.get("/success")
 def payment_success():
-    return {"message": "Payment successful! Your plan has been upgraded. Please reload the extension."}
+    return {"message": "Payment successful! Your plan has been upgraded."}
 
 
 @app.get("/cancelled")
@@ -1567,31 +1424,21 @@ def health():
 def debug_db():
     from sqlalchemy import text as sa_text
     result = {
-        "db_url_prefix": DATABASE_URL[:40],
-        "is_postgres":   _is_postgres,
-        "price_plan_map":PRICE_PLAN_MAP,
-        "tables":        [],
-        "user_count":    None,
-        "error":         None,
+        "db_url_prefix": DATABASE_URL[:40], "is_postgres": _is_postgres,
+        "price_plan_map": PRICE_PLAN_MAP, "tables": [], "user_count": None, "error": None,
     }
     try:
         with engine.connect() as conn:
             if _is_postgres:
-                rows = conn.execute(
-                    sa_text("SELECT tablename FROM pg_tables WHERE schemaname='public'")
-                ).fetchall()
+                rows = conn.execute(sa_text("SELECT tablename FROM pg_tables WHERE schemaname='public'")).fetchall()
             else:
-                rows = conn.execute(
-                    sa_text("SELECT name FROM sqlite_master WHERE type='table'")
-                ).fetchall()
+                rows = conn.execute(sa_text("SELECT name FROM sqlite_master WHERE type='table'")).fetchall()
             result["tables"] = [r[0] for r in rows]
     except Exception as e:
         result["error"] = str(e); return result
-
     try:
         with Session(engine) as s:
             result["user_count"] = len(s.exec(select(User)).all())
     except Exception as e:
         result["error"] = str(e)
-
-    return result 
+    return result
