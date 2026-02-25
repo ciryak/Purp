@@ -431,10 +431,13 @@ class WatchlistAddInput(BaseModel):
 
 
 class AlertCreateInput(BaseModel):
-    symbol: str
+    symbol: str | None = None
     alert_type: str
     target_value: float
     recurring: bool = False
+    rsi_period: int | None = 14
+    rebalance_threshold_pct: float | None = None
+    target_allocation_pct: float | None = None
 
 
 class CheckoutInput(BaseModel):
@@ -702,7 +705,10 @@ def get_alerts(user_id: int = Depends(get_current_user), session: Session = Depe
         {"id": a.id, "symbol": a.symbol, "alert_type": a.alert_type,
          "target_value": a.target_value, "triggered": a.triggered,
          "triggered_at": a.triggered_at, "active": a.active,
-         "recurring": a.recurring, "created_at": a.created_at}
+         "recurring": a.recurring, "created_at": a.created_at,
+         "rsi_period": a.rsi_period,
+         "rebalance_threshold_pct": a.rebalance_threshold_pct,
+         "target_allocation_pct": a.target_allocation_pct}
         for a in alerts
     ]}
 
@@ -724,21 +730,50 @@ def create_alert(
         ).all())
         if count >= FREE_ALERT_LIMIT:
             raise HTTPException(402, f"Free plan limited to {FREE_ALERT_LIMIT} price alerts.")
-    valid_types = ["price_above", "price_below", "percent_change_up", "percent_change_down"]
+    valid_types = [
+        "price_above", "price_below", "percent_change_up", "percent_change_down",
+        "rsi_oversold", "rsi_overbought", "rebalance_drift", "volume_spike", "portfolio_down",
+    ]
     if data.alert_type not in valid_types:
         raise HTTPException(400, f"Invalid alert_type. Must be one of: {', '.join(valid_types)}")
     if data.target_value <= 0:
         raise HTTPException(400, "target_value must be positive")
-    asset_data = get_asset_data(data.symbol)
-    if not asset_data:
-        raise HTTPException(404, f"Asset '{data.symbol}' not found")
+
+    symbol_to_store = "PORTFOLIO" if data.alert_type == "portfolio_down" else None
+    if data.alert_type != "portfolio_down":
+        if not data.symbol:
+            raise HTTPException(400, "symbol is required for this alert_type")
+        asset_data = get_asset_data(data.symbol)
+        if not asset_data:
+            raise HTTPException(404, f"Asset '{data.symbol}' not found")
+        symbol_to_store = asset_data["real_symbol"]
+
+    if data.alert_type in ("rsi_oversold", "rsi_overbought") and (data.rsi_period is None or data.rsi_period <= 0):
+        raise HTTPException(400, "rsi_period must be greater than zero")
+
+    if data.alert_type == "rebalance_drift":
+        if data.target_allocation_pct is None:
+            raise HTTPException(400, "target_allocation_pct is required for rebalance_drift")
+        if data.rebalance_threshold_pct is None:
+            data.rebalance_threshold_pct = data.target_value
+
     alert = PriceAlert(
-        user_id=user_id, symbol=asset_data["real_symbol"], alert_type=data.alert_type,
-        target_value=data.target_value, recurring=data.recurring, created_at=str(datetime.now()),
+        user_id=user_id,
+        symbol=symbol_to_store,
+        alert_type=data.alert_type,
+        target_value=data.target_value,
+        recurring=data.recurring,
+        created_at=str(datetime.now()),
+        rsi_period=data.rsi_period,
+        rebalance_threshold_pct=data.rebalance_threshold_pct,
+        target_allocation_pct=data.target_allocation_pct,
     )
     session.add(alert); session.commit(); session.refresh(alert)
     return {"id": alert.id, "symbol": alert.symbol, "alert_type": alert.alert_type,
-            "target_value": alert.target_value, "recurring": alert.recurring}
+            "target_value": alert.target_value, "recurring": alert.recurring,
+            "rsi_period": alert.rsi_period,
+            "rebalance_threshold_pct": alert.rebalance_threshold_pct,
+            "target_allocation_pct": alert.target_allocation_pct}
 
 
 @app.delete("/alerts/{alert_id}")

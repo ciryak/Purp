@@ -64,9 +64,12 @@ class PriceAlert(SQLModel, table=True):
     """Price alerts for paid users."""
     id: Optional[int] = Field(default=None, primary_key=True)
     user_id: int = Field(foreign_key="user.id", index=True)
-    symbol: str
-    alert_type: str   # 'price_above' | 'price_below' | 'percent_change_up' | 'percent_change_down'
+    symbol: Optional[str] = Field(default=None)
+    alert_type: str   # basic + advanced alert types
     target_value: float
+    rsi_period: Optional[int] = Field(default=14)
+    rebalance_threshold_pct: Optional[float] = None
+    target_allocation_pct: Optional[float] = None
     triggered: bool = Field(default=False)
     triggered_at: Optional[str] = None
     created_at: Optional[str] = None

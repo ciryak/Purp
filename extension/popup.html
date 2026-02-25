@@ -289,6 +289,51 @@
     </button>
   </div>
 
+  <div class="form-card" id="alerts-card">
+    <div class="section-heading" style="margin-bottom:10px;">Advanced Alerts</div>
+    <div class="field-group">
+      <label class="field-label">Alert type</label>
+      <select id="alert-type-input" title="Choose a basic or advanced alert condition.">
+        <option value="price_above">Price Above</option>
+        <option value="price_below">Price Below</option>
+        <option value="percent_change_up">Percent Change Up</option>
+        <option value="percent_change_down">Percent Change Down</option>
+        <option value="rsi_oversold">RSI Oversold</option>
+        <option value="rsi_overbought">RSI Overbought</option>
+        <option value="rebalance_drift">Rebalance Drift</option>
+        <option value="volume_spike">Volume Spike</option>
+        <option value="portfolio_down">Portfolio Down (24h)</option>
+      </select>
+    </div>
+
+    <div class="field-group" id="alert-symbol-group">
+      <label class="field-label">Symbol</label>
+      <input type="text" id="alert-symbol-input" placeholder="BTC, AAPL..." title="Asset symbol for this alert.">
+    </div>
+
+    <div class="field-group" id="alert-target-group">
+      <label class="field-label" id="alert-target-label">Target Price ($)</label>
+      <input type="number" id="alert-target-input" step="any" min="0" placeholder="0" title="Threshold value used by this alert type.">
+    </div>
+
+    <div class="field-group" id="alert-rsi-period-group" style="display:none;">
+      <label class="field-label">RSI Period</label>
+      <input type="number" id="alert-rsi-period-input" step="1" min="2" value="14" title="Number of periods used to compute RSI.">
+    </div>
+
+    <div class="field-group" id="alert-target-allocation-group" style="display:none;">
+      <label class="field-label">Target Allocation (%)</label>
+      <input type="number" id="alert-target-allocation-input" step="any" min="0" max="100" placeholder="25" title="Desired portfolio allocation for this asset.">
+    </div>
+
+    <div class="field-group">
+      <label class="field-label"><input type="checkbox" id="alert-recurring-input"> Recurring alert</label>
+    </div>
+
+    <button type="button" id="btn-create-alert" class="btn-primary" title="Create alert based on selected rule.">Create Alert</button>
+    <div id="alerts-list" style="margin-top:10px;"></div>
+  </div>
+
   <!-- ── Import CSV card (investor/tax_pro only) ── -->
   <div id="import-csv-card" class="import-card" style="display:none;">
     <div class="import-card-header">

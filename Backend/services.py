@@ -545,10 +545,143 @@ def get_portfolio_ai_analysis(portfolio_change: float, assets: list[dict]) -> st
         return "Portfolio analysis temporarily unavailable."
 
 
+
 # ── ALERTS ─────────────────────────────────────────────────────────────────────
 
+def calculate_rsi(prices: list[float], period: int = 14) -> float:
+    """Calculate standard RSI (0-100) from a close-price series."""
+    if not prices or len(prices) < 2:
+        return 50.0
+
+    period = max(1, int(period or 14))
+    closes = [float(p) for p in prices if p is not None]
+    if len(closes) < period + 1:
+        return 50.0
+
+    deltas = [closes[i] - closes[i - 1] for i in range(1, len(closes))]
+    gains = [max(d, 0.0) for d in deltas]
+    losses = [abs(min(d, 0.0)) for d in deltas]
+
+    avg_gain = sum(gains[:period]) / period
+    avg_loss = sum(losses[:period]) / period
+
+    for i in range(period, len(deltas)):
+        avg_gain = ((avg_gain * (period - 1)) + gains[i]) / period
+        avg_loss = ((avg_loss * (period - 1)) + losses[i]) / period
+
+    if avg_loss == 0:
+        return 100.0
+
+    rs = avg_gain / avg_loss
+    rsi = 100 - (100 / (1 + rs))
+    return max(0.0, min(100.0, float(rsi)))
+
+
+def check_advanced_alert(alert, asset_data: dict, portfolio_data: dict = None) -> bool:
+    """Evaluate advanced alert conditions."""
+    alert_type = (getattr(alert, "alert_type", "") or "").strip()
+    target = float(getattr(alert, "target_value", 0) or 0)
+
+    if alert_type in ("rsi_oversold", "rsi_overbought"):
+        prices = (asset_data or {}).get("historical_prices") or []
+        period = int(getattr(alert, "rsi_period", 14) or 14)
+        rsi = calculate_rsi(prices, period=period)
+        return rsi < target if alert_type == "rsi_oversold" else rsi > target
+
+    if alert_type == "rebalance_drift":
+        current_alloc = (asset_data or {}).get("current_allocation_pct")
+        target_alloc = getattr(alert, "target_allocation_pct", None)
+        threshold = getattr(alert, "rebalance_threshold_pct", None)
+        if threshold is None:
+            threshold = target
+        if current_alloc is None or target_alloc is None or threshold is None:
+            return False
+        drift = abs(float(current_alloc) - float(target_alloc))
+        return drift >= float(threshold)
+
+    if alert_type == "volume_spike":
+        volume_history = (asset_data or {}).get("volume_history") or []
+        if len(volume_history) < 2:
+            return False
+        current_volume = float(volume_history[-1])
+        baseline_window = volume_history[-21:-1] or volume_history[:-1]
+        if not baseline_window:
+            return False
+        avg_volume = sum(float(v) for v in baseline_window) / len(baseline_window)
+        return avg_volume > 0 and current_volume > (target * avg_volume)
+
+    if alert_type == "portfolio_down":
+        if not portfolio_data:
+            return False
+        pct_24h = float(portfolio_data.get("percent_change_24h", 0) or 0)
+        return pct_24h <= -target
+
+    return False
+
+
+def _get_volume_history(symbol: str, days: int = 21) -> list[float]:
+    """Return a daily volume series for the asset."""
+    base = (symbol or "").upper().strip().replace("-USD", "")
+    if not base:
+        return []
+
+    if not _is_likely_stock(base) and _is_binance_crypto(base):
+        try:
+            r = requests.get(
+                f"{_BINANCE_BASE}/api/v3/klines",
+                params={"symbol": f"{base}USDT", "interval": "1d", "limit": max(2, days)},
+                headers=_BINANCE_HEADERS,
+                timeout=8,
+            )
+            r.raise_for_status()
+            return [float(k[5]) for k in r.json()]
+        except Exception as e:
+            print(f"⚠️  Binance volume '{base}': {e}")
+
+    for sym in [symbol, base, f"{base}-USD"]:
+        try:
+            hist = yf.Ticker(sym).history(period="1mo", interval="1d")
+            if hist.empty or "Volume" not in hist:
+                continue
+            vols = [float(v) for v in hist["Volume"].tolist() if v is not None]
+            if vols:
+                return vols[-max(2, days):]
+        except Exception as e:
+            print(f"⚠️  yfinance volume '{sym}': {e}")
+
+    return []
+
+
+def _portfolio_change_24h_for_user(session, user_id: int) -> float:
+    from models import Asset
+    from sqlmodel import select
+
+    assets = session.exec(select(Asset).where(Asset.user_id == user_id)).all()
+    if not assets:
+        return 0.0
+
+    prev_total = 0.0
+    curr_total = 0.0
+    for a in assets:
+        data = get_asset_data(a.symbol)
+        if not data:
+            continue
+        amount = float(a.amount or 0)
+        current_price = float(data.get("current_price") or 0)
+        change_pct = float(data.get("percent_change") or 0)
+        if current_price <= 0:
+            continue
+        prev_price = current_price / (1 + (change_pct / 100)) if change_pct != -100 else current_price
+        curr_total += amount * current_price
+        prev_total += amount * prev_price
+
+    if prev_total <= 0:
+        return 0.0
+    return ((curr_total - prev_total) / prev_total) * 100
+
+
 def check_and_trigger_alerts(session, send_email_callback) -> None:
-    from models import PriceAlert, User
+    from models import PriceAlert, User, Asset
     from sqlmodel import select
 
     try:
@@ -562,8 +695,14 @@ def check_and_trigger_alerts(session, send_email_callback) -> None:
         print(f"🔍 Checking {len(active_alerts)} active alerts…")
 
         alerts_by_symbol: dict[str, list] = {}
+        portfolio_alerts_by_user: dict[int, list] = {}
         for alert in active_alerts:
-            alerts_by_symbol.setdefault(alert.symbol, []).append(alert)
+            if alert.alert_type == "portfolio_down":
+                portfolio_alerts_by_user.setdefault(alert.user_id, []).append(alert)
+                continue
+            symbol = (alert.symbol or "").upper().strip()
+            if symbol:
+                alerts_by_symbol.setdefault(symbol, []).append(alert)
 
         for symbol, alerts in alerts_by_symbol.items():
             try:
@@ -571,22 +710,51 @@ def check_and_trigger_alerts(session, send_email_callback) -> None:
                 if not data:
                     continue
 
-                current_price   = data["current_price"]
-                percent_change  = data["percent_change"]
+                current_price = data["current_price"]
+                percent_change = data["percent_change"]
 
                 for alert in alerts:
                     triggered = False
-                    if   alert.alert_type == "price_above"        and current_price  >= alert.target_value:
+                    if alert.alert_type == "price_above" and current_price >= alert.target_value:
                         triggered = True
-                    elif alert.alert_type == "price_below"        and current_price  <= alert.target_value:
+                    elif alert.alert_type == "price_below" and current_price <= alert.target_value:
                         triggered = True
-                    elif alert.alert_type == "percent_change_up"  and percent_change >= alert.target_value:
+                    elif alert.alert_type == "percent_change_up" and percent_change >= alert.target_value:
                         triggered = True
                     elif alert.alert_type == "percent_change_down" and percent_change <= -alert.target_value:
                         triggered = True
+                    elif alert.alert_type in {"rsi_oversold", "rsi_overbought", "rebalance_drift", "volume_spike"}:
+                        adv_asset_data = {
+                            "current_price": current_price,
+                            "percent_change": percent_change,
+                        }
+
+                        if alert.alert_type in {"rsi_oversold", "rsi_overbought"}:
+                            hist = get_historical_data(symbol, period="1mo")
+                            adv_asset_data["historical_prices"] = (hist.get("prices") or [])[-20:]
+
+                        if alert.alert_type == "volume_spike":
+                            adv_asset_data["volume_history"] = _get_volume_history(symbol, days=21)
+
+                        if alert.alert_type == "rebalance_drift":
+                            user_assets = session.exec(select(Asset).where(Asset.user_id == alert.user_id)).all()
+                            total_value = 0.0
+                            this_asset_value = 0.0
+                            for a in user_assets:
+                                a_data = get_asset_data(a.symbol)
+                                if not a_data:
+                                    continue
+                                pos_value = float(a.amount or 0) * float(a_data.get("current_price") or 0)
+                                total_value += pos_value
+                                if (a.symbol or "").upper().strip() == symbol:
+                                    this_asset_value = pos_value
+                            if total_value > 0:
+                                adv_asset_data["current_allocation_pct"] = (this_asset_value / total_value) * 100
+
+                        triggered = check_advanced_alert(alert, adv_asset_data)
 
                     if triggered:
-                        alert.triggered    = True
+                        alert.triggered = True
                         alert.triggered_at = str(datetime.now())
                         if not alert.recurring:
                             alert.active = False
@@ -604,6 +772,36 @@ def check_and_trigger_alerts(session, send_email_callback) -> None:
 
             except Exception as e:
                 print(f"⚠️  Alert processing for {symbol}: {e}")
+
+        for user_id, alerts in portfolio_alerts_by_user.items():
+            try:
+                portfolio_change_24h = _portfolio_change_24h_for_user(session, user_id)
+                pdata = {"percent_change_24h": portfolio_change_24h}
+                for alert in alerts:
+                    if not check_advanced_alert(alert, asset_data={}, portfolio_data=pdata):
+                        continue
+
+                    alert.triggered = True
+                    alert.triggered_at = str(datetime.now())
+                    if not alert.recurring:
+                        alert.active = False
+                    else:
+                        alert.triggered = False
+                    session.add(alert)
+
+                    user = session.get(User, alert.user_id)
+                    if user and user.email and user.notification_email:
+                        send_email_callback(
+                            user.email,
+                            user.username,
+                            "PORTFOLIO",
+                            alert.alert_type,
+                            alert.target_value,
+                            portfolio_change_24h,
+                        )
+                        print(f"✅ Alert → {user.username}: PORTFOLIO {alert.alert_type}")
+            except Exception as e:
+                print(f"⚠️  Portfolio alert processing for user={user_id}: {e}")
 
         session.commit()
 
