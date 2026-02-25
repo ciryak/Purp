@@ -37,7 +37,9 @@ const formatPct = (v) => `${v >= 0 ? '+' : ''}${(v || 0).toFixed(2)}%`;
 // INJECTED CSS — all new styles added here, no external file needed
 // ══════════════════════════════════════════════════════════════════
 function injectStyles() {
+  if (document.getElementById('purp-styles')) return; // Já injetado
   const style = document.createElement('style');
+  style.id = 'purp-styles';
   style.textContent = `
     /* ── Tax sub-tab navigation ───────────────────────────────── */
     .tax-tab-bar {

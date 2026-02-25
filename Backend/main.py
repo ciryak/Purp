@@ -13,7 +13,7 @@ import random
 import string
 import threading
 import concurrent.futures
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 import resend
 from fastapi import FastAPI, HTTPException, Depends, Header, Request, BackgroundTasks, UploadFile, File, Query
 from fastapi.middleware.cors import CORSMiddleware
@@ -42,7 +42,7 @@ from services import (
 )
 
 # ── Config ─────────────────────────────────────────────────────────────────────
-SECRET_KEY   = os.getenv("SECRET_KEY", "change-me-in-production-please")
+SECRET_KEY   = os.getenv("SECRET_KEY", "")
 ALGORITHM    = os.getenv("ALGORITHM", "HS256")
 TOKEN_EXPIRE = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", 10080))
 

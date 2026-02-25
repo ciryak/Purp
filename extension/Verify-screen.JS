@@ -8,7 +8,7 @@ function buildVerifyScreen(email) {
     const [local, domain] = email.split('@');
     if (!domain) return email;
     const vis = local.length <= 2 ? local[0] : local.slice(0, 2);
-    return `${vis}${'●'.repeat(Math.min(local.length - 2, 4))}@${domain}`;
+    return `${vis}${'●'.repeat(Math.max(0, Math.min(local.length - 2, 4)))}@${domain}`;
   })();
 
   const el = document.createElement('div');

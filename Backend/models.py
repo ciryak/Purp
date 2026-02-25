@@ -1,4 +1,5 @@
 from typing import Optional
+from datetime import datetime
 from sqlmodel import Field, SQLModel, Relationship
 
 class User(SQLModel, table=True):
@@ -11,7 +12,7 @@ class User(SQLModel, table=True):
     plan: str = Field(default="free")                          # "free" | "investor" | "tax_pro"
     stripe_customer_id: Optional[str] = None
     stripe_subscription_id: Optional[str] = None
-    plan_expires_at: Optional[str] = None
+    plan_expires_at: Optional[datetime] = Field(default=None)
 
     # Kept for backward-compat; derived from plan at runtime — do NOT rely on it for gate checks
     is_premium: bool = Field(default=False)

@@ -13,7 +13,7 @@ import time
 import yfinance as yf
 from google import genai
 import requests
-from datetime import datetime, date, timedelta
+from datetime import datetime, date, timedelta,timezone
 from dotenv import load_dotenv
 
 load_dotenv()
