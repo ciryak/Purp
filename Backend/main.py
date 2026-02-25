@@ -20,6 +20,7 @@ from pydantic import BaseModel, EmailStr
 import bcrypt
 import stripe
 from jose import JWTError, jwt
+from fastapi.staticfiles import StaticFiles
 
 from models import Asset, User, Transaction, PriceAlert, WatchlistItem, ProcessedEvent, Dividend
 from services import (
@@ -264,6 +265,7 @@ app.add_middleware(
     CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"]
 )
 
+app.mount("/static", StaticFiles(directory="static"), name="static")
 
 @app.get("/")
 async def read_index():
