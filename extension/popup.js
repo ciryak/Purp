@@ -1025,11 +1025,38 @@ function updateAlertFormFields() {
     volume_spike: 'Volume Multiplier',
     portfolio_down: 'Portfolio Drop (%)',
   };
+  const advancedTooltipMap = {
+    rsi_oversold: 'RSI Oversold: alerta quando o RSI fica abaixo do nível definido (ex.: 30) no período selecionado.',
+    rsi_overbought: 'RSI Overbought: alerta quando o RSI supera o nível definido (ex.: 70) no período selecionado.',
+    rebalance_drift: 'Rebalance Drift: alerta quando a posição se desvia da alocação-alvo acima do limite de drift.',
+    volume_spike: 'Volume Spike: alerta quando o volume de negociação sobe acima do multiplicador escolhido.',
+    portfolio_down: 'Portfolio Down (24h): alerta quando a carteira inteira cai o percentual definido nas últimas 24h.',
+  };
 
   if ($('alert-target-label')) $('alert-target-label').textContent = labelMap[type] || 'Target Value';
   if ($('alert-rsi-period-group')) $('alert-rsi-period-group').style.display = ['rsi_oversold', 'rsi_overbought'].includes(type) ? 'block' : 'none';
   if ($('alert-target-allocation-group')) $('alert-target-allocation-group').style.display = type === 'rebalance_drift' ? 'block' : 'none';
   if ($('alert-symbol-group')) $('alert-symbol-group').style.display = type === 'portfolio_down' ? 'none' : 'block';
+
+  const tooltipEl = $('alert-type-tooltip');
+  const targetInput = $('alert-target-input');
+  const targetLabel = $('alert-target-label');
+  const tooltipText = advancedTooltipMap[type] || '';
+
+  if (tooltipEl) {
+    if (tooltipText) {
+      tooltipEl.style.display = 'block';
+      tooltipEl.textContent = `💡 ${tooltipText}`;
+      tooltipEl.title = tooltipText;
+    } else {
+      tooltipEl.style.display = 'none';
+      tooltipEl.textContent = '';
+      tooltipEl.removeAttribute('title');
+    }
+  }
+
+  if (targetInput) targetInput.title = labelMap[type] || 'Threshold value used by this alert type.';
+  if (targetLabel) targetLabel.title = labelMap[type] || 'Threshold value used by this alert type.';
 
   if ($('alert-symbol-input') && type === 'portfolio_down') {
     $('alert-symbol-input').value = '';

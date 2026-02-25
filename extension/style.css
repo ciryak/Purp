@@ -676,6 +676,17 @@
      color:var(--accent-l); flex-shrink:0;
    }
    
+   .alert-tooltip {
+     margin-top:8px;
+     padding:8px 10px;
+     border:1px solid rgba(124,58,237,0.25);
+     border-radius:10px;
+     background:rgba(124,58,237,0.08);
+     color:var(--text2);
+     font-size:11px;
+     line-height:1.4;
+   }
+
    /* ═══ DETAIL VIEW ═════════════════════════════════ */
    .overlay-screen {
      position:fixed; inset:0; width:400px; max-height:760px;
