@@ -172,6 +172,45 @@
     <button type="button" id="btn-portfolio-ai" class="btn-ai">✨ Analyze Portfolio</button>
   </div>
 
+
+  <!-- Portfolio Score Card -->
+  <div class="score-card" id="portfolio-score-card">
+    <div class="score-header-row">
+      <div>
+        <div class="score-title">Portfolio Score</div>
+        <div class="score-sub">Health score from diversification, risk, tax and consistency</div>
+      </div>
+      <div id="score-grade" class="score-grade">—</div>
+    </div>
+
+    <div class="score-gauge-wrap">
+      <svg class="score-gauge" viewBox="0 0 220 120" aria-hidden="true">
+        <path d="M20 110 A90 90 0 0 1 200 110" class="gauge-track" />
+        <path d="M20 110 A90 90 0 0 1 200 110" class="gauge-value" id="score-gauge-value" />
+      </svg>
+      <div id="score-overall" class="score-overall">0</div>
+    </div>
+
+    <div class="score-dimensions">
+      <div class="score-row"><span>Diversification</span><span id="score-diversification">0</span></div>
+      <div class="score-bar"><div id="bar-diversification"></div></div>
+
+      <div class="score-row"><span>Risk-Adjusted</span><span id="score-risk">0</span></div>
+      <div class="score-bar"><div id="bar-risk"></div></div>
+
+      <div class="score-row"><span>Tax Efficiency</span><span id="score-tax">—</span></div>
+      <div class="score-bar"><div id="bar-tax"></div></div>
+
+      <div class="score-row"><span>Consistency</span><span id="score-consistency">0</span></div>
+      <div class="score-bar"><div id="bar-consistency"></div></div>
+    </div>
+
+    <ul id="score-insights" class="score-insights"></ul>
+
+    <button type="button" id="btn-share-performance" class="btn-ai" style="margin-top:10px;">Share Performance</button>
+    <div class="score-share-copy">Share your results — no dollar amounts shown</div>
+  </div>
+
   <!-- Tax Tools (tax_pro only) -->
   <div id="tax-tools-section" style="display:none;">
     <div class="section-heading-row" style="margin-top:4px;">
@@ -218,6 +257,44 @@
         Upgrade to Tax Pro — $29/mo
       </button>
     </div>
+  </div>
+
+
+
+  <!-- Net Worth -->
+  <div class="score-card" id="net-worth-card">
+    <div class="score-header-row">
+      <div>
+        <div class="score-title">Net Worth</div>
+        <div class="score-sub">Manual tracker + portfolio investments</div>
+      </div>
+      <button type="button" id="btn-net-worth-add" class="btn-export-csv">+ Add Asset/Debt</button>
+    </div>
+
+    <div id="net-worth-total" class="balance-value sensitive-value" style="font-size:28px;margin-top:2px;">$0.00</div>
+
+    <div class="score-dimensions" style="margin-top:8px;">
+      <div class="score-row"><span>Investments</span><span id="nw-investments" class="sensitive-value">$0.00</span></div>
+      <div class="score-row"><span>Cash</span><span id="nw-cash" class="sensitive-value">$0.00</span></div>
+      <div class="score-row"><span>Real Estate</span><span id="nw-real-estate" class="sensitive-value">$0.00</span></div>
+      <div class="score-row"><span>Other</span><span id="nw-other" class="sensitive-value">$0.00</span></div>
+      <div class="score-row"><span>Debts</span><span id="nw-debts" class="sensitive-value">$0.00</span></div>
+    </div>
+  </div>
+
+  <!-- Rebalance -->
+  <div class="score-card" id="rebalance-card">
+    <div class="score-header-row">
+      <div>
+        <div class="score-title">Rebalance</div>
+        <div class="score-sub">Define target allocations (sum must be 100%)</div>
+      </div>
+    </div>
+    <div id="rebalance-targets"></div>
+    <button type="button" id="btn-rebalance-calc" class="btn-ai" style="margin-top:10px;">Calculate</button>
+    <div id="rebalance-sum-warning" class="score-sub" style="margin-top:6px;color:#fca5a5;"></div>
+    <div id="rebalance-tax-badge" class="tlh-total-badge" style="margin-top:10px;display:none;">Tax Impact: $0.00</div>
+    <div id="rebalance-actions" class="score-insights" style="margin-top:8px;"></div>
   </div>
 
   <!-- Assets -->

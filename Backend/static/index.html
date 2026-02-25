@@ -946,6 +946,148 @@
     .reveal { opacity: 0; transform: translateY(24px); transition: opacity 0.6s ease, transform 0.6s ease; }
     .reveal.visible { opacity: 1; transform: translateY(0); }
 
+
+
+    /* ══════════════════════════════════════════
+       BROKERS + TAX CALCULATOR + FAQ
+    ══════════════════════════════════════════ */
+    #brokers {
+      padding: 84px max(20px, calc((100% - 1200px)/2));
+      border-top: 1px solid var(--border);
+      background: rgba(14,12,28,0.28);
+    }
+    .brokers-head { text-align:center; margin-bottom: 24px; }
+    .broker-grid {
+      display:grid;
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      gap: 12px;
+      margin-top: 18px;
+    }
+    .broker-chip {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 12px;
+      display:flex;
+      align-items:center;
+      gap: 10px;
+      min-height: 54px;
+    }
+    .broker-mark {
+      width: 30px; height: 30px; border-radius: 9px;
+      display:flex; align-items:center; justify-content:center;
+      font-weight: 800; font-size: 12px; color: #fff;
+      font-family: var(--font-head);
+      flex-shrink: 0;
+    }
+    .bm-coinbase { background: linear-gradient(135deg,#2563eb,#3b82f6); }
+    .bm-robinhood { background: linear-gradient(135deg,#16a34a,#22c55e); color:#04210f; }
+    .bm-fidelity { background: linear-gradient(135deg,#166534,#15803d); }
+    .bm-kraken { background: linear-gradient(135deg,#6d28d9,#8b5cf6); }
+    .broker-name { font-size: 14px; font-weight: 700; }
+
+    #tax-calc {
+      padding: 84px max(20px, calc((100% - 1200px)/2));
+    }
+    .tax-calc-wrap {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 18px;
+      max-width: 940px;
+      margin: 0 auto;
+    }
+    .tax-panel {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--r);
+      padding: 20px;
+    }
+    .tax-panel h3 {
+      font-family: var(--font-head);
+      font-size: clamp(24px, 5vw, 36px);
+      line-height: 1.1;
+      margin-bottom: 14px;
+    }
+    .tax-input { margin-bottom: 14px; }
+    .tax-input label {
+      display:flex; justify-content:space-between; align-items:center;
+      font-size: 13px; color: var(--txt2); margin-bottom: 8px;
+    }
+    .tax-input output { color: var(--txt); font-weight: 700; font-family: var(--font-mono); }
+    .tax-range {
+      width: 100%; appearance: none; height: 6px; border-radius: 999px;
+      background: rgba(255,255,255,0.14); outline: none;
+    }
+    .tax-range::-webkit-slider-thumb {
+      appearance: none; width: 18px; height: 18px; border-radius: 50%;
+      background: linear-gradient(135deg, var(--violet), var(--violet-l));
+      border: 2px solid #fff; box-shadow: 0 0 0 6px rgba(109,40,217,.2);
+      cursor: pointer;
+    }
+    .tax-select {
+      width: 100%;
+      background: rgba(5,4,12,.7);
+      border: 1px solid var(--border-h);
+      color: var(--txt);
+      border-radius: 10px;
+      padding: 10px 12px;
+      font-size: 14px;
+    }
+    .tax-output-card {
+      background: linear-gradient(145deg, rgba(109,40,217,.18), rgba(14,12,28,.8));
+      border: 1px solid rgba(109,40,217,.35);
+      border-radius: 14px;
+      padding: 16px;
+    }
+    .tax-big {
+      font-family: var(--font-head);
+      font-size: clamp(26px, 7vw, 40px);
+      color: var(--amber-ll);
+      line-height: 1.1;
+      margin-bottom: 8px;
+    }
+    .tax-sub { color: var(--txt2); font-size: 14px; }
+
+    #faq {
+      padding: 84px max(20px, calc((100% - 1200px)/2)) 110px;
+      border-top: 1px solid var(--border);
+      background: rgba(14,12,28,0.25);
+    }
+    .faq-head { text-align:center; margin-bottom: 22px; }
+    .faq-wrap { max-width: 940px; margin: 0 auto; }
+    .faq-item {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      margin-bottom: 10px;
+      overflow: hidden;
+    }
+    .faq-q {
+      width:100%;
+      border:0; background:none; color:var(--txt);
+      padding: 14px 16px;
+      display:flex; align-items:center; justify-content:space-between;
+      text-align:left; font-size:14px; font-weight:700;
+      cursor:pointer;
+    }
+    .faq-q span:last-child { color: var(--txt2); transition: transform .2s ease; }
+    .faq-item.open .faq-q span:last-child { transform: rotate(45deg); }
+    .faq-a {
+      max-height: 0;
+      overflow: hidden;
+      transition: max-height .25s ease;
+      color: var(--txt2);
+      font-size: 13px;
+      line-height: 1.7;
+      padding: 0 16px;
+    }
+    .faq-item.open .faq-a { padding: 0 16px 14px; max-height: 220px; }
+
+    @media (min-width: 900px) {
+      .tax-calc-wrap { grid-template-columns: 1.1fr .9fr; }
+    }
+
+
     /* ══════════════════════════════════════════
        RESPONSIVE
     ══════════════════════════════════════════ */
@@ -1144,8 +1286,10 @@
   <ul class="nav-links" role="list">
     <li><a href="#features">Features</a></li>
     <li><a href="#how">How it works</a></li>
-    <li><a href="#pricing">Pricing</a></li>
     <li><a href="#reviews">Reviews</a></li>
+    <li><a href="#tax-calc">Tax Calculator</a></li>
+    <li><a href="#faq">FAQ</a></li>
+    <li><a href="#pricing">Pricing</a></li>
   </ul>
 
   <div class="nav-actions">
@@ -1175,8 +1319,10 @@
 <div id="mobile-drawer" role="dialog" aria-label="Navigation">
   <a href="#features" class="mobile-nav-link">Features</a>
   <a href="#how" class="mobile-nav-link">How it works</a>
-  <a href="#pricing" class="mobile-nav-link">Pricing</a>
   <a href="#reviews" class="mobile-nav-link">Reviews</a>
+  <a href="#tax-calc" class="mobile-nav-link">Tax Calculator</a>
+  <a href="#faq" class="mobile-nav-link">FAQ</a>
+  <a href="#pricing" class="mobile-nav-link">Pricing</a>
   <hr style="border:none;border-top:1px solid var(--border);margin:8px 0;">
   <button class="mobile-nav-link" style="background:none;border:none;color:var(--txt2);text-align:left;cursor:pointer;" id="mobile-signin">Sign in</button>
   <button class="btn-cta" id="mobile-start" style="justify-content:center;margin-top:4px;">Get started free</button>
@@ -1542,6 +1688,85 @@
 </section>
 
 <!-- ════════ PRICING ════════ -->
+
+<section id="brokers">
+  <div class="brokers-head reveal">
+    <span class="section-tag">CSV Import Partners</span>
+    <h2 class="section-h">Supported broker logos</h2>
+    <p class="section-sub">Import statements in seconds from the brokers our users rely on every day.</p>
+  </div>
+  <div class="broker-grid reveal">
+    <div class="broker-chip"><div class="broker-mark bm-coinbase">C</div><div class="broker-name">Coinbase</div></div>
+    <div class="broker-chip"><div class="broker-mark bm-robinhood">R</div><div class="broker-name">Robinhood</div></div>
+    <div class="broker-chip"><div class="broker-mark bm-fidelity">F</div><div class="broker-name">Fidelity</div></div>
+    <div class="broker-chip"><div class="broker-mark bm-kraken">K</div><div class="broker-name">Kraken</div></div>
+  </div>
+</section>
+
+<section id="tax-calc">
+  <div class="tax-calc-wrap reveal">
+    <div class="tax-panel">
+      <span class="section-tag">Tax Pro Preview</span>
+      <h3>How much could you save?</h3>
+      <div class="tax-input">
+        <label for="tax-portfolio">My portfolio value <output id="tax-portfolio-out">$50,000</output></label>
+        <input class="tax-range" id="tax-portfolio" type="range" min="1000" max="500000" step="1000" value="50000">
+      </div>
+      <div class="tax-input">
+        <label for="tax-gains">Estimated gains this year <output id="tax-gains-out">$20,000</output></label>
+        <input class="tax-range" id="tax-gains" type="range" min="0" max="100000" step="500" value="20000">
+      </div>
+      <div class="tax-input">
+        <label for="tax-bracket">Tax bracket</label>
+        <select id="tax-bracket" class="tax-select">
+          <option value="0.22">22%</option>
+          <option value="0.24">24%</option>
+          <option value="0.32">32%</option>
+          <option value="0.35">35%</option>
+          <option value="0.37">37%</option>
+        </select>
+      </div>
+    </div>
+    <div class="tax-panel">
+      <div class="tax-output-card">
+        <p class="tax-sub" style="margin-bottom:6px;">Estimated tax savings with HIFO method:</p>
+        <div class="tax-big" id="tax-savings-output">$0/year</div>
+        <p class="tax-sub" id="tax-payback-output">Purp Tax Pro pays for itself in 0 months</p>
+      </div>
+      <p class="tax-sub" style="margin-top:12px;">Illustrative estimate only. Actual tax outcomes depend on jurisdiction, holding period, and transaction history.</p>
+    </div>
+  </div>
+</section>
+
+<section id="faq">
+  <div class="faq-head reveal">
+    <span class="section-tag">FAQ</span>
+    <h2 class="section-h">Common questions</h2>
+  </div>
+  <div class="faq-wrap reveal" id="faq-wrap">
+    <div class="faq-item">
+      <button class="faq-q" type="button"><span>Is Purp a financial advisor?</span><span>+</span></button>
+      <div class="faq-a">No. Purp provides portfolio tracking, analytics, and tax tools only. It does not provide personalized financial advice or fiduciary recommendations.</div>
+    </div>
+    <div class="faq-item">
+      <button class="faq-q" type="button"><span>Is my data secure?</span><span>+</span></button>
+      <div class="faq-a">We use authenticated API access, encrypted transport (HTTPS), and isolated backend processing for portfolio operations. Sensitive actions are token-protected and account-scoped.</div>
+    </div>
+    <div class="faq-item">
+      <button class="faq-q" type="button"><span>Which brokers are supported for CSV import?</span><span>+</span></button>
+      <div class="faq-a">Purp currently supports CSV import for Coinbase, Robinhood, Fidelity, Kraken, and Schwab.</div>
+    </div>
+    <div class="faq-item">
+      <button class="faq-q" type="button"><span>Does Purp file my taxes?</span><span>+</span></button>
+      <div class="faq-a">No. Purp does not file taxes directly, but Tax Pro exports IRS Form 8949 data so you or your accountant can file faster.</div>
+    </div>
+    <div class="faq-item">
+      <button class="faq-q" type="button"><span>Can I cancel anytime?</span><span>+</span></button>
+      <div class="faq-a">Yes. Subscriptions are managed via Stripe and can be canceled at any time from your billing settings.</div>
+    </div>
+  </div>
+</section>
+
 <section id="pricing">
   <div class="pricing-head reveal">
     <div class="section-tag">Pricing</div>
@@ -2513,6 +2738,57 @@ async function handleRegister() {
       el.textContent = '$' + base.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
     }, 3500);
   }
+
+
+  /* ═══════════════════════════════════
+     TAX SAVINGS CALCULATOR
+  ═══════════════════════════════════ */
+  function formatUSDShort(v) {
+    return '$' + Number(v || 0).toLocaleString('en-US', { maximumFractionDigits: 0 });
+  }
+
+  function updateTaxCalculator() {
+    const portfolioEl = document.getElementById('tax-portfolio');
+    const gainsEl     = document.getElementById('tax-gains');
+    const bracketEl   = document.getElementById('tax-bracket');
+    if (!portfolioEl || !gainsEl || !bracketEl) return;
+
+    const portfolio = Number(portfolioEl.value || 0);
+    const gains     = Number(gainsEl.value || 0);
+    const bracket   = Number(bracketEl.value || 0.22);
+
+    const harvestablePct = 0.18;
+    const efficiencyBoost = Math.min(1, portfolio / 250000) * 0.2 + 0.8;
+    const estimatedSavings = Math.max(0, gains * harvestablePct * bracket * efficiencyBoost);
+
+    const monthlyTaxPro = 29;
+    const paybackMonths = estimatedSavings > 0 ? Math.max(1, Math.ceil((monthlyTaxPro * 12) / estimatedSavings)) : 12;
+
+    document.getElementById('tax-portfolio-out').textContent = formatUSDShort(portfolio);
+    document.getElementById('tax-gains-out').textContent = formatUSDShort(gains);
+    document.getElementById('tax-savings-output').textContent = `${formatUSDShort(estimatedSavings)}/year`;
+    document.getElementById('tax-payback-output').textContent = `Purp Tax Pro pays for itself in ${paybackMonths} month${paybackMonths > 1 ? 's' : ''}`;
+  }
+
+  ['tax-portfolio','tax-gains','tax-bracket'].forEach((id) => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener('input', updateTaxCalculator);
+    if (el) el.addEventListener('change', updateTaxCalculator);
+  });
+  updateTaxCalculator();
+
+  /* ═══════════════════════════════════
+     FAQ ACCORDION (PURE JS)
+  ═══════════════════════════════════ */
+  document.querySelectorAll('.faq-q').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const item = btn.closest('.faq-item');
+      const open = item.classList.contains('open');
+      document.querySelectorAll('.faq-item.open').forEach((i) => i.classList.remove('open'));
+      if (!open) item.classList.add('open');
+    });
+  });
+
   animateMockBalance();
 </script>
 

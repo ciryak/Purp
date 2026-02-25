@@ -15,6 +15,9 @@ from google import genai
 import requests
 from datetime import datetime, date, timedelta,timezone
 from dotenv import load_dotenv
+from sqlmodel import select
+
+from models import Asset, Dividend, PriceAlert, Transaction, User
 
 load_dotenv()
 
@@ -383,7 +386,7 @@ def get_historical_data(symbol: str, period: str = "1mo") -> dict:
         return {"dates": [], "prices": []}
 
     base     = symbol.upper().strip().replace("-USD", "")
-    days_map = {"1d": 1, "5d": 5, "1mo": 30, "3mo": 90, "6mo": 180, "1y": 365, "2y": 730}
+    days_map = {"1d": 1, "5d": 5, "7d": 7, "1mo": 30, "3mo": 90, "6mo": 180, "1y": 365, "2y": 730}
 
     # ── Binance crypto ─────────────────────────────────────────────────────────
     if not _is_likely_stock(base) and _is_binance_crypto(base):
@@ -414,6 +417,367 @@ def get_historical_data(symbol: str, period: str = "1mo") -> dict:
             continue
 
     return {"dates": [], "prices": []}
+
+
+def _parse_iso_date(raw: str | None) -> datetime | None:
+    if not raw:
+        return None
+    txt = str(raw).strip()
+    if not txt:
+        return None
+    try:
+        return datetime.fromisoformat(txt.replace("Z", "+00:00"))
+    except ValueError:
+        try:
+            return datetime.strptime(txt[:10], "%Y-%m-%d")
+        except ValueError:
+            return None
+
+
+def generate_weekly_digest(user_id: int, session) -> dict:
+    """Build a structured weekly digest payload for an active user."""
+    now = datetime.now(timezone.utc)
+    week_ago = now - timedelta(days=7)
+
+    user = session.get(User, user_id)
+    assets = session.exec(select(Asset).where(Asset.user_id == user_id)).all()
+
+    performance_rows: list[dict] = []
+    start_total = 0.0
+    end_total = 0.0
+
+    for a in assets:
+        hist = get_historical_data(a.symbol, period="7d")
+        prices = [float(p) for p in (hist.get("prices") or []) if p is not None]
+        if len(prices) < 2:
+            data = get_asset_data(a.symbol)
+            current = float((data or {}).get("current_price") or 0)
+            prices = [current, current] if current > 0 else []
+        if len(prices) < 2:
+            continue
+
+        start_price = prices[0]
+        end_price = prices[-1]
+        amount = float(a.amount or 0)
+        start_value = start_price * amount
+        end_value = end_price * amount
+
+        if start_value <= 0 and end_value <= 0:
+            continue
+
+        pct_change = ((end_price - start_price) / start_price) * 100 if start_price > 0 else 0.0
+        performance_rows.append({
+            "symbol": a.symbol,
+            "start_price": round(start_price, 4),
+            "end_price": round(end_price, 4),
+            "change_pct": round(pct_change, 2),
+            "value_change": round(end_value - start_value, 2),
+        })
+        start_total += start_value
+        end_total += end_value
+
+    performance_pct = ((end_total - start_total) / start_total) * 100 if start_total > 0 else 0.0
+
+    best = max(performance_rows, key=lambda x: x["change_pct"], default=None)
+    worst = min(performance_rows, key=lambda x: x["change_pct"], default=None)
+
+    weekly_dividends = session.exec(select(Dividend).where(Dividend.user_id == user_id)).all()
+    dividends_total = 0.0
+    dividends_items = []
+    for d in weekly_dividends:
+        pay_date = _parse_iso_date(d.pay_date) or _parse_iso_date(d.recorded_at)
+        if pay_date and pay_date.tzinfo is None:
+            pay_date = pay_date.replace(tzinfo=timezone.utc)
+        if pay_date and pay_date >= week_ago:
+            amount = float(d.total_received or 0)
+            dividends_total += amount
+            dividends_items.append({
+                "symbol": d.symbol,
+                "amount": round(amount, 2),
+                "pay_date": d.pay_date,
+            })
+
+    triggered_alerts = session.exec(
+        select(PriceAlert).where(
+            PriceAlert.user_id == user_id,
+            PriceAlert.triggered == True,
+        )
+    ).all()
+    alert_count = 0
+    for alert in triggered_alerts:
+        trg = _parse_iso_date(alert.triggered_at)
+        if trg and trg.tzinfo is None:
+            trg = trg.replace(tzinfo=timezone.utc)
+        if trg and trg >= week_ago:
+            alert_count += 1
+
+    txs = session.exec(select(Transaction).where(Transaction.user_id == user_id)).all()
+    weekly_tx_count = 0
+    for tx in txs:
+        tx_dt = _parse_iso_date(tx.date) or _parse_iso_date(tx.created_at)
+        if tx_dt and tx_dt.tzinfo is None:
+            tx_dt = tx_dt.replace(tzinfo=timezone.utc)
+        if tx_dt and tx_dt >= week_ago:
+            weekly_tx_count += 1
+
+    tax_opportunities = []
+    if user and user.plan == "tax_pro":
+        tlh_input = []
+        for a in assets:
+            ad = get_asset_data(a.symbol)
+            if not ad:
+                continue
+            tlh_input.append({
+                "symbol": a.symbol,
+                "current_price": ad.get("current_price", 0),
+                "purchase_price": a.purchase_price,
+                "amount": a.amount,
+                "purchase_date": a.purchase_date,
+            })
+        tax_opportunities = calculate_tax_loss_harvesting(tlh_input)
+
+    return {
+        "window": {
+            "start": week_ago.isoformat(),
+            "end": now.isoformat(),
+        },
+        "performance": {
+            "start_value": round(start_total, 2),
+            "end_value": round(end_total, 2),
+            "change_value": round(end_total - start_total, 2),
+            "change_pct": round(performance_pct, 2),
+        },
+        "best_performer": best,
+        "worst_performer": worst,
+        "dividends": {
+            "total": round(dividends_total, 2),
+            "items": dividends_items,
+        },
+        "alerts_triggered": alert_count,
+        "transactions_count": weekly_tx_count,
+        "tax_opportunities": tax_opportunities,
+        "is_tax_pro": bool(user and user.plan == "tax_pro"),
+    }
+
+
+
+
+def _tx_attr(tx, key: str, default=None):
+    if isinstance(tx, dict):
+        return tx.get(key, default)
+    return getattr(tx, key, default)
+
+
+def _clamp_score(v: float) -> int:
+    return int(max(0, min(100, round(v))))
+
+
+def _score_grade(score: int) -> str:
+    if score >= 93:
+        return "A"
+    if score >= 88:
+        return "A-"
+    if score >= 83:
+        return "B+"
+    if score >= 78:
+        return "B"
+    if score >= 73:
+        return "B-"
+    if score >= 68:
+        return "C+"
+    if score >= 63:
+        return "C"
+    if score >= 58:
+        return "C-"
+    if score >= 50:
+        return "D"
+    return "F"
+
+
+def calculate_portfolio_score(assets: list[dict], transactions: list) -> dict:
+    """Calculate a 0-100 portfolio score across diversification, risk, tax and consistency."""
+    assets = assets or []
+    transactions = transactions or []
+    insights: list[str] = []
+
+    if not assets:
+        return {
+            "overall": 0,
+            "diversification": 0,
+            "risk_adjusted": 0,
+            "tax_efficiency": None,
+            "consistency": 0,
+            "grade": "F",
+            "insights": ["Add assets to start building your Portfolio Score."],
+        }
+
+    is_tax_pro = bool(any(a.get("is_tax_pro") for a in assets))
+
+    # 1) Diversification
+    total_value = sum(float(a.get("position_value") or (float(a.get("amount") or 0) * float(a.get("current_price") or 0))) for a in assets)
+    n_assets = len(assets)
+    max_conc = 0.0
+    types = set()
+    if total_value > 0:
+        for a in assets:
+            val = float(a.get("position_value") or (float(a.get("amount") or 0) * float(a.get("current_price") or 0)))
+            max_conc = max(max_conc, val / total_value)
+            types.add((a.get("type") or "").lower())
+
+    diversification = 45.0
+    diversification += min(n_assets, 5) * 10
+    diversification -= max(0.0, (max_conc - 0.40) * 120)
+    if types == {"crypto"} or types == {"stock"}:
+        diversification -= 12
+        insights.append("Try mixing stocks and crypto to improve diversification.")
+    if max_conc > 0.4:
+        top = max(assets, key=lambda a: float(a.get("position_value") or 0))
+        insights.append(f"Your {top.get('symbol', 'top')} position is too concentrated at {max_conc * 100:.0f}%.")
+    diversification = _clamp_score(diversification)
+
+    # 2) Risk-adjusted (lower portfolio volatility than S&P500 => higher)
+    port_returns: list[float] = []
+    hist_pairs = []
+    for a in assets:
+        h = get_historical_data(a.get("real_symbol") or a.get("symbol"), period="1mo")
+        prices = [float(x) for x in (h.get("prices") or []) if x]
+        if len(prices) < 8:
+            continue
+        rets = []
+        for i in range(1, len(prices)):
+            if prices[i-1] > 0:
+                rets.append((prices[i] / prices[i-1]) - 1)
+        if rets:
+            val = float(a.get("position_value") or 0)
+            hist_pairs.append((rets, val))
+
+    if hist_pairs:
+        min_len = min(len(r) for r, _ in hist_pairs)
+        if min_len > 2:
+            w_sum = sum(v for _, v in hist_pairs) or len(hist_pairs)
+            for i in range(min_len):
+                port_returns.append(sum((r[i] * (v / w_sum if w_sum else 0)) for r, v in hist_pairs))
+
+    bench = get_historical_data("^GSPC", period="1mo")
+    bench_prices = [float(x) for x in (bench.get("prices") or []) if x]
+    bench_returns = [((bench_prices[i] / bench_prices[i-1]) - 1) for i in range(1, len(bench_prices)) if bench_prices[i-1] > 0]
+
+    def _vol(series: list[float]) -> float:
+        if len(series) < 2:
+            return 0.0
+        mean = sum(series) / len(series)
+        var = sum((x - mean) ** 2 for x in series) / (len(series) - 1)
+        return var ** 0.5
+
+    port_vol = _vol(port_returns)
+    bench_vol = _vol(bench_returns)
+    risk_adjusted = 60.0
+    if port_vol > 0 and bench_vol > 0:
+        rel = port_vol / bench_vol
+        risk_adjusted = 80 - ((rel - 1) * 40)
+        if rel < 1:
+            insights.append("Great risk control: your portfolio was less volatile than the S&P 500.")
+        elif rel > 1.3:
+            insights.append("Portfolio volatility is significantly above S&P 500; consider reducing high-beta concentration.")
+    risk_adjusted = _clamp_score(risk_adjusted)
+
+    # 3) Tax efficiency
+    tax_efficiency = None
+    if is_tax_pro:
+        lt_value = 0.0
+        st_value = 0.0
+        for a in assets:
+            v = float(a.get("position_value") or 0)
+            days = int(a.get("days_held") or 0)
+            if days >= 365:
+                lt_value += v
+            else:
+                st_value += v
+        total_holding_value = lt_value + st_value
+        long_term_ratio = (lt_value / total_holding_value) if total_holding_value > 0 else 0.0
+        tax_efficiency = 55 + long_term_ratio * 45
+
+        tlh_input = []
+        for a in assets:
+            tlh_input.append({
+                "symbol": a.get("symbol"),
+                "current_price": a.get("current_price", 0),
+                "purchase_price": a.get("purchase_price", 0),
+                "amount": a.get("amount", 0),
+                "purchase_date": a.get("purchase_date"),
+            })
+        missed = calculate_tax_loss_harvesting(tlh_input)
+        if missed:
+            penalty = min(25, len(missed) * 5)
+            tax_efficiency -= penalty
+            insights.append(f"You have {len(missed)} tax-loss harvesting opportunities still open.")
+        tax_efficiency = _clamp_score(tax_efficiency)
+
+    # 4) Consistency (DCA regularity + panic selling)
+    buy_dates = []
+    panic_sells = 0
+    buy_prices_by_symbol: dict[str, list[float]] = {}
+    for tx in transactions:
+        tx_type = str(_tx_attr(tx, "type", "")).lower()
+        symbol = str(_tx_attr(tx, "symbol", "") or "").upper()
+        tx_date = _parse_iso_date(_tx_attr(tx, "date")) or _parse_iso_date(_tx_attr(tx, "created_at"))
+        price = float(_tx_attr(tx, "price", 0) or 0)
+        realized = _tx_attr(tx, "realized_pnl", None)
+
+        if tx_type == "buy" and tx_date:
+            buy_dates.append(tx_date)
+            if price > 0:
+                buy_prices_by_symbol.setdefault(symbol, []).append(price)
+
+        if tx_type == "sell":
+            avg_buy = 0.0
+            buys = buy_prices_by_symbol.get(symbol, [])
+            if buys:
+                avg_buy = sum(buys) / len(buys)
+            is_panic = False
+            if avg_buy > 0 and price > 0 and ((price / avg_buy) - 1) <= -0.10:
+                is_panic = True
+            if realized is not None and float(realized) < 0 and avg_buy > 0 and price <= avg_buy * 0.95:
+                is_panic = True
+            if is_panic:
+                panic_sells += 1
+
+    consistency = 65.0
+    if buy_dates:
+        month_counts: dict[str, int] = {}
+        for d in buy_dates:
+            month_counts[d.strftime("%Y-%m")] = month_counts.get(d.strftime("%Y-%m"), 0) + 1
+        counts = list(month_counts.values())
+        mean_c = sum(counts) / len(counts)
+        std_c = ((sum((x - mean_c) ** 2 for x in counts) / len(counts)) ** 0.5) if counts else 0
+        cv = (std_c / mean_c) if mean_c > 0 else 1
+        consistency += max(0, 25 - cv * 30)
+        if cv < 0.6:
+            insights.append("Strong DCA consistency: your contributions are regular.")
+    else:
+        consistency -= 20
+        insights.append("No recent buy activity detected; consistency improves with regular contributions.")
+
+    if panic_sells > 0:
+        consistency -= min(30, panic_sells * 10)
+        insights.append(f"Detected {panic_sells} potential panic sell event(s) during drawdowns.")
+    consistency = _clamp_score(consistency)
+
+    if is_tax_pro and tax_efficiency is not None:
+        overall = round(diversification * 0.30 + risk_adjusted * 0.30 + tax_efficiency * 0.20 + consistency * 0.20)
+    else:
+        overall = round(diversification * 0.375 + risk_adjusted * 0.375 + consistency * 0.25)
+
+    overall = _clamp_score(overall)
+    return {
+        "overall": overall,
+        "diversification": diversification,
+        "risk_adjusted": risk_adjusted,
+        "tax_efficiency": tax_efficiency,
+        "consistency": consistency,
+        "grade": _score_grade(overall),
+        "insights": insights[:6],
+    }
 
 
 def search_symbols(query: str) -> list[dict]:

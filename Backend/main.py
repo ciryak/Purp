@@ -18,6 +18,7 @@ import resend
 from fastapi import FastAPI, HTTPException, Depends, Header, Request, BackgroundTasks, UploadFile, File, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
+from PIL import Image, ImageDraw, ImageFont
 from sqlmodel import Session, select, create_engine, SQLModel
 from pydantic import BaseModel, EmailStr
 import bcrypt
@@ -25,7 +26,7 @@ import stripe
 from jose import JWTError, jwt
 from fastapi.staticfiles import StaticFiles
 
-from models import Asset, User, Transaction, PriceAlert, WatchlistItem, ProcessedEvent, Dividend, EmailVerification
+from models import Asset, User, Transaction, PriceAlert, WatchlistItem, ProcessedEvent, Dividend, EmailVerification, NetWorthEntry
 from services import (
     get_asset_data,
     get_ai_analysis,
@@ -39,6 +40,8 @@ from services import (
     calculate_cost_basis,
     generate_form_8949,
     get_dividend_data,
+    generate_weekly_digest,
+    calculate_portfolio_score,
 )
 
 # ── Config ─────────────────────────────────────────────────────────────────────
@@ -272,6 +275,108 @@ def send_alert_email_async(
     ).start()
 
 
+def _send_weekly_digest_email(to_email: str, username: str, digest_data: dict) -> None:
+    perf = digest_data.get("performance", {})
+    change_pct = float(perf.get("change_pct", 0) or 0)
+    change_value = float(perf.get("change_value", 0) or 0)
+    color = "#22c55e" if change_pct >= 0 else "#ef4444"
+    sign = "+" if change_pct >= 0 else ""
+
+    best = digest_data.get("best_performer") or {}
+    worst = digest_data.get("worst_performer") or {}
+    dividends = digest_data.get("dividends", {})
+    tax_ops = digest_data.get("tax_opportunities") or []
+    alerts_triggered = int(digest_data.get("alerts_triggered", 0) or 0)
+    tx_count = int(digest_data.get("transactions_count", 0) or 0)
+
+    dividends_html = ""
+    if float(dividends.get("total", 0) or 0) > 0:
+        items_html = "".join(
+            f"<li style='margin:6px 0;'>🪙 <strong>{item.get('symbol','')}</strong>: ${float(item.get('amount',0) or 0):,.2f}</li>"
+            for item in dividends.get("items", [])
+        )
+        dividends_html = f"""
+        <tr><td style="padding:0 36px 18px;">
+          <div style="background:rgba(34,197,94,.08);border:1px solid rgba(34,197,94,.3);border-radius:14px;padding:18px;">
+            <h3 style="margin:0 0 8px;color:#86efac;font-size:15px;">Dividends Received</h3>
+            <p style="margin:0 0 10px;color:#f1f0f5;font-size:13px;">Total this week: <strong>${float(dividends.get('total',0) or 0):,.2f}</strong></p>
+            <ul style="margin:0;padding-left:18px;color:rgba(241,240,245,.8);font-size:12px;">{items_html}</ul>
+          </div>
+        </td></tr>
+        """
+
+    tax_html = ""
+    if digest_data.get("is_tax_pro") and tax_ops:
+        top_ops = "".join(
+            f"<li style='margin:6px 0;'><strong>{op.get('symbol','')}</strong> — est. tax saved ${float(op.get('estimated_tax_saved',0) or 0):,.2f}</li>"
+            for op in tax_ops[:3]
+        )
+        tax_html = f"""
+        <tr><td style="padding:0 36px 18px;">
+          <div style="background:rgba(236,72,153,.08);border:1px solid rgba(236,72,153,.3);border-radius:14px;padding:18px;">
+            <h3 style="margin:0 0 10px;color:#f9a8d4;font-size:15px;">Tax Opportunities</h3>
+            <ul style="margin:0;padding-left:18px;color:rgba(241,240,245,.8);font-size:12px;">{top_ops}</ul>
+          </div>
+        </td></tr>
+        """
+
+    html = f"""<!DOCTYPE html><html><body style="margin:0;padding:0;background:#0a0914;font-family:'Segoe UI',Arial,sans-serif;">
+<table width="100%" cellpadding="0" cellspacing="0"><tr><td align="center" style="padding:48px 16px;">
+<table width="560" cellpadding="0" cellspacing="0" style="background:#110f20;border-radius:20px;border:1px solid rgba(124,58,237,.28);overflow:hidden;">
+  <tr><td style="background:linear-gradient(135deg,#7c3aed,#a78bfa);padding:34px 36px;text-align:center;">
+    <h1 style="margin:0;color:#fff;font-size:24px;font-weight:800;">Your Week in Review — Purp</h1>
+    <p style="margin:10px 0 0;color:rgba(255,255,255,.82);font-size:13px;">Hey <strong>{username}</strong>, here is your weekly portfolio snapshot.</p>
+  </td></tr>
+
+  <tr><td style="padding:24px 36px 14px;">
+    <div style="background:rgba(124,58,237,.12);border:1px solid rgba(124,58,237,.35);border-radius:14px;padding:18px;text-align:center;">
+      <p style="margin:0;color:rgba(241,240,245,.55);font-size:11px;text-transform:uppercase;letter-spacing:.7px;">Weekly Performance</p>
+      <p style="margin:8px 0 2px;color:{color};font-size:31px;font-weight:900;">{sign}{change_pct:.2f}%</p>
+      <p style="margin:0;color:rgba(241,240,245,.75);font-size:13px;">{sign}${change_value:,.2f} this week</p>
+    </div>
+  </td></tr>
+
+  <tr><td style="padding:8px 36px 18px;">
+    <table width="100%" cellpadding="0" cellspacing="0"><tr>
+      <td width="50%" style="padding-right:8px;">
+        <div style="background:rgba(34,197,94,.08);border:1px solid rgba(34,197,94,.26);border-radius:12px;padding:14px;">
+          <p style="margin:0;color:rgba(241,240,245,.45);font-size:11px;text-transform:uppercase;">Best Performer</p>
+          <p style="margin:8px 0 0;color:#fff;font-size:16px;font-weight:700;">{best.get('symbol','—')}</p>
+          <p style="margin:4px 0 0;color:#86efac;font-size:12px;">{best.get('change_pct',0):+.2f}%</p>
+        </div>
+      </td>
+      <td width="50%" style="padding-left:8px;">
+        <div style="background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.26);border-radius:12px;padding:14px;">
+          <p style="margin:0;color:rgba(241,240,245,.45);font-size:11px;text-transform:uppercase;">Worst Performer</p>
+          <p style="margin:8px 0 0;color:#fff;font-size:16px;font-weight:700;">{worst.get('symbol','—')}</p>
+          <p style="margin:4px 0 0;color:#fca5a5;font-size:12px;">{worst.get('change_pct',0):+.2f}%</p>
+        </div>
+      </td>
+    </tr></table>
+  </td></tr>
+
+  {dividends_html}
+  {tax_html}
+
+  <tr><td style="padding:0 36px 26px;">
+    <div style="border-top:1px solid rgba(124,58,237,.28);padding-top:16px;">
+      <p style="margin:0;color:rgba(241,240,245,.75);font-size:12px;">Alerts triggered: <strong>{alerts_triggered}</strong> · Transactions: <strong>{tx_count}</strong></p>
+      <p style="margin:14px 0 0;font-size:12px;"><a href="https://www.getpurpai.com" style="color:#a78bfa;text-decoration:none;">Open Purp App</a> · <a href="https://www.getpurpai.com/settings" style="color:#a78bfa;text-decoration:none;">Manage notifications</a></p>
+    </div>
+  </td></tr>
+</table></td></tr></table></body></html>"""
+
+    _send_email(to_email, "Your Week in Review — Purp", html)
+
+
+def send_weekly_digest_email_async(to_email: str, username: str, digest_data: dict) -> None:
+    threading.Thread(
+        target=_send_weekly_digest_email,
+        args=(to_email, username, digest_data),
+        daemon=True,
+    ).start()
+
+
 # ── Verification code helpers ──────────────────────────────────────────────────
 
 def _generate_code() -> str:
@@ -327,6 +432,17 @@ def create_db() -> None:
             conn.commit()
     except Exception as e:
         print(f"⚠️  Email index: {e}")
+
+    try:
+        with engine.connect() as conn:
+            if _is_postgres:
+                conn.exec_driver_sql('ALTER TABLE "user" ADD COLUMN notification_digest BOOLEAN DEFAULT TRUE')
+            else:
+                conn.exec_driver_sql('ALTER TABLE user ADD COLUMN notification_digest BOOLEAN DEFAULT 1')
+            conn.commit()
+            print("✅ Added notification_digest column")
+    except Exception as e:
+        print(f"ℹ️  notification_digest migration: {e}")
 
     try:
         with Session(engine) as s:
@@ -442,6 +558,22 @@ class AlertCreateInput(BaseModel):
 
 class CheckoutInput(BaseModel):
     plan: str = "investor"
+
+
+class PreferencesInput(BaseModel):
+    notification_email: bool
+    notification_digest: bool
+    notification_browser: bool
+
+
+class NetWorthEntryInput(BaseModel):
+    category: str
+    label: str
+    value: float
+
+
+class RebalanceInput(BaseModel):
+    targets: dict[str, float]
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -597,7 +729,7 @@ def auth_me(user_id: int = Depends(get_current_user), session: Session = Depends
     user = session.get(User, user_id)
     if not user:
         raise HTTPException(404, "User not found")
-    return {**_user_payload(user), "email": user.email, "is_verified": user.is_verified}
+    return {**_user_payload(user), "email": user.email, "is_verified": user.is_verified, "notification_digest": user.notification_digest}
 
 
 @app.post("/auth/logout")
@@ -605,13 +737,40 @@ def logout():
     return {"ok": True}
 
 
+@app.patch("/user/preferences")
+def update_user_preferences(
+    data: PreferencesInput,
+    user_id: int = Depends(get_current_user),
+    session: Session = Depends(get_session),
+):
+    user = session.get(User, user_id)
+    if not user:
+        raise HTTPException(404, "User not found")
+
+    user.notification_email = data.notification_email
+    user.notification_digest = data.notification_digest
+    user.notification_browser = data.notification_browser
+    session.add(user)
+    session.commit()
+
+    return {
+        "ok": True,
+        "notification_email": user.notification_email,
+        "notification_digest": user.notification_digest,
+        "notification_browser": user.notification_browser,
+    }
+
+
 def _user_payload(user: User) -> dict:
     return {
-        "id":          user.id,
-        "username":    user.username,
-        "plan":        user.plan,
-        "is_premium":  has_plan(user, "investor", "tax_pro"),
-        "is_verified": user.is_verified,
+        "id":                   user.id,
+        "username":             user.username,
+        "plan":                 user.plan,
+        "is_premium":           has_plan(user, "investor", "tax_pro"),
+        "is_verified":          user.is_verified,
+        "notification_email":   user.notification_email,
+        "notification_digest":  user.notification_digest,
+        "notification_browser": user.notification_browser,
     }
 
 
@@ -804,6 +963,30 @@ def check_alerts_endpoint(background_tasks: BackgroundTasks):
 def _run_alert_check():
     with Session(engine) as session:
         check_and_trigger_alerts(session, send_alert_email_async)
+
+
+@app.post("/digest/send-weekly")
+def send_weekly_digest(session: Session = Depends(get_session)):
+    users = session.exec(
+        select(User).where(
+            User.notification_email == True,
+            User.notification_digest == True,
+            User.email.is_not(None),
+        )
+    ).all()
+
+    sent = 0
+    skipped = 0
+    for user in users:
+        assets = session.exec(select(Asset).where(Asset.user_id == user.id)).all()
+        if not assets:
+            skipped += 1
+            continue
+        digest_data = generate_weekly_digest(user.id, session)
+        send_weekly_digest_email_async(user.email, user.username, digest_data)
+        sent += 1
+
+    return {"sent": sent, "skipped": skipped}
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -1016,6 +1199,31 @@ async def import_csv(
             "total_parsed": len(transactions), "broker": broker}
 
 
+def _safe_font(size: int):
+    try:
+        return ImageFont.truetype("DejaVuSans-Bold.ttf", size)
+    except Exception:
+        return ImageFont.load_default()
+
+
+def _portfolio_period_performance(session: Session, user_id: int, period: str) -> tuple[float, float]:
+    assets = session.exec(select(Asset).where(Asset.user_id == user_id)).all()
+    if not assets:
+        return 0.0, 0.0
+    start_total = 0.0
+    end_total = 0.0
+    for a in assets:
+        hist = get_historical_data(a.symbol, period)
+        prices = [float(p) for p in (hist.get("prices") or []) if p is not None]
+        if len(prices) < 2:
+            continue
+        start_total += prices[0] * a.amount
+        end_total += prices[-1] * a.amount
+    if start_total <= 0:
+        return 0.0, 0.0
+    return ((end_total - start_total) / start_total) * 100, end_total
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # PORTFOLIO
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -1101,6 +1309,345 @@ def portfolio_summary(user_id: int = Depends(get_current_user), session: Session
         "asset_count": len(assets), "total_invested": total_invested,
         "realized_pnl": realized_pnl, "transaction_count": len(txs),
     }
+
+
+@app.get("/net-worth")
+def get_net_worth(user_id: int = Depends(get_current_user), session: Session = Depends(get_session)):
+    assets = session.exec(select(Asset).where(Asset.user_id == user_id)).all()
+
+    portfolio_value = 0.0
+    manual_by_category: dict[str, list[dict]] = {
+        "cash": [], "real_estate": [], "vehicle": [], "other_assets": [], "debt": []
+    }
+
+    for a in assets:
+        md = get_asset_data(a.symbol)
+        if not md:
+            continue
+        portfolio_value += float(md.get("current_price", 0) or 0) * float(a.amount or 0)
+
+    entries = session.exec(select(NetWorthEntry).where(NetWorthEntry.user_id == user_id)).all()
+    manual_assets_total = 0.0
+    total_debts = 0.0
+    for e in entries:
+        cat = (e.category or "other_assets").lower()
+        if cat not in manual_by_category:
+            cat = "other_assets"
+        payload = {
+            "id": e.id,
+            "category": cat,
+            "label": e.label,
+            "value": e.value,
+            "updated_at": e.updated_at,
+        }
+        manual_by_category[cat].append(payload)
+        if e.value >= 0:
+            manual_assets_total += float(e.value)
+        else:
+            total_debts += float(e.value)
+
+    total_assets = portfolio_value + manual_assets_total
+    net_worth = total_assets + total_debts
+
+    # monthly history based on portfolio 1y history + current manual snapshot
+    history = []
+    p_hist = portfolio_history(period="1y", benchmark="^GSPC", user_id=user_id, session=session)
+    dates = p_hist.get("dates") or []
+    values = p_hist.get("portfolio") or []
+    by_month: dict[str, float] = {}
+    for d, v in zip(dates, values):
+        mkey = str(d)
+        if len(mkey) >= 5:
+            by_month[mkey] = float(v or 0)
+    for k in sorted(by_month.keys())[-12:]:
+        history.append({"month": k, "net_worth": round(by_month[k] + manual_assets_total + total_debts, 2)})
+
+    return {
+        "portfolio_value": round(portfolio_value, 2),
+        "manual_assets": [item for c in ("cash", "real_estate", "vehicle", "other_assets") for item in manual_by_category[c]],
+        "debts": manual_by_category["debt"],
+        "total_assets": round(total_assets, 2),
+        "total_debts": round(total_debts, 2),
+        "net_worth": round(net_worth, 2),
+        "breakdown": {
+            "investments": round(portfolio_value, 2),
+            "cash": round(sum(i["value"] for i in manual_by_category["cash"]), 2),
+            "real_estate": round(sum(i["value"] for i in manual_by_category["real_estate"]), 2),
+            "other": round(sum(i["value"] for i in manual_by_category["vehicle"] + manual_by_category["other_assets"]), 2),
+            "debts": round(total_debts, 2),
+        },
+        "history": history,
+    }
+
+
+@app.post("/net-worth/entry")
+def create_net_worth_entry(
+    data: NetWorthEntryInput,
+    user_id: int = Depends(get_current_user),
+    session: Session = Depends(get_session),
+):
+    category = data.category.strip().lower()
+    allowed = {"real_estate", "cash", "vehicle", "other_assets", "debt"}
+    if category not in allowed:
+        raise HTTPException(400, f"Invalid category. Use: {', '.join(sorted(allowed))}")
+
+    value = float(data.value)
+    if category == "debt" and value > 0:
+        value = -value
+
+    entry = NetWorthEntry(
+        user_id=user_id,
+        category=category,
+        label=data.label.strip(),
+        value=value,
+        updated_at=datetime.utcnow().isoformat(),
+    )
+    session.add(entry)
+    session.commit()
+    session.refresh(entry)
+    return entry
+
+
+@app.put("/net-worth/entry/{entry_id}")
+def update_net_worth_entry(
+    entry_id: int,
+    data: NetWorthEntryInput,
+    user_id: int = Depends(get_current_user),
+    session: Session = Depends(get_session),
+):
+    entry = session.get(NetWorthEntry, entry_id)
+    if not entry or entry.user_id != user_id:
+        raise HTTPException(404, "Entry not found")
+
+    category = data.category.strip().lower()
+    allowed = {"real_estate", "cash", "vehicle", "other_assets", "debt"}
+    if category not in allowed:
+        raise HTTPException(400, f"Invalid category. Use: {', '.join(sorted(allowed))}")
+
+    value = float(data.value)
+    if category == "debt" and value > 0:
+        value = -value
+
+    entry.category = category
+    entry.label = data.label.strip()
+    entry.value = value
+    entry.updated_at = datetime.utcnow().isoformat()
+    session.add(entry)
+    session.commit()
+    session.refresh(entry)
+    return entry
+
+
+@app.delete("/net-worth/entry/{entry_id}")
+def delete_net_worth_entry(
+    entry_id: int,
+    user_id: int = Depends(get_current_user),
+    session: Session = Depends(get_session),
+):
+    entry = session.get(NetWorthEntry, entry_id)
+    if not entry or entry.user_id != user_id:
+        raise HTTPException(404, "Entry not found")
+    session.delete(entry)
+    session.commit()
+    return {"ok": True}
+
+
+@app.post("/portfolio/rebalance")
+def portfolio_rebalance(
+    data: RebalanceInput,
+    user_id: int = Depends(get_current_user),
+    session: Session = Depends(get_session),
+):
+    user = session.get(User, user_id)
+    if not user:
+        raise HTTPException(404, "User not found")
+
+    targets = {k.strip().upper(): float(v) for k, v in (data.targets or {}).items() if k and float(v) >= 0}
+    if not targets:
+        raise HTTPException(400, "targets is required")
+    total_target = sum(targets.values())
+    if abs(total_target - 100.0) > 0.01:
+        raise HTTPException(400, "Target allocation must sum to 100")
+
+    assets = session.exec(select(Asset).where(Asset.user_id == user_id)).all()
+    holdings: dict[str, dict] = {}
+    total_value = 0.0
+
+    for a in assets:
+        md = get_asset_data(a.symbol)
+        if not md:
+            continue
+        symbol = (md.get("symbol") or a.symbol).upper()
+        price = float(md.get("current_price") or 0)
+        value = price * float(a.amount or 0)
+        total_value += value
+        holdings[symbol] = {
+            "amount": float(a.amount or 0),
+            "price": price,
+            "value": value,
+            "purchase_price": float(a.purchase_price or 0),
+        }
+
+    symbols = sorted(set(list(targets.keys()) + list(holdings.keys())))
+    actions = []
+    estimated_tax_impact = 0.0
+
+    for sym in symbols:
+        target_pct = float(targets.get(sym, 0.0))
+        holding = holdings.get(sym)
+
+        current_value = float(holding["value"]) if holding else 0.0
+        current_pct = (current_value / total_value * 100) if total_value > 0 else 0.0
+        drift = current_pct - target_pct
+        if abs(drift) <= 2.0:
+            continue
+
+        target_value = (target_pct / 100.0) * total_value
+        delta_usd = target_value - current_value
+        action = "buy" if delta_usd > 0 else "sell"
+        price = float(holding["price"]) if holding else 0.0
+        if price <= 0:
+            ad = get_asset_data(sym)
+            price = float((ad or {}).get("current_price") or 0)
+        amount = abs(delta_usd) / price if price > 0 else 0.0
+
+        actions.append({
+            "symbol": sym,
+            "action": action,
+            "amount": round(amount, 8),
+            "usd_value": round(abs(delta_usd), 2),
+            "reason": f"{current_pct:.1f}% → {target_pct:.1f}%",
+            "needs_rebalancing": True,
+            "current_allocation": round(current_pct, 2),
+            "target_allocation": round(target_pct, 2),
+        })
+
+        if action == "sell" and user.plan == "tax_pro" and holding:
+            estimated_gain = max(0.0, (price - float(holding.get("purchase_price") or 0)) * amount)
+            estimated_tax_impact += estimated_gain * 0.20
+
+    return {
+        "actions": actions,
+        "total_transactions": len(actions),
+        "estimated_tax_impact": round(estimated_tax_impact, 2),
+    }
+
+
+@app.get("/portfolio/score")
+def portfolio_score(user_id: int = Depends(get_current_user), session: Session = Depends(get_session)):
+    user = session.get(User, user_id)
+    if not user:
+        raise HTTPException(404, "User not found")
+
+    assets = session.exec(select(Asset).where(Asset.user_id == user_id)).all()
+    txs = session.exec(select(Transaction).where(Transaction.user_id == user_id)).all()
+
+    enriched_assets = []
+    for a in assets:
+        md = get_asset_data(a.symbol)
+        if not md:
+            continue
+        days = 0
+        if a.purchase_date:
+            try:
+                days = (date.today() - datetime.strptime(a.purchase_date[:10], "%Y-%m-%d").date()).days
+            except Exception:
+                pass
+        current_price = float(md.get("current_price") or 0)
+        enriched_assets.append({
+            "symbol": a.symbol,
+            "real_symbol": md.get("real_symbol", a.symbol),
+            "type": md.get("type", a.type),
+            "amount": a.amount,
+            "purchase_price": a.purchase_price,
+            "purchase_date": a.purchase_date,
+            "current_price": current_price,
+            "position_value": current_price * float(a.amount or 0),
+            "days_held": days,
+            "is_tax_pro": user.plan == "tax_pro",
+        })
+
+    score = calculate_portfolio_score(enriched_assets, txs)
+    if user.plan != "tax_pro":
+        score["tax_efficiency"] = None
+    return score
+
+
+@app.get("/portfolio/share-card")
+def portfolio_share_card(
+    period: str = Query(default="1mo"),
+    user_id: int = Depends(get_current_user),
+    session: Session = Depends(get_session),
+):
+    user = session.get(User, user_id)
+    if not user:
+        raise HTTPException(404, "User not found")
+
+    valid_periods = {"1mo": "this month", "3mo": "this quarter", "6mo": "last 6 months", "1y": "this year"}
+    if period not in valid_periods:
+        raise HTTPException(400, "Invalid period")
+
+    period_perf, _ = _portfolio_period_performance(session, user_id, period)
+    year_perf, _ = _portfolio_period_performance(session, user_id, "1y")
+
+    bench_hist = get_historical_data("^GSPC", period)
+    b_prices = [float(v) for v in (bench_hist.get("prices") or []) if v is not None]
+    bench_perf = 0.0
+    if len(b_prices) >= 2 and b_prices[0] > 0:
+        bench_perf = ((b_prices[-1] - b_prices[0]) / b_prices[0]) * 100
+
+    assets = session.exec(select(Asset).where(Asset.user_id == user_id)).all()
+    txs = session.exec(select(Transaction).where(Transaction.user_id == user_id)).all()
+    enriched_assets = []
+    for a in assets:
+        md = get_asset_data(a.symbol)
+        if not md:
+            continue
+        enriched_assets.append({
+            "symbol": a.symbol,
+            "real_symbol": md.get("real_symbol", a.symbol),
+            "type": md.get("type", a.type),
+            "amount": a.amount,
+            "purchase_price": a.purchase_price,
+            "current_price": md.get("current_price", 0),
+            "position_value": float(md.get("current_price", 0) or 0) * float(a.amount or 0),
+            "days_held": 365 if (a.purchase_date and a.purchase_date <= str(date.today() - timedelta(days=365))) else 0,
+            "is_tax_pro": user.plan == "tax_pro",
+        })
+    score = calculate_portfolio_score(enriched_assets, txs)
+
+    beat_delta = period_perf - bench_perf
+    beat_text = f"Beat S&P 500 by {abs(beat_delta):.1f}%" if beat_delta >= 0 else f"Behind S&P 500 by {abs(beat_delta):.1f}%"
+
+    w, h = 1200, 630
+    image = Image.new("RGB", (w, h), "#0a0914")
+    draw = ImageDraw.Draw(image)
+
+    title_f = _safe_font(56)
+    big_f = _safe_font(78)
+    body_f = _safe_font(34)
+    small_f = _safe_font(26)
+
+    draw.rounded_rectangle((40, 40, w - 40, h - 40), radius=28, outline="#7c3aed", width=3, fill="#110f20")
+    draw.text((78, 78), "Purp", font=title_f, fill="#a78bfa")
+
+    perf_sign = "+" if period_perf >= 0 else ""
+    perf_color = "#10b981" if period_perf >= 0 else "#ef4444"
+    draw.text((78, 200), f"{perf_sign}{period_perf:.1f}%", font=big_f, fill=perf_color)
+    draw.text((78, 295), f"{valid_periods[period]}", font=body_f, fill="#f1f0f5")
+
+    if abs(year_perf) > 0:
+        year_sign = "+" if year_perf >= 0 else ""
+        draw.text((78, 360), f"Annual: {year_sign}{year_perf:.1f}%", font=small_f, fill="#c4b5fd")
+
+    draw.text((78, 412), beat_text, font=body_f, fill="#f1f0f5")
+    draw.text((78, 468), f"Portfolio Grade: {score.get('grade', '—')}", font=body_f, fill="#fbbf24")
+    draw.text((78, 548), "Tracked with purp.com", font=small_f, fill="#8b5cf6")
+
+    output = io.BytesIO()
+    image.save(output, format="PNG")
+    output.seek(0)
+    return StreamingResponse(output, media_type="image/png")
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

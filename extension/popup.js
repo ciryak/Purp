@@ -18,6 +18,7 @@ let refreshTimer     = null;
 let searchTimer      = null;
 let portfolioCount   = 0;
 let portfolioSymbols = new Set();
+let rebalanceSymbols = [];
 let hideSensitiveValues   = true;
 let selectedAddAssetType  = null;
 let activeTaxTab          = 'tlh';   // 'tlh' | 'form8949' | 'summary'
@@ -339,6 +340,34 @@ function injectStyles() {
       animation: shimmer 1.4s infinite linear;
       margin-bottom: 8px;
     }
+  `;
+  document.head.appendChild(style);
+}
+
+
+
+function injectPortfolioScoreStyles() {
+  if (document.getElementById('portfolio-score-styles')) return;
+  const style = document.createElement('style');
+  style.id = 'portfolio-score-styles';
+  style.textContent = `
+    .score-card { background: rgba(255,255,255,0.04); border: 1px solid rgba(124,58,237,0.25); border-radius: 16px; padding: 16px; margin-bottom: 16px; }
+    .score-header-row { display:flex; align-items:flex-start; justify-content:space-between; gap:10px; margin-bottom:8px; }
+    .score-title { font-size:13px; font-weight:800; color:#f1f0f5; }
+    .score-sub { font-size:10px; color:rgba(255,255,255,0.45); margin-top:3px; }
+    .score-grade { font-size:22px; font-weight:900; color:#fbbf24; }
+    .score-gauge-wrap { position:relative; width:100%; max-width:230px; margin: 4px auto 8px; }
+    .score-gauge { width:100%; height:auto; display:block; }
+    .gauge-track { fill:none; stroke:rgba(255,255,255,0.14); stroke-width:14; stroke-linecap:round; }
+    .gauge-value { fill:none; stroke:#8b5cf6; stroke-width:14; stroke-linecap:round; stroke-dasharray: 283; stroke-dashoffset: 283; transition: stroke-dashoffset .4s ease; }
+    .score-overall { position:absolute; left:50%; top:62%; transform:translate(-50%,-50%); font-size:34px; font-weight:900; color:#f1f0f5; }
+    .score-dimensions { margin-top:6px; }
+    .score-row { display:flex; justify-content:space-between; align-items:center; font-size:11px; color:rgba(255,255,255,0.75); margin-top:8px; }
+    .score-bar { width:100%; height:7px; border-radius:999px; background:rgba(255,255,255,0.08); margin-top:4px; overflow:hidden; }
+    .score-bar > div { height:100%; width:0%; background:linear-gradient(90deg,#7c3aed,#a78bfa); transition:width .35s ease; }
+    .score-insights { margin:10px 0 0; padding-left:18px; color:rgba(255,255,255,0.75); font-size:10px; }
+    .score-insights li { margin-bottom:4px; }
+    .score-share-copy { margin-top:8px; font-size:10px; color:rgba(255,255,255,0.45); text-align:center; }
   `;
   document.head.appendChild(style);
 }
@@ -828,6 +857,182 @@ async function exportPortfolioCsv() {
   toast('CSV exported successfully.', 'success');
 }
 
+
+
+async function loadPortfolioScore() {
+  if (!authToken) return;
+  const res = await apiFetch('/portfolio/score', { headers: authHeaders() });
+  if (!res || !res.ok) return;
+  const score = await res.json();
+
+  const overall = Number(score.overall || 0);
+  const circumference = 283;
+  const dash = circumference - (Math.max(0, Math.min(100, overall)) / 100) * circumference;
+
+  $('score-overall').textContent = `${overall}`;
+  $('score-grade').textContent = score.grade || '—';
+  const gauge = $('score-gauge-value');
+  if (gauge) gauge.style.strokeDashoffset = `${dash}`;
+
+  const setBar = (id, val, labelId) => {
+    const v = Number(val || 0);
+    if ($(id)) $(id).style.width = `${Math.max(0, Math.min(100, v))}%`;
+    if ($(labelId)) $(labelId).textContent = `${Math.round(v)}`;
+  };
+
+  setBar('bar-diversification', score.diversification, 'score-diversification');
+  setBar('bar-risk', score.risk_adjusted, 'score-risk');
+  setBar('bar-consistency', score.consistency, 'score-consistency');
+
+  if (score.tax_efficiency == null) {
+    if ($('bar-tax')) $('bar-tax').style.width = '0%';
+    if ($('score-tax')) $('score-tax').textContent = '—';
+  } else {
+    setBar('bar-tax', score.tax_efficiency, 'score-tax');
+  }
+
+  const insightsEl = $('score-insights');
+  if (insightsEl) {
+    const items = Array.isArray(score.insights) ? score.insights : [];
+    insightsEl.innerHTML = items.length
+      ? items.map((txt) => `<li>${txt}</li>`).join('')
+      : '<li>Your portfolio is stable. Keep monitoring diversification and consistency.</li>';
+  }
+}
+
+
+
+function openNetWorthModal() { $('modal-net-worth')?.classList.add('active'); }
+function closeNetWorthModal() { $('modal-net-worth')?.classList.remove('active'); }
+
+async function loadNetWorth() {
+  if (!authToken) return;
+  const res = await apiFetch('/net-worth', { headers: authHeaders() });
+  if (!res || !res.ok) return;
+  const data = await res.json();
+
+  $('net-worth-total').textContent = formatUSD(data.net_worth || 0);
+  $('nw-investments').textContent = formatUSD(data.breakdown?.investments || 0);
+  $('nw-cash').textContent = formatUSD(data.breakdown?.cash || 0);
+  $('nw-real-estate').textContent = formatUSD(data.breakdown?.real_estate || 0);
+  $('nw-other').textContent = formatUSD(data.breakdown?.other || 0);
+  $('nw-debts').textContent = formatUSD(data.breakdown?.debts || 0);
+  applyVisibilityMask();
+}
+
+async function saveNetWorthEntry() {
+  const category = $('nw-category')?.value || 'other_assets';
+  const label = $('nw-label')?.value?.trim() || '';
+  const value = parseFloat($('nw-value')?.value || '0');
+  if (!label) { toast('Please provide a label.', 'warning'); return; }
+  if (!Number.isFinite(value) || value === 0) { toast('Please provide a valid value.', 'warning'); return; }
+
+  const res = await apiFetch('/net-worth/entry', {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify({ category, label, value }),
+  });
+  if (!res || !res.ok) { toast('Could not save net worth entry.', 'error'); return; }
+
+  $('nw-label').value = '';
+  $('nw-value').value = '';
+  closeNetWorthModal();
+  toast('Net worth entry saved.', 'success');
+  loadNetWorth();
+}
+
+function renderRebalanceTargets(assets = []) {
+  const root = $('rebalance-targets');
+  if (!root) return;
+
+  rebalanceSymbols = [...new Set((assets || []).map((a) => (a.symbol || '').toUpperCase()).filter(Boolean))];
+  if (!rebalanceSymbols.length) {
+    root.innerHTML = '<div class="score-sub">Add assets to calculate rebalancing actions.</div>';
+    return;
+  }
+
+  const equal = (100 / rebalanceSymbols.length).toFixed(1);
+  root.innerHTML = rebalanceSymbols.map((sym) => `
+    <div class="score-row" style="margin-top:6px;">
+      <span>${sym}</span>
+      <input type="number" class="select-ctrl rebalance-target" data-symbol="${sym}" value="${equal}" min="0" max="100" step="0.1" style="width:86px;">
+    </div>
+  `).join('');
+
+  root.querySelectorAll('.rebalance-target').forEach((el) => {
+    el.addEventListener('input', updateRebalanceTargetSum);
+  });
+  updateRebalanceTargetSum();
+}
+
+function updateRebalanceTargetSum() {
+  const inputs = Array.from(document.querySelectorAll('.rebalance-target'));
+  const sum = inputs.reduce((acc, el) => acc + (parseFloat(el.value || '0') || 0), 0);
+  const warningEl = $('rebalance-sum-warning');
+  if (!warningEl) return;
+  warningEl.textContent = `Target sum: ${sum.toFixed(1)}%`;
+  warningEl.style.color = Math.abs(sum - 100) < 0.05 ? '#86efac' : '#fca5a5';
+}
+
+async function calculateRebalance() {
+  const inputs = Array.from(document.querySelectorAll('.rebalance-target'));
+  if (!inputs.length) return;
+  const targets = {};
+  inputs.forEach((el) => {
+    const sym = (el.dataset.symbol || '').toUpperCase();
+    targets[sym] = parseFloat(el.value || '0') || 0;
+  });
+  const sum = Object.values(targets).reduce((a, b) => a + b, 0);
+  if (Math.abs(sum - 100) > 0.1) {
+    toast('Target allocation must sum to 100%.', 'warning');
+    return;
+  }
+
+  const res = await apiFetch('/portfolio/rebalance', {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify({ targets }),
+  });
+  if (!res || !res.ok) {
+    toast('Unable to calculate rebalance right now.', 'error');
+    return;
+  }
+  const data = await res.json();
+  const actions = data.actions || [];
+
+  const actionsEl = $('rebalance-actions');
+  if (actionsEl) {
+    actionsEl.innerHTML = actions.length
+      ? actions.map((a) => `<li><strong>${a.symbol}</strong>: ${a.action.toUpperCase()} ${a.amount} (~${formatUSD(a.usd_value)}) — ${a.reason}</li>`).join('')
+      : '<li>No rebalancing needed. Allocations are within ±2% drift.</li>';
+  }
+
+  const taxBadge = $('rebalance-tax-badge');
+  if (taxBadge) {
+    if (currentUser?.plan === 'tax_pro') {
+      taxBadge.style.display = 'inline-flex';
+      taxBadge.textContent = `Tax Impact: ${formatUSD(data.estimated_tax_impact || 0)}`;
+      taxBadge.classList.add('sensitive-value');
+    } else {
+      taxBadge.style.display = 'none';
+    }
+  }
+  applyVisibilityMask();
+}
+
+async function sharePerformanceCard() {
+  if (!authToken) return;
+  const res = await apiFetch('/portfolio/share-card?period=1mo', { headers: authHeaders() });
+  if (!res || !res.ok) {
+    toast('Unable to generate share card right now.', 'error');
+    return;
+  }
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  window.open(url, '_blank');
+  setTimeout(() => URL.revokeObjectURL(url), 60_000);
+}
+
 // ── PORTFOLIO ────────────────────────────────────────────────────
 async function fetchPortfolio() {
   if (!authToken) return;
@@ -840,11 +1045,14 @@ async function fetchPortfolio() {
   portfolioCount   = (data.assets || []).length;
   portfolioSymbols = new Set((data.assets || []).map((a) => (a.real_symbol || a.symbol || '').toUpperCase()));
   updateProfileBar();
+  await loadPortfolioScore();
+  await loadNetWorth();
   const list = $('assets-list'); list.innerHTML = '';
   if (!data.assets?.length) {
     list.innerHTML = `<div class="empty-state"><div class="empty-icon">📭</div><div class="empty-title">Portfolio is empty</div><div class="empty-sub">Add your first asset using the menu above to start tracking your investments.</div></div>`;
     return;
   }
+  renderRebalanceTargets(data.assets || []);
   await loadBalancePerformance();
   data.assets.forEach((asset) => {
     const profit   = asset.profit ?? 0;
@@ -1799,6 +2007,7 @@ function buildYieldRows(assets) {
 // ── INIT ─────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
   injectStyles();
+  injectPortfolioScoreStyles();
 
   loadSession((hasSession) => {
     if (hasSession) {
@@ -1853,6 +2062,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Portfolio AI
   $('btn-portfolio-ai')?.addEventListener('click', handlePortfolioAI);
+  $('btn-share-performance')?.addEventListener('click', sharePerformanceCard);
+
+  // Net worth + rebalance
+  $('btn-net-worth-add')?.addEventListener('click', openNetWorthModal);
+  $('btn-nw-cancel')?.addEventListener('click', closeNetWorthModal);
+  $('btn-nw-save')?.addEventListener('click', saveNetWorthEntry);
+  $('btn-rebalance-calc')?.addEventListener('click', calculateRebalance);
+  $('modal-net-worth')?.addEventListener('click', (e) => { if (e.target === $('modal-net-worth')) closeNetWorthModal(); });
 
   // Detail back
   $('btn-back')?.addEventListener('click', () => $('detail-view').classList.remove('active'));

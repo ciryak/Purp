@@ -24,6 +24,7 @@ class User(SQLModel, table=True):
 
     # Notification preferences
     notification_email: bool = Field(default=True)
+    notification_digest: bool = Field(default=True)
     notification_browser: bool = Field(default=True)
 
 
@@ -103,3 +104,12 @@ class Dividend(SQLModel, table=True):
     ex_date: str
     pay_date: str
     recorded_at: str
+
+
+class NetWorthEntry(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    user_id: int = Field(foreign_key="user.id", index=True)
+    category: str  # "real_estate", "cash", "vehicle", "other_assets", "debt"
+    label: str
+    value: float   # positive for assets, negative for debts
+    updated_at: str
