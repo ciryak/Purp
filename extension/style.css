@@ -213,6 +213,17 @@
    .nav-item:hover  { background: rgba(124,58,237,0.12); color: var(--text); }
    .nav-item.active { color: var(--accent-l); background: rgba(124,58,237,0.1); font-weight: 600; }
 .nav-danger:hover { background: rgba(239,68,68,0.1); color: var(--red); }
+.nav-footer-link {
+  margin-top: 6px;
+  padding: 8px 12px 2px;
+  font-size: 11px;
+  color: var(--text3);
+  text-decoration: none;
+  border-top: 1px solid rgba(255,255,255,0.06);
+}
+.nav-footer-link:hover {
+  color: var(--accent-l);
+}
 
 .top-tabs {
   display: flex;
