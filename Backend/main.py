@@ -120,25 +120,30 @@ def require_tax_pro(user: User) -> None:
 
 # ── Email helpers ──────────────────────────────────────────────────────────────
 
+RESEND_API_KEY = os.getenv("RESEND_API_KEY", "")
+FROM_EMAIL     = os.getenv("FROM_EMAIL", "Purp <noreply@getpurpai.com>")
+
+if RESEND_API_KEY:
+    resend.api_key = RESEND_API_KEY
+    print("✅ Resend configured")
+else:
+    print("⚠️  RESEND_API_KEY not set — emails disabled")
+
+
 def _send_email(to_email: str, subject: str, html: str) -> None:
     if not RESEND_API_KEY:
-        print("⚠️  RESEND_API_KEY not configured — skipping email")
+        print("⚠️  Email skipped — RESEND_API_KEY not configured")
         return
-    import urllib.request, json as _json
-    payload = _json.dumps({
-        "from": FROM_EMAIL, "to": [to_email], "subject": subject, "html": html,
-    }).encode()
-    req = urllib.request.Request(
-        "https://api.resend.com/emails",
-        data=payload,
-        headers={"Authorization": f"Bearer {RESEND_API_KEY}", "Content-Type": "application/json"},
-        method="POST",
-    )
     try:
-        with urllib.request.urlopen(req, timeout=10) as resp:
-            print(f"✅ Email sent → {to_email} (HTTP {resp.getcode()})")
+        resp = resend.Emails.send({
+            "from":    FROM_EMAIL,
+            "to":      [to_email],
+            "subject": subject,
+            "html":    html,
+        })
+        print(f"✅ Email sent → {to_email} | id={resp.get('id')}")
     except Exception as e:
-        print(f"⚠️  Resend email failed ({to_email}): {e}")
+        print(f"❌ Resend error ({to_email}): {e}")
 
 
 def _send_welcome_email(to_email: str, username: str) -> None:
