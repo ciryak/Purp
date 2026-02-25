@@ -24,6 +24,7 @@ class User(SQLModel, table=True):
 
     # Notification preferences
     notification_email: bool = Field(default=True)
+    notification_digest: bool = Field(default=True)
     notification_browser: bool = Field(default=True)
 
 
