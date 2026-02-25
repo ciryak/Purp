@@ -457,96 +457,151 @@ function hideLoginScreen() { $('login-screen').classList.add('hidden'); }
 
 // ── LOGIN / REGISTER ─────────────────────────────────────────────
 async function handleLogin() {
-  const username = $('login-username').value.trim();
+  // 1. Coleta e Limpeza
+  const usernameOrEmail = $('login-username').value.trim();
   const password = $('login-password').value;
   clearError('login-error');
-  if (!username || !password) { showError('login-error', 'Please fill in username and password'); return; }
+
+  // 2. Validação básica de entrada
+  if (!usernameOrEmail || !password) { 
+    showError('login-error', 'Please fill in your credentials'); 
+    return; 
+  }
 
   const btn = $('btn-login');
+  const originalText = btn.textContent;
   btn.disabled = true;
   btn.textContent = 'Signing in…';
 
   try {
-    const res = await apiFetch('/auth/login', {
+    // 3. Chamada à API
+    // Nota: Certifique-se que o backend aceita 'username' ou 'email' neste campo
+    const res = await fetch(`${API_BASE}/auth/login`, {
       method: 'POST',
-      headers: authHeaders(),
-      body: JSON.stringify({ username, password }),
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: usernameOrEmail, password: password }), // Alinhado com o seu RegisterInput
     });
-    if (!res) return;
+
+    const data = await res.json();
 
     if (res.ok) {
-      const data = await res.json();
+      // 4. Salva a sessão (Token e Dados básicos do User)
       saveSession(data.token, data.user);
 
+      // 5. Fluxo de Verificação Pendente
       if (data.requires_verification) {
-        const emailForVerify = data.user?.email || username;
+        // Fallback para o email: tenta pegar do user payload ou do input original
+        const emailForVerify = data.user?.email || (usernameOrEmail.includes('@') ? usernameOrEmail : '');
+        
+        // Armazena para persistência caso o popup feche
+        localStorage.setItem('pending_email', emailForVerify);
+
         showVerifyScreen(data.token, emailForVerify, (verifiedUser) => {
-          const updatedUser = { ...currentUser, ...verifiedUser, is_verified: true };
-          saveSession(authToken, updatedUser);
-          hideLoginScreen();
-          updateProfileBar();
-          fetchPortfolio();
-          loadMainChart();
-          startRefresh();
-          checkAIStatus();
-          toast('Email verified! Welcome to Purp 🎉', 'success', 5000);
+          // Callback disparado após sucesso no Verify-screen.JS
+          const updatedUser = { ...data.user, ...verifiedUser, is_verified: true };
+          
+          // Salva sessão final com user verificado
+          saveSession(data.token, updatedUser);
+          
+          // Entra no App
+          finalizeLoginUI();
+          toast('Email verified! Welcome back 🎉', 'success', 5000);
         });
         return;
       }
 
-      hideLoginScreen();
-      updateProfileBar();
-      fetchPortfolio();
-      loadMainChart();
-      startRefresh();
-      checkAIStatus();
+      // 6. Fluxo de Login Sucesso (Já verificado)
+      finalizeLoginUI();
+      toast('Welcome back! 🎉', 'success', 3000);
+
     } else {
-      const err = await res.json().catch(() => ({}));
-      showError('login-error', err.detail || 'Incorrect username or password');
+      // 7. Tratamento de Erro (Senha incorreta / User não existe)
+      const errMsg = data.detail || 'Incorrect email or password';
+      showError('login-error', errMsg);
     }
+  } catch (err) {
+    console.error("Login Error:", err);
+    showError('login-error', 'Connection to server failed');
   } finally {
     btn.disabled = false;
-    btn.textContent = 'Sign In';
+    btn.textContent = originalText;
   }
 }
 
+/**
+ * Função auxiliar para limpar a UI e iniciar os serviços do app
+ */
+function finalizeLoginUI() {
+  hideLoginScreen();    // Esconde a tela de login/cadastro
+  updateProfileBar();   // Atualiza nome/foto do user na barra
+  fetchPortfolio();     // Carrega ativos
+  loadMainChart();      // Inicia gráfico principal
+  startRefresh();       // Inicia o timer de atualização de preços (Binance/yfinance)
+  checkAIStatus();      // Verifica limites do Gemini
+}
+
+
 async function handleRegister() {
+  // 1. Coleta e Sanitização
   const username = $('reg-username').value.trim();
   const email = $('reg-email').value.trim();
   const password = $('reg-password').value;
   clearError('register-error');
 
-  if (!username || !email || !password) { showError('register-error', 'All fields are required'); return; }
-  if (username.length < 3) { showError('register-error', 'Username must be at least 3 characters'); return; }
-  if (password.length < 4) { showError('register-error', 'Password must be at least 4 characters'); return; }
-  if (!email.includes('@')) { showError('register-error', 'Enter a valid email address'); return; }
+  // 2. Validações de Front-end
+  if (!username || !email || !password) { 
+    showError('register-error', 'All fields are required'); 
+    return; 
+  }
+  if (username.length < 3) { 
+    showError('register-error', 'Username must be at least 3 characters'); 
+    return; 
+  }
+  if (password.length < 4) { 
+    showError('register-error', 'Password must be at least 4 characters'); 
+    return; 
+  }
+  if (!email.includes('@')) { 
+    showError('register-error', 'Enter a valid email address'); 
+    return; 
+  }
 
+  // 3. Feedback Visual
   const btn = $('btn-register');
+  const originalText = btn.textContent;
   btn.disabled = true;
   btn.textContent = 'Creating account…';
 
   try {
-    let res;
-    try {
-      res = await fetch(`${API_BASE}/auth/register`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, email, password }),
-      });
-    } catch (networkErr) {
-      showError('register-error', `Network error: ${networkErr.message}`);
-      return;
-    }
+    const res = await fetch(`${API_BASE}/auth/register`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, email, password }),
+    });
+
+    const data = await res.json();
 
     if (res.ok) {
-      const data = await res.json();
+      // Salva a sessão inicialmente (mesmo não verificado, o token é necessário)
       saveSession(data.token, data.user);
+      
+      // Armazena o email para que a tela de verificação saiba para quem enviar
+      localStorage.setItem('pending_email', email);
 
+      // 4. Fluxo de Verificação (TELA DE VALIDAÇÃO)
       if (data.requires_verification) {
-        const emailForVerify = data.user?.email || email;
+        const emailForVerify = data.email || data.user?.email || email;
+        
+        // Exibe a tela de verificação
+        // Se showVerifyScreen não estiver mudando a UI, forçamos aqui:
+        if ($('auth-screen')) $('auth-screen').classList.add('hidden');
+        if ($('verify-screen')) $('verify-screen').classList.remove('hidden');
+
         showVerifyScreen(data.token, emailForVerify, (verifiedUser) => {
-          const updatedUser = { ...currentUser, ...verifiedUser, is_verified: true };
-          saveSession(authToken, updatedUser);
+          // Callback executado após o sucesso no Verify-screen.JS
+          const updatedUser = { ...data.user, ...verifiedUser, is_verified: true };
+          saveSession(data.token, updatedUser);
+          
           hideLoginScreen();
           updateProfileBar();
           fetchPortfolio();
@@ -558,6 +613,7 @@ async function handleRegister() {
         return;
       }
 
+      // 5. Fluxo sem Verificação (Caso o backend mude a regra)
       hideLoginScreen();
       updateProfileBar();
       fetchPortfolio();
@@ -565,17 +621,18 @@ async function handleRegister() {
       startRefresh();
       checkAIStatus();
       toast('Account created! 🎉', 'success', 5000);
+      
     } else {
-      let errMsg = `HTTP ${res.status}`;
-      try {
-        const errBody = await res.json();
-        errMsg = errBody.detail || errBody.message || JSON.stringify(errBody);
-      } catch {}
+      // Tratamento de Erros do Backend
+      const errMsg = data.detail || data.message || `Error ${res.status}`;
       showError('register-error', errMsg);
     }
+  } catch (networkErr) {
+    console.error("Registration Network Error:", networkErr);
+    showError('register-error', `Connection failed: ${networkErr.message}`);
   } finally {
     btn.disabled = false;
-    btn.textContent = 'Create Account';
+    btn.textContent = originalText;
   }
 }
 

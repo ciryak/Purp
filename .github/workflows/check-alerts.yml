@@ -4,7 +4,6 @@ on:
   schedule:
     # Roda a cada 15 minutos
     - cron: '*/15 * * * *'
-  # Permite trigger manual também
   workflow_dispatch:
 
 jobs:
@@ -12,11 +11,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check and trigger price alerts
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          APP_URL: ${{ secrets.APP_URL }}
         run: |
-          curl -X POST \
-            -H "X-Cron-Secret: ${{ secrets.CRON_SECRET }}" \
-            ${{ secrets.APP_URL }}/alerts/check
-          
+          curl --fail --show-error --silent -X POST \
+            -H "X-Cron-Secret: ${CRON_SECRET}" \
+            "${APP_URL}/alerts/check"
+
       - name: Log completion
-        run: |
-          echo "Alert check completed at $(date)"
+        run: echo "Alert check completed at $(date)"

@@ -27,6 +27,7 @@ import bcrypt
 import stripe
 from jose import JWTError, jwt
 from fastapi.staticfiles import StaticFiles
+<<<<<<< HEAD
 
 import sentry_sdk
 from sentry_sdk.integrations.fastapi import FastApiIntegration
@@ -36,6 +37,14 @@ from slowapi import Limiter
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 
+=======
+import sentry_sdk
+from sentry_sdk.integrations.fastapi import FastApiIntegration
+from sentry_sdk.integrations.starlette import StarletteIntegration
+from slowapi import Limiter
+from slowapi.errors import RateLimitExceeded
+from slowapi.util import get_remote_address
+>>>>>>> 0b733259a13ac5db833c5780c24ee8de961d2e95
 
 from models import Asset, User, Transaction, PriceAlert, WatchlistItem, ProcessedEvent, Dividend, EmailVerification, NetWorthEntry
 from services import (
@@ -455,10 +464,11 @@ def _create_verification_code(session: Session, user_id: int) -> str:
 
 
 # ── DB ─────────────────────────────────────────────────────────────────────────
-
 def create_db() -> None:
     global PRICE_PLAN_MAP
     print(f"🗄️  DB: {DATABASE_URL[:50]}…")
+    
+    # 1. Cria as tabelas baseadas nos modelos (se não existirem)
     try:
         SQLModel.metadata.create_all(engine)
         print("✅ Tables OK")
@@ -466,6 +476,7 @@ def create_db() -> None:
         print(f"❌ FATAL table creation failed: {e}")
         raise
 
+    # 2. Cria o índice único de email (se não existir)
     try:
         with engine.connect() as conn:
             if _is_postgres:
@@ -480,17 +491,24 @@ def create_db() -> None:
     except Exception as e:
         print(f"⚠️  Email index: {e}")
 
+    # 3. Migração da coluna notification_digest (CORRIGIDO)
     try:
         with engine.connect() as conn:
             if _is_postgres:
-                conn.exec_driver_sql('ALTER TABLE "user" ADD COLUMN notification_digest BOOLEAN DEFAULT TRUE')
+                # No Postgres, usamos IF NOT EXISTS para evitar o erro de 'already exists'
+                conn.exec_driver_sql('ALTER TABLE "user" ADD COLUMN IF NOT EXISTS notification_digest BOOLEAN DEFAULT TRUE')
             else:
+                # No SQLite, tentamos adicionar normalmente (o try/except captura se já existir)
                 conn.exec_driver_sql('ALTER TABLE user ADD COLUMN notification_digest BOOLEAN DEFAULT 1')
             conn.commit()
-            print("✅ Added notification_digest column")
+            print("✅ Checked notification_digest column")
     except Exception as e:
-        print(f"ℹ️  notification_digest migration: {e}")
-
+        # Se cair aqui, é porque a coluna já existe (no caso do SQLite) ou houve erro de conexão
+        # Usamos uma mensagem mais informativa e menos "assustadora"
+        if "already exists" in str(e).lower():
+            print("ℹ️  notification_digest column already present.")
+        else:
+            print(f"ℹ️  notification_digest migration note: {e}")
     try:
         with Session(engine) as s:
             u = s.get(User, 1)
@@ -674,13 +692,19 @@ def register(request: Request, data: RegisterInput, session: Session = Depends(g
         email_norm = str(data.email).strip().lower()
         if session.exec(select(User).where(User.email == email_norm)).first():
             raise HTTPException(400, "Email already registered")
+        
         user = User(
-            username=uname, password_hash=hash_pw(data.password),
-            email=email_norm, plan="free", is_premium=False,
+            username=uname, 
+            password_hash=hash_pw(data.password),
+            email=email_norm, 
+            plan="free", 
+            is_premium=False,
             is_verified=False,
             created_at=str(date.today()),
         )
-        session.add(user); session.commit(); session.refresh(user)
+        session.add(user)
+        session.commit()
+        session.refresh(user)
     except HTTPException:
         raise
     except Exception as e:
@@ -690,37 +714,52 @@ def register(request: Request, data: RegisterInput, session: Session = Depends(g
     if user.id is None:
         raise HTTPException(500, "Failed to create user — please try again")
 
-    # Generate and send verification code
+    # Gera e envia o código
     code = _create_verification_code(session, user.id)
     send_verification_email_async(email_norm, uname, code)
 
     token = create_token(user.id)
+    
     return {
         "token": token,
         "user": _user_payload(user),
         "requires_verification": True,
+        "email": email_norm  # Adicionado para facilitar o front
     }
-
 
 @app.post("/auth/login")
 @limiter.limit("10/minute")
 def login(request: Request, data: LoginInput, session: Session = Depends(get_session)):
-    username = sanitize_username(data.username)
-    user = session.exec(select(User).where(User.username == username)).first()
+    email_norm = str(data.email).strip().lower()
+    
+    # 1. Procura o utilizador
+    user = session.exec(select(User).where(User.email == email_norm)).first()
+    
+    # 2. Valida credenciais
     if not user or not verify_pw(data.password, user.password_hash):
-        raise HTTPException(401, "Incorrect username or password")
+        raise HTTPException(401, "E-mail ou senha incorretos")
 
+    # 3. Gera o token (necessário para autorizar a verificação posterior)
+    token = create_token(user.id)
+
+    # 4. VERIFICAÇÃO DE STATUS (O Pulo do Gato)
     if not user.is_verified:
-        # Issue a limited token so the frontend can call /auth/verify-email
-        token = create_token(user.id)
+        # Se não estiver verificado, envia um novo código por e-mail automaticamente (Opcional)
+        # code = _create_verification_code(session, user.id)
+        # send_verification_email_async(user.email, user.username, code)
+        
         return {
             "token": token,
             "user": _user_payload(user),
-            "requires_verification": True,
+            "requires_verification": True  # Avisa o front para mudar de tela
         }
 
-    return {"token": create_token(user.id), "user": _user_payload(user), "requires_verification": False}
-
+    # 5. Login normal para utilizadores verificados
+    return {
+        "token": token,
+        "user": _user_payload(user),
+        "requires_verification": False
+    }
 
 @app.post("/auth/forgot-password")
 @limiter.limit("3/minute")

@@ -12,5 +12,11 @@ jobs:
       - name: Trigger weekly digest endpoint
         env:
           APP_URL: ${{ secrets.APP_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
         run: |
-          curl --fail --show-error --silent -X POST "$APP_URL/digest/send-weekly"
+          curl --fail --show-error --silent -X POST \
+            -H "X-Cron-Secret: ${CRON_SECRET}" \
+            "${APP_URL}/digest/send-weekly"
+
+      - name: Log completion
+        run: echo "Weekly digest sent at $(date)"
