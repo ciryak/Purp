@@ -21,7 +21,7 @@ import bcrypt
 import stripe
 from jose import JWTError, jwt
 
-from models import Asset, User, Transaction, PriceAlert, WatchlistItem, ProcessedEvent
+from models import Asset, User, Transaction, PriceAlert, WatchlistItem, ProcessedEvent, Dividend
 from services import (
     get_asset_data,
     get_ai_analysis,
@@ -34,6 +34,7 @@ from services import (
     calculate_tax_loss_harvesting,
     calculate_cost_basis,
     generate_form_8949,
+    get_dividend_data,
 )
 
 # ── Config ─────────────────────────────────────────────────────────────────────
@@ -1166,6 +1167,192 @@ def form_8949_export_legacy(user_id: int = Depends(get_current_user), session: S
         "tax_year": date.today().year, "rows": rows,
         "total_proceeds":  round(sum(r["proceeds"]  for r in rows), 2),
         "total_gain_loss": round(sum(r["gain_loss"] for r in rows), 2),
+    }
+
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# DIVIDENDS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class RecordDividendInput(BaseModel):
+    symbol: str
+    amount_per_share: float
+    ex_date: str
+    pay_date: str
+
+
+@app.get("/portfolio/dividends")
+def portfolio_dividends(
+    user_id: int = Depends(get_current_user),
+    session: Session = Depends(get_session),
+):
+    """
+    For every stock in the portfolio, fetch dividend data and return:
+      - total_annual_income    : sum of (annual_rate * shares) across all dividing stocks
+      - total_monthly_income   : total_annual_income / 12
+      - upcoming_payments      : ex-dates within the next 60 days
+      - assets                 : per-asset dividend metrics
+    Available to all users (investor + free).
+    """
+    assets = session.exec(
+        select(Asset).where(Asset.user_id == user_id, Asset.type == "stock")
+    ).all()
+
+    if not assets:
+        return {
+            "total_annual_income":  0.0,
+            "total_monthly_income": 0.0,
+            "upcoming_payments":    [],
+            "assets":               [],
+        }
+
+    def fetch_div(a: Asset):
+        data = get_dividend_data(a.symbol)
+        return (a, data)
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=8) as ex:
+        results = list(ex.map(fetch_div, assets))
+
+    asset_rows        = []
+    total_annual      = 0.0
+    upcoming_payments = []
+    today             = date.today()
+    cutoff_60         = today + timedelta(days=60)
+
+    for a, div in results:
+        annual_rate   = div.get("annual_dividend_rate") or 0.0
+        div_yield     = div.get("dividend_yield") or 0.0
+        annual_income = round(annual_rate * a.amount, 2)
+        yield_on_cost = round((annual_rate / a.purchase_price * 100), 4) if a.purchase_price > 0 and annual_rate > 0 else 0.0
+
+        total_annual += annual_income
+
+        ex_date  = div.get("ex_dividend_date")
+        pay_date = div.get("pay_date")
+
+        # Collect upcoming payments within 60 days
+        if ex_date:
+            try:
+                ex_dt = datetime.strptime(ex_date[:10], "%Y-%m-%d").date()
+                if today <= ex_dt <= cutoff_60:
+                    upcoming_payments.append({
+                        "symbol":           a.symbol,
+                        "shares":           a.amount,
+                        "ex_date":          ex_date,
+                        "pay_date":         pay_date,
+                        "amount_per_share": div.get("quarterly_dividend") or round(annual_rate / 4, 4),
+                        "projected_total":  round((div.get("quarterly_dividend") or annual_rate / 4) * a.amount, 2),
+                    })
+            except Exception:
+                pass
+
+        asset_rows.append({
+            "symbol":             a.symbol,
+            "shares":             a.amount,
+            "purchase_price":     a.purchase_price,
+            "yield_current":      div_yield,
+            "yield_on_cost":      yield_on_cost,
+            "annual_income":      annual_income,
+            "monthly_income":     round(annual_income / 12, 2),
+            "quarterly_dividend": div.get("quarterly_dividend") or 0.0,
+            "annual_rate":        annual_rate,
+            "next_ex_date":       ex_date,
+            "next_pay_date":      pay_date,
+            "last_12m_dividends": div.get("last_12m_dividends") or [],
+            "pays_dividend":      annual_rate > 0,
+        })
+
+    # Sort: dividend-paying first, then by annual_income desc
+    asset_rows.sort(key=lambda x: (-x["pays_dividend"], -x["annual_income"]))
+    upcoming_payments.sort(key=lambda x: x["ex_date"])
+
+    return {
+        "total_annual_income":  round(total_annual, 2),
+        "total_monthly_income": round(total_annual / 12, 2),
+        "upcoming_payments":    upcoming_payments,
+        "assets":               asset_rows,
+    }
+
+
+@app.post("/dividends/record")
+def record_dividend(
+    data: RecordDividendInput,
+    user_id: int = Depends(get_current_user),
+    session: Session = Depends(get_session),
+):
+    """
+    Manually record a dividend payment received.
+    Looks up the user's current share count for the symbol to compute total_received.
+    """
+    sym = data.symbol.strip().upper()
+    if data.amount_per_share <= 0:
+        raise HTTPException(400, "amount_per_share must be positive")
+
+    # Find how many shares the user holds for this symbol
+    asset = session.exec(
+        select(Asset).where(Asset.user_id == user_id, Asset.symbol == sym)
+    ).first()
+
+    if not asset:
+        raise HTTPException(404, f"You don't hold any shares of {sym} in your portfolio")
+
+    total_received = round(data.amount_per_share * asset.amount, 4)
+
+    div = Dividend(
+        user_id=user_id,
+        symbol=sym,
+        amount_per_share=data.amount_per_share,
+        total_received=total_received,
+        ex_date=data.ex_date,
+        pay_date=data.pay_date,
+        recorded_at=str(datetime.now().date()),
+    )
+    session.add(div)
+    session.commit()
+    session.refresh(div)
+
+    return {
+        "id":               div.id,
+        "symbol":           div.symbol,
+        "amount_per_share": div.amount_per_share,
+        "total_received":   div.total_received,
+        "shares_at_record": asset.amount,
+        "ex_date":          div.ex_date,
+        "pay_date":         div.pay_date,
+        "recorded_at":      div.recorded_at,
+    }
+
+
+@app.get("/dividends/history")
+def dividend_history(
+    user_id: int = Depends(get_current_user),
+    session: Session = Depends(get_session),
+):
+    """Return all recorded dividend payments for the current user."""
+    divs = session.exec(
+        select(Dividend)
+        .where(Dividend.user_id == user_id)
+        .order_by(Dividend.pay_date.desc())
+    ).all()
+
+    total_received = round(sum(d.total_received for d in divs), 2)
+
+    return {
+        "total_received": total_received,
+        "count":          len(divs),
+        "dividends": [
+            {
+                "id":               d.id,
+                "symbol":           d.symbol,
+                "amount_per_share": d.amount_per_share,
+                "total_received":   d.total_received,
+                "ex_date":          d.ex_date,
+                "pay_date":         d.pay_date,
+                "recorded_at":      d.recorded_at,
+            }
+            for d in divs
+        ],
     }
 
 

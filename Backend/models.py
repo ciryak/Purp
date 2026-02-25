@@ -74,3 +74,15 @@ class ProcessedEvent(SQLModel, table=True):
     """Stripe idempotency — tracks already-processed webhook events."""
     event_id: str = Field(primary_key=True, max_length=255)
     processed_at: str
+
+
+class Dividend(SQLModel, table=True):
+    """Records dividend payments received by the user."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    user_id: int = Field(foreign_key="user.id", index=True)
+    symbol: str
+    amount_per_share: float
+    total_received: float
+    ex_date: str
+    pay_date: str
+    recorded_at: str

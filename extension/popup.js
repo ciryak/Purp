@@ -278,6 +278,49 @@ function injectStyles() {
     .tax-summary-row .label { color: var(--text2, rgba(255,255,255,0.6)); }
     .tax-summary-row .value { font-variant-numeric: tabular-nums; }
 
+
+    /* ── Dividend Income Card ────────────────────────────────── */
+    .div-card {
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(16,185,129,0.2);
+      border-radius: 16px; padding: 16px; margin-bottom: 16px;
+    }
+    .div-card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
+    .div-card-title { font-size: 11px; font-weight: 700; letter-spacing: 0.8px; text-transform: uppercase; color: #10b981; }
+    .div-refresh-btn { background: none; border: none; color: rgba(255,255,255,0.3); cursor: pointer; font-size: 13px; padding: 2px 6px; border-radius: 6px; transition: color 0.15s; }
+    .div-refresh-btn:hover { color: #10b981; }
+    .div-income-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 14px; }
+    .div-income-cell { background: rgba(16,185,129,0.07); border: 1px solid rgba(16,185,129,0.15); border-radius: 10px; padding: 10px 12px; text-align: center; }
+    .div-income-label { font-size: 9px; font-weight: 700; letter-spacing: 0.8px; text-transform: uppercase; color: rgba(16,185,129,0.6); margin-bottom: 3px; }
+    .div-income-value { font-size: 17px; font-weight: 800; color: #10b981; font-variant-numeric: tabular-nums; }
+    .div-section-label { font-size: 9px; font-weight: 700; letter-spacing: 0.8px; text-transform: uppercase; color: rgba(255,255,255,0.3); margin: 12px 0 6px; }
+    .div-upcoming-list { margin-bottom: 14px; }
+    .div-upcoming-row { display: flex; justify-content: space-between; align-items: center; padding: 7px 10px; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06); border-radius: 8px; margin-bottom: 4px; font-size: 11px; }
+    .div-upcoming-sym { font-weight: 700; color: #f1f0f5; min-width: 48px; }
+    .div-upcoming-date { color: rgba(255,255,255,0.4); font-size: 10px; }
+    .div-upcoming-amount { color: #10b981; font-weight: 700; font-variant-numeric: tabular-nums; }
+    .div-upcoming-badge { background: rgba(16,185,129,0.15); color: #10b981; border-radius: 4px; font-size: 8px; font-weight: 700; padding: 2px 5px; }
+    .div-asset-table { width: 100%; border-collapse: collapse; font-size: 10px; margin-bottom: 10px; }
+    .div-asset-table th { font-size: 8px; font-weight: 700; letter-spacing: 0.6px; text-transform: uppercase; color: rgba(255,255,255,0.3); padding: 4px 6px; text-align: right; border-bottom: 1px solid rgba(255,255,255,0.06); }
+    .div-asset-table th:first-child { text-align: left; }
+    .div-asset-table td { padding: 6px 6px; border-bottom: 1px solid rgba(255,255,255,0.04); color: rgba(255,255,255,0.6); text-align: right; font-variant-numeric: tabular-nums; }
+    .div-asset-table td:first-child { text-align: left; color: #f1f0f5; font-weight: 600; }
+    .div-asset-table tr:last-child td { border-bottom: none; }
+    .div-yoc-better { color: #10b981; font-weight: 700; }
+    .div-yoc-same   { color: #fbbf24; }
+    .div-yoc-lower  { color: rgba(255,255,255,0.4); }
+    .div-no-dividend { color: rgba(255,255,255,0.25); font-size: 9px; }
+    .div-calendar-strip { display: flex; gap: 4px; overflow-x: auto; padding-bottom: 4px; scrollbar-width: none; }
+    .div-calendar-strip::-webkit-scrollbar { display: none; }
+    .div-cal-day { flex: 0 0 38px; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06); border-radius: 8px; padding: 6px 4px; text-align: center; }
+    .div-cal-day.has-event { background: rgba(16,185,129,0.12); border-color: rgba(16,185,129,0.3); }
+    .div-cal-day-num { font-weight: 700; color: #f1f0f5; font-size: 11px; }
+    .div-cal-day-mon { color: rgba(255,255,255,0.3); font-size: 9px; margin-top: 1px; }
+    .div-cal-day-sym { color: #10b981; font-size: 8px; margin-top: 3px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 36px; }
+    .div-empty { text-align: center; color: rgba(255,255,255,0.25); font-size: 11px; padding: 16px 0; }
+    .div-toggle-btn { background: none; border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; color: rgba(255,255,255,0.4); font-size: 9px; padding: 3px 8px; cursor: pointer; transition: all 0.15s; }
+    .div-toggle-btn:hover { border-color: rgba(16,185,129,0.4); color: #10b981; }
+
     /* ── Loading shimmer ──────────────────────────────────────── */
     @keyframes shimmer {
       0%   { background-position: -400px 0; }
@@ -363,6 +406,7 @@ function startRefresh() {
   refreshTimer = setInterval(() => {
     if (!authToken) return;
     fetchPortfolio(); loadMainChart(true);
+    loadDividendCard();
     if ($('market-watch')?.classList.contains('active')) loadMarketWatch();
   }, REFRESH_MS);
 }
@@ -772,6 +816,8 @@ async function fetchPortfolio() {
     renderSpark(`spark-${asset.id}`, asset.history || [], isProfit ? '#10b981' : '#ef4444');
   });
   applyVisibilityMask();
+  // Trigger dividend card load (non-blocking)
+  loadDividendCard();
 }
 
 // ── DETAIL VIEW ──────────────────────────────────────────────────
@@ -1349,6 +1395,207 @@ async function handleTaxProUpgrade() {
     else { const err = await res.json().catch(() => ({})); toast(err.detail || 'Could not initiate payment.', 'error'); }
   } finally { btn.disabled = false; btn.textContent = 'Upgrade to Tax Pro'; }
 }
+
+
+// ══════════════════════════════════════════════════════════════════
+// DIVIDEND TRACKER
+// ══════════════════════════════════════════════════════════════════
+
+let _divCardBuilt      = false;   // flag: card HTML created
+let _divShowAllAssets  = false;   // toggle to show all assets in table
+const MONTHS_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+/** Inject the Dividend Income card into the dashboard if it doesn't exist yet. */
+function ensureDividendCard() {
+  if ($('div-income-card')) return;
+
+  // Find the assets list section and insert after
+  const assetsList = $('assets-list');
+  if (!assetsList) return;
+
+  const card = document.createElement('div');
+  card.id = 'div-income-card';
+  card.className = 'div-card';
+  card.innerHTML = `
+    <div class="div-card-header">
+      <span class="div-card-title">🌱 Dividend Income</span>
+      <button class="div-refresh-btn" id="btn-div-refresh" title="Refresh dividend data">↻</button>
+    </div>
+    <div id="div-card-body">
+      <div class="shimmer-line" style="width:100%"></div>
+      <div class="shimmer-line" style="width:70%"></div>
+      <div class="shimmer-line" style="width:85%"></div>
+    </div>`;
+
+  // Insert card AFTER the assets-list (before the next sibling or end of parent)
+  assetsList.parentNode.insertBefore(card, assetsList.nextSibling);
+
+  $('btn-div-refresh').addEventListener('click', () => loadDividendCard(true));
+  _divCardBuilt = true;
+}
+
+/** Main loader — fetches /portfolio/dividends and renders the card. */
+async function loadDividendCard(force = false) {
+  if (!authToken) return;
+
+  ensureDividendCard();
+
+  const bodyEl = $('div-card-body');
+  if (!bodyEl) return;
+
+  bodyEl.innerHTML = `
+    <div class="shimmer-line" style="width:100%"></div>
+    <div class="shimmer-line" style="width:70%"></div>
+    <div class="shimmer-line" style="width:85%"></div>`;
+
+  const res = await apiFetch('/portfolio/dividends', { headers: authHeaders() });
+  if (!res || !res.ok) {
+    bodyEl.innerHTML = '<div class="div-empty">Could not load dividend data.</div>';
+    return;
+  }
+
+  const data = await res.json();
+
+  if (!data.assets || data.assets.length === 0) {
+    bodyEl.innerHTML = `<div class="div-empty">No stock positions found.<br><span style="font-size:10px;opacity:.6;">Add stocks to your portfolio to see dividend income projections.</span></div>`;
+    return;
+  }
+
+  const hasAnyDividend = data.assets.some((a) => a.pays_dividend);
+
+  bodyEl.innerHTML = `
+    <!-- ── Income Summary ── -->
+    <div class="div-income-grid">
+      <div class="div-income-cell">
+        <div class="div-income-label">Annual Income</div>
+        <div class="div-income-value sensitive-value" id="div-annual">${formatUSD(data.total_annual_income)}</div>
+      </div>
+      <div class="div-income-cell">
+        <div class="div-income-label">Monthly Income</div>
+        <div class="div-income-value sensitive-value" id="div-monthly">${formatUSD(data.total_monthly_income)}</div>
+      </div>
+    </div>
+
+    <!-- ── Ex-Date Calendar Strip ── -->
+    ${buildCalendarStrip(data.upcoming_payments)}
+
+    <!-- ── Upcoming Payments (next 60 days) ── -->
+    ${buildUpcomingPayments(data.upcoming_payments)}
+
+    <!-- ── Per-Asset Yield Table ── -->
+    <div class="div-section-label">Yield on Cost vs Current Yield</div>
+    ${buildYieldTable(data.assets)}
+    ${data.assets.length > 3 ? `<button class="div-toggle-btn" id="btn-div-toggle-assets">${_divShowAllAssets ? '▲ Show less' : '▼ Show all ' + data.assets.length + ' assets'}</button>` : ''}`;
+
+  // Wire toggle button
+  const toggleBtn = $('btn-div-toggle-assets');
+  if (toggleBtn) {
+    toggleBtn.addEventListener('click', () => {
+      _divShowAllAssets = !_divShowAllAssets;
+      const tableEl = $('div-yield-table-body');
+      if (tableEl) {
+        tableEl.innerHTML = buildYieldRows(data.assets);
+      }
+      toggleBtn.textContent = _divShowAllAssets
+        ? '▲ Show less'
+        : '▼ Show all ' + data.assets.length + ' assets';
+    });
+  }
+
+  applyVisibilityMask();
+}
+
+/** Build the 30-day calendar strip showing ex-dates. */
+function buildCalendarStrip(upcoming) {
+  const today = new Date();
+  const eventMap = {};
+  upcoming.forEach((p) => {
+    if (p.ex_date) eventMap[p.ex_date.slice(0, 10)] = p.symbol;
+  });
+
+  const days = [];
+  for (let i = 0; i < 30; i++) {
+    const d = new Date(today);
+    d.setDate(today.getDate() + i);
+    const key = d.toISOString().slice(0, 10);
+    const sym = eventMap[key];
+    days.push(`
+      <div class="div-cal-day ${sym ? 'has-event' : ''}">
+        <div class="div-cal-day-num">${d.getDate()}</div>
+        <div class="div-cal-day-mon">${MONTHS_SHORT[d.getMonth()]}</div>
+        ${sym ? `<div class="div-cal-day-sym">${sym}</div>` : ''}
+      </div>`);
+  }
+
+  return `
+    <div class="div-section-label">Ex-Date Calendar — Next 30 Days</div>
+    <div class="div-calendar-strip">${days.join('')}</div>`;
+}
+
+/** Build upcoming payments list (next 60 days). */
+function buildUpcomingPayments(upcoming) {
+  if (!upcoming || upcoming.length === 0) {
+    return `<div class="div-section-label">Upcoming Payments (60 days)</div>
+            <div class="div-empty" style="padding:10px 0;">No upcoming ex-dates in the next 60 days.</div>`;
+  }
+
+  const rows = upcoming.map((p) => `
+    <div class="div-upcoming-row">
+      <span class="div-upcoming-sym">${p.symbol}</span>
+      <span class="div-upcoming-date">Ex: ${p.ex_date ? p.ex_date.slice(0, 10) : '—'}</span>
+      <span class="div-upcoming-amount sensitive-value">+${formatUSD(p.projected_total)}</span>
+      <span class="div-upcoming-badge">Q</span>
+    </div>`).join('');
+
+  return `<div class="div-section-label">Upcoming Payments (60 days)</div>
+          <div class="div-upcoming-list">${rows}</div>`;
+}
+
+/** Build the per-asset yield comparison table. */
+function buildYieldTable(assets) {
+  return `
+    <table class="div-asset-table">
+      <thead>
+        <tr>
+          <th>Symbol</th>
+          <th>Shares</th>
+          <th>Yield Now</th>
+          <th>YoC</th>
+          <th>Annual</th>
+          <th>Next Ex</th>
+        </tr>
+      </thead>
+      <tbody id="div-yield-table-body">${buildYieldRows(assets)}</tbody>
+    </table>`;
+}
+
+function buildYieldRows(assets) {
+  const visible = _divShowAllAssets ? assets : assets.slice(0, 3);
+  return visible.map((a) => {
+    if (!a.pays_dividend) {
+      return `<tr>
+        <td>${a.symbol}</td>
+        <td>${a.shares}</td>
+        <td colspan="4"><span class="div-no-dividend">No dividend</span></td>
+      </tr>`;
+    }
+    // YoC class: better if yield_on_cost > yield_current
+    const yocClass = a.yield_on_cost > a.yield_current
+      ? 'div-yoc-better'
+      : a.yield_on_cost === a.yield_current
+        ? 'div-yoc-same'
+        : 'div-yoc-lower';
+    return `<tr>
+      <td>${a.symbol}</td>
+      <td>${a.shares}</td>
+      <td>${a.yield_current.toFixed(2)}%</td>
+      <td class="${yocClass}">${a.yield_on_cost.toFixed(2)}%</td>
+      <td class="sensitive-value">${formatUSD(a.annual_income)}</td>
+      <td>${a.next_ex_date ? a.next_ex_date.slice(0, 10) : '—'}</td>
+    </tr>`;
+  }).join('');
+}
+
 
 // ── INIT ─────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
