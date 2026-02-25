@@ -421,16 +421,20 @@ async function handleLogin() {
   const password = $('login-password').value;
   clearError('login-error');
   if (!username || !password) { showError('login-error', 'Please fill in username and password'); return; }
-  const btn = $('btn-login'); btn.disabled = true; btn.textContent = 'Signing in…';
-  try {
-    const res = await apiFetch('/auth/login', { method: 'POST', headers: authHeaders(), body: JSON.stringify({ username, password }) });
-    if (data.requires_verification) {
-    VerifyScreen.show(data.token, data.user.email, (user) => showMainApp(token, user));
-    return;
-}
 
+  const btn = $('btn-login');
+  btn.disabled = true;
+  btn.textContent = 'Signing in…';
+
+  try {
+    const res = await apiFetch('/auth/login', {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify({ username, password }),
+    });
     if (!res) return;
-     if (res.ok) {
+
+    if (res.ok) {
       const data = await res.json();
       saveSession(data.token, data.user);
 
@@ -439,41 +443,62 @@ async function handleLogin() {
         showVerifyScreen(data.token, emailForVerify, (verifiedUser) => {
           const updatedUser = { ...currentUser, ...verifiedUser, is_verified: true };
           saveSession(authToken, updatedUser);
-          hideLoginScreen(); updateProfileBar();
-          fetchPortfolio(); loadMainChart(); startRefresh(); checkAIStatus();
+          hideLoginScreen();
+          updateProfileBar();
+          fetchPortfolio();
+          loadMainChart();
+          startRefresh();
+          checkAIStatus();
           toast('Email verified! Welcome to Purp 🎉', 'success', 5000);
         });
         return;
       }
 
-      hideLoginScreen(); updateProfileBar();
-      fetchPortfolio(); loadMainChart(); startRefresh(); checkAIStatus();
-    } else { const err = await res.json().catch(() => ({})); showError('login-error', err.detail || 'Incorrect username or password'); }
-
-
+      hideLoginScreen();
+      updateProfileBar();
+      fetchPortfolio();
+      loadMainChart();
+      startRefresh();
+      checkAIStatus();
+    } else {
+      const err = await res.json().catch(() => ({}));
+      showError('login-error', err.detail || 'Incorrect username or password');
+    }
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Sign In';
+  }
+}
 
 async function handleRegister() {
   const username = $('reg-username').value.trim();
-  const email    = $('reg-email').value.trim();
+  const email = $('reg-email').value.trim();
   const password = $('reg-password').value;
   clearError('register-error');
+
   if (!username || !email || !password) { showError('register-error', 'All fields are required'); return; }
   if (username.length < 3) { showError('register-error', 'Username must be at least 3 characters'); return; }
   if (password.length < 4) { showError('register-error', 'Password must be at least 4 characters'); return; }
   if (!email.includes('@')) { showError('register-error', 'Enter a valid email address'); return; }
-  const btn = $('btn-register'); btn.disabled = true; btn.textContent = 'Creating account…';
+
+  const btn = $('btn-register');
+  btn.disabled = true;
+  btn.textContent = 'Creating account…';
+
   try {
     let res;
     try {
       res = await fetch(`${API_BASE}/auth/register`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username, email, password }),
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, email, password }),
       });
-      if (data.requires_verification) {
-      VerifyScreen.show(data.token, data.user.email, (user) => showMainApp(token, user));
+    } catch (networkErr) {
+      showError('register-error', `Network error: ${networkErr.message}`);
       return;
-}
-    } catch (networkErr) { showError('register-error', `Network error: ${networkErr.message}`); return; }
-   if (res.ok) {
+    }
+
+    if (res.ok) {
       const data = await res.json();
       saveSession(data.token, data.user);
 
@@ -482,37 +507,36 @@ async function handleRegister() {
         showVerifyScreen(data.token, emailForVerify, (verifiedUser) => {
           const updatedUser = { ...currentUser, ...verifiedUser, is_verified: true };
           saveSession(authToken, updatedUser);
-          hideLoginScreen(); updateProfileBar();
-          fetchPortfolio(); loadMainChart(); startRefresh(); checkAIStatus();
+          hideLoginScreen();
+          updateProfileBar();
+          fetchPortfolio();
+          loadMainChart();
+          startRefresh();
+          checkAIStatus();
           toast('Account created & verified! Welcome to Purp 🎉', 'success', 5000);
         });
         return;
       }
 
-      hideLoginScreen(); updateProfileBar();
-      fetchPortfolio(); loadMainChart(); startRefresh(); checkAIStatus();
+      hideLoginScreen();
+      updateProfileBar();
+      fetchPortfolio();
+      loadMainChart();
+      startRefresh();
+      checkAIStatus();
       toast('Account created! 🎉', 'success', 5000);
-
     } else {
       let errMsg = `HTTP ${res.status}`;
-      try { const errBody = await res.json(); errMsg = errBody.detail || errBody.message || JSON.stringify(errBody); } catch {}
+      try {
+        const errBody = await res.json();
+        errMsg = errBody.detail || errBody.message || JSON.stringify(errBody);
+      } catch {}
       showError('register-error', errMsg);
     }
-  } finally { btn.disabled = false; btn.textContent = 'Create Account'; }
-}
-
-async function handleLogout() {
-  closeMenu();
-  try { await apiFetch('/auth/logout', { method: 'POST', headers: authHeaders() }); } catch (e) {}
-  clearSession(); showLoginScreen();
-}
-
-function toggleAuthMode() {
-  const loginEl = $('login-form'), regEl = $('register-form');
-  const showingLogin = loginEl.style.display !== 'none';
-  loginEl.style.display = showingLogin ? 'none' : 'block';
-  regEl.style.display   = showingLogin ? 'block' : 'none';
-  clearError('login-error'); clearError('register-error');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Create Account';
+  }
 }
 
 // ── PROFILE BAR ──────────────────────────────────────────────────
@@ -564,6 +588,7 @@ function switchTab(id) {
   if (id === 'dashboard') loadMainChart();
   if (id === 'transactions-page') loadTransactions();
   if (id === 'market-watch') loadMarketWatch();
+  if (id === 'add-asset') loadAlerts();
 }
 
 // ── MAIN CHART ───────────────────────────────────────────────────
@@ -856,6 +881,7 @@ async function fetchPortfolio() {
   applyVisibilityMask();
   // Trigger dividend card load (non-blocking)
   loadDividendCard();
+  loadAlerts();
 }
 
 // ── DETAIL VIEW ──────────────────────────────────────────────────
@@ -983,6 +1009,112 @@ async function handleAddAsset() {
 }
 
 // ════════════════════════════════════════════════════════════════
+
+function updateAlertFormFields() {
+  const type = $('alert-type-input')?.value;
+  const labelMap = {
+    price_above: 'Target Price ($)',
+    price_below: 'Target Price ($)',
+    percent_change_up: 'Percentage (%)',
+    percent_change_down: 'Percentage (%)',
+    rsi_oversold: 'RSI Level (0-100)',
+    rsi_overbought: 'RSI Level (0-100)',
+    rebalance_drift: 'Drift Threshold (%)',
+    volume_spike: 'Volume Multiplier',
+    portfolio_down: 'Portfolio Drop (%)',
+  };
+
+  if ($('alert-target-label')) $('alert-target-label').textContent = labelMap[type] || 'Target Value';
+  if ($('alert-rsi-period-group')) $('alert-rsi-period-group').style.display = ['rsi_oversold', 'rsi_overbought'].includes(type) ? 'block' : 'none';
+  if ($('alert-target-allocation-group')) $('alert-target-allocation-group').style.display = type === 'rebalance_drift' ? 'block' : 'none';
+  if ($('alert-symbol-group')) $('alert-symbol-group').style.display = type === 'portfolio_down' ? 'none' : 'block';
+
+  if ($('alert-symbol-input') && type === 'portfolio_down') {
+    $('alert-symbol-input').value = '';
+  }
+}
+
+function renderAlertsList(alerts = []) {
+  const root = $('alerts-list');
+  if (!root) return;
+  if (!alerts.length) {
+    root.innerHTML = '<div class="empty-sub">No alerts yet.</div>';
+    return;
+  }
+  root.innerHTML = alerts.map((a) => {
+    const sym = a.symbol || 'PORTFOLIO';
+    const status = a.active ? 'Active' : 'Inactive';
+    return `<div class="market-row"><span class="market-symbol">${sym}</span><span class="market-price">${a.alert_type}</span><span class="market-change">${a.target_value} · ${status}</span></div>`;
+  }).join('');
+}
+
+async function loadAlerts() {
+  if (!authToken) return;
+  const res = await apiFetch('/alerts', { headers: authHeaders() });
+  if (!res || !res.ok) return;
+  const data = await res.json();
+  renderAlertsList(data.alerts || []);
+}
+
+async function handleCreateAlert() {
+  if (!authToken) return;
+  const alertType = $('alert-type-input')?.value;
+  const symbol = $('alert-symbol-input')?.value?.trim()?.toUpperCase() || null;
+  const targetValue = parseFloat($('alert-target-input')?.value || '0');
+  const recurring = !!$('alert-recurring-input')?.checked;
+  const rsiPeriod = parseInt($('alert-rsi-period-input')?.value || '14', 10);
+  const targetAllocation = parseFloat($('alert-target-allocation-input')?.value || '0');
+
+  if (!alertType) { toast('Choose an alert type.', 'warning'); return; }
+  if (alertType !== 'portfolio_down' && !symbol) { toast('Symbol is required for this alert type.', 'warning'); return; }
+  if (!targetValue || targetValue <= 0) { toast('Enter a valid threshold value.', 'warning'); return; }
+
+  const payload = {
+    symbol,
+    alert_type: alertType,
+    target_value: targetValue,
+    recurring,
+  };
+
+  if (['rsi_oversold', 'rsi_overbought'].includes(alertType)) payload.rsi_period = rsiPeriod;
+  if (alertType === 'rebalance_drift') {
+    if (!targetAllocation || targetAllocation < 0 || targetAllocation > 100) {
+      toast('Target allocation must be between 0 and 100.', 'warning');
+      return;
+    }
+    payload.target_allocation_pct = targetAllocation;
+    payload.rebalance_threshold_pct = targetValue;
+  }
+
+  const btn = $('btn-create-alert');
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = 'Creating…';
+  }
+  try {
+    const res = await apiFetch('/alerts', {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify(payload),
+    });
+    if (!res) return;
+    if (res.ok) {
+      toast('Alert created successfully.', 'success');
+      if ($('alert-target-input')) $('alert-target-input').value = '';
+      if ($('alert-target-allocation-input')) $('alert-target-allocation-input').value = '';
+      await loadAlerts();
+    } else {
+      const err = await res.json().catch(() => ({}));
+      toast(err.detail || 'Could not create alert.', 'error');
+    }
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = 'Create Alert';
+    }
+  }
+}
+
 // CSV IMPORT
 // ════════════════════════════════════════════════════════════════
 const BROKER_HELP = {
@@ -1717,6 +1849,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Add asset
   $('btn-save-asset')?.addEventListener('click', handleAddAsset);
+  $('btn-create-alert')?.addEventListener('click', handleCreateAlert);
+  $('alert-type-input')?.addEventListener('change', updateAlertFormFields);
+  updateAlertFormFields();
   $('symbol-input')?.addEventListener('input', (e) => {
     clearTimeout(searchTimer);
     const v = e.target.value.trim();
