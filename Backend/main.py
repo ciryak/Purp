@@ -27,7 +27,6 @@ import bcrypt
 import stripe
 from jose import JWTError, jwt
 from fastapi.staticfiles import StaticFiles
-<<<<<<< HEAD
 
 import sentry_sdk
 from sentry_sdk.integrations.fastapi import FastApiIntegration
@@ -37,14 +36,12 @@ from slowapi import Limiter
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 
-=======
 import sentry_sdk
 from sentry_sdk.integrations.fastapi import FastApiIntegration
 from sentry_sdk.integrations.starlette import StarletteIntegration
 from slowapi import Limiter
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
->>>>>>> 0b733259a13ac5db833c5780c24ee8de961d2e95
 
 from models import Asset, User, Transaction, PriceAlert, WatchlistItem, ProcessedEvent, Dividend, EmailVerification, NetWorthEntry
 from services import (
