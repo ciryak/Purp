@@ -41,7 +41,6 @@ from services import (
     generate_form_8949,
     get_dividend_data,
     generate_weekly_digest,
-    calculate_portfolio_score,
 )
 
 # ── Config ─────────────────────────────────────────────────────────────────────
@@ -564,16 +563,6 @@ class PreferencesInput(BaseModel):
     notification_email: bool
     notification_digest: bool
     notification_browser: bool
-
-
-class NetWorthEntryInput(BaseModel):
-    category: str
-    label: str
-    value: float
-
-
-class RebalanceInput(BaseModel):
-    targets: dict[str, float]
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
