@@ -677,15 +677,21 @@ function closeMenu() { $('nav-menu').classList.add('hidden'); $('btn-hamburger')
 function switchTab(id) {
   document.querySelectorAll('.page').forEach((p) => p.classList.remove('active'));
   $(id)?.classList.add('active');
-  $('top-tab-dashboard')?.classList.toggle('active', ['dashboard','add-asset','transactions-page'].includes(id));
+
+  $('top-tab-dashboard')?.classList.toggle('active', id !== 'market-watch');
   $('top-tab-market')?.classList.toggle('active', id === 'market-watch');
-  $('nav-portfolio').classList.toggle('active', id === 'dashboard');
-  $('nav-add').classList.toggle('active', id === 'add-asset');
+
+  $('nav-portfolio')?.classList.toggle('active', id === 'dashboard');
+  $('nav-market')?.classList.toggle('active', id === 'market-watch');
+  $('nav-add')?.classList.toggle('active', id === 'add-asset');
+  $('nav-alerts')?.classList.toggle('active', id === 'alerts-page');
+  $('nav-import')?.classList.toggle('active', id === 'import-page');
   $('nav-transactions')?.classList.toggle('active', id === 'transactions-page');
+
   if (id === 'dashboard') loadMainChart();
   if (id === 'transactions-page') loadTransactions();
   if (id === 'market-watch') loadMarketWatch();
-  if (id === 'add-asset') loadAlerts();
+  if (id === 'alerts-page') loadAlerts();
 }
 
 // ── MAIN CHART ───────────────────────────────────────────────────
@@ -2109,7 +2115,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Nav
   $('nav-portfolio')?.addEventListener('click',    () => { switchTab('dashboard');        closeMenu(); });
+  $('nav-market')?.addEventListener('click',       () => { switchTab('market-watch');      closeMenu(); });
   $('nav-add')?.addEventListener('click',          () => { switchTab('add-asset');         closeMenu(); });
+  $('nav-alerts')?.addEventListener('click',       () => { switchTab('alerts-page');       closeMenu(); });
+  $('nav-import')?.addEventListener('click',       () => { switchTab('import-page');       closeMenu(); });
   $('nav-transactions')?.addEventListener('click', () => { switchTab('transactions-page'); closeMenu(); });
   $('nav-logout')?.addEventListener('click',       () => { handleLogout(); });
 
