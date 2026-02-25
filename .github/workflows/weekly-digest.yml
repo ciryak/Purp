@@ -1,0 +1,16 @@
+name: Weekly Email Digest
+
+on:
+  schedule:
+    - cron: "0 9 * * 0"
+  workflow_dispatch:
+
+jobs:
+  send-weekly-digest:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger weekly digest endpoint
+        env:
+          APP_URL: ${{ secrets.APP_URL }}
+        run: |
+          curl --fail --show-error --silent -X POST "$APP_URL/digest/send-weekly"

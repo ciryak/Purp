@@ -39,6 +39,7 @@ from services import (
     calculate_cost_basis,
     generate_form_8949,
     get_dividend_data,
+    generate_weekly_digest,
 )
 
 # ── Config ─────────────────────────────────────────────────────────────────────
@@ -272,6 +273,108 @@ def send_alert_email_async(
     ).start()
 
 
+def _send_weekly_digest_email(to_email: str, username: str, digest_data: dict) -> None:
+    perf = digest_data.get("performance", {})
+    change_pct = float(perf.get("change_pct", 0) or 0)
+    change_value = float(perf.get("change_value", 0) or 0)
+    color = "#22c55e" if change_pct >= 0 else "#ef4444"
+    sign = "+" if change_pct >= 0 else ""
+
+    best = digest_data.get("best_performer") or {}
+    worst = digest_data.get("worst_performer") or {}
+    dividends = digest_data.get("dividends", {})
+    tax_ops = digest_data.get("tax_opportunities") or []
+    alerts_triggered = int(digest_data.get("alerts_triggered", 0) or 0)
+    tx_count = int(digest_data.get("transactions_count", 0) or 0)
+
+    dividends_html = ""
+    if float(dividends.get("total", 0) or 0) > 0:
+        items_html = "".join(
+            f"<li style='margin:6px 0;'>🪙 <strong>{item.get('symbol','')}</strong>: ${float(item.get('amount',0) or 0):,.2f}</li>"
+            for item in dividends.get("items", [])
+        )
+        dividends_html = f"""
+        <tr><td style="padding:0 36px 18px;">
+          <div style="background:rgba(34,197,94,.08);border:1px solid rgba(34,197,94,.3);border-radius:14px;padding:18px;">
+            <h3 style="margin:0 0 8px;color:#86efac;font-size:15px;">Dividends Received</h3>
+            <p style="margin:0 0 10px;color:#f1f0f5;font-size:13px;">Total this week: <strong>${float(dividends.get('total',0) or 0):,.2f}</strong></p>
+            <ul style="margin:0;padding-left:18px;color:rgba(241,240,245,.8);font-size:12px;">{items_html}</ul>
+          </div>
+        </td></tr>
+        """
+
+    tax_html = ""
+    if digest_data.get("is_tax_pro") and tax_ops:
+        top_ops = "".join(
+            f"<li style='margin:6px 0;'><strong>{op.get('symbol','')}</strong> — est. tax saved ${float(op.get('estimated_tax_saved',0) or 0):,.2f}</li>"
+            for op in tax_ops[:3]
+        )
+        tax_html = f"""
+        <tr><td style="padding:0 36px 18px;">
+          <div style="background:rgba(236,72,153,.08);border:1px solid rgba(236,72,153,.3);border-radius:14px;padding:18px;">
+            <h3 style="margin:0 0 10px;color:#f9a8d4;font-size:15px;">Tax Opportunities</h3>
+            <ul style="margin:0;padding-left:18px;color:rgba(241,240,245,.8);font-size:12px;">{top_ops}</ul>
+          </div>
+        </td></tr>
+        """
+
+    html = f"""<!DOCTYPE html><html><body style="margin:0;padding:0;background:#0a0914;font-family:'Segoe UI',Arial,sans-serif;">
+<table width="100%" cellpadding="0" cellspacing="0"><tr><td align="center" style="padding:48px 16px;">
+<table width="560" cellpadding="0" cellspacing="0" style="background:#110f20;border-radius:20px;border:1px solid rgba(124,58,237,.28);overflow:hidden;">
+  <tr><td style="background:linear-gradient(135deg,#7c3aed,#a78bfa);padding:34px 36px;text-align:center;">
+    <h1 style="margin:0;color:#fff;font-size:24px;font-weight:800;">Your Week in Review — Purp</h1>
+    <p style="margin:10px 0 0;color:rgba(255,255,255,.82);font-size:13px;">Hey <strong>{username}</strong>, here is your weekly portfolio snapshot.</p>
+  </td></tr>
+
+  <tr><td style="padding:24px 36px 14px;">
+    <div style="background:rgba(124,58,237,.12);border:1px solid rgba(124,58,237,.35);border-radius:14px;padding:18px;text-align:center;">
+      <p style="margin:0;color:rgba(241,240,245,.55);font-size:11px;text-transform:uppercase;letter-spacing:.7px;">Weekly Performance</p>
+      <p style="margin:8px 0 2px;color:{color};font-size:31px;font-weight:900;">{sign}{change_pct:.2f}%</p>
+      <p style="margin:0;color:rgba(241,240,245,.75);font-size:13px;">{sign}${change_value:,.2f} this week</p>
+    </div>
+  </td></tr>
+
+  <tr><td style="padding:8px 36px 18px;">
+    <table width="100%" cellpadding="0" cellspacing="0"><tr>
+      <td width="50%" style="padding-right:8px;">
+        <div style="background:rgba(34,197,94,.08);border:1px solid rgba(34,197,94,.26);border-radius:12px;padding:14px;">
+          <p style="margin:0;color:rgba(241,240,245,.45);font-size:11px;text-transform:uppercase;">Best Performer</p>
+          <p style="margin:8px 0 0;color:#fff;font-size:16px;font-weight:700;">{best.get('symbol','—')}</p>
+          <p style="margin:4px 0 0;color:#86efac;font-size:12px;">{best.get('change_pct',0):+.2f}%</p>
+        </div>
+      </td>
+      <td width="50%" style="padding-left:8px;">
+        <div style="background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.26);border-radius:12px;padding:14px;">
+          <p style="margin:0;color:rgba(241,240,245,.45);font-size:11px;text-transform:uppercase;">Worst Performer</p>
+          <p style="margin:8px 0 0;color:#fff;font-size:16px;font-weight:700;">{worst.get('symbol','—')}</p>
+          <p style="margin:4px 0 0;color:#fca5a5;font-size:12px;">{worst.get('change_pct',0):+.2f}%</p>
+        </div>
+      </td>
+    </tr></table>
+  </td></tr>
+
+  {dividends_html}
+  {tax_html}
+
+  <tr><td style="padding:0 36px 26px;">
+    <div style="border-top:1px solid rgba(124,58,237,.28);padding-top:16px;">
+      <p style="margin:0;color:rgba(241,240,245,.75);font-size:12px;">Alerts triggered: <strong>{alerts_triggered}</strong> · Transactions: <strong>{tx_count}</strong></p>
+      <p style="margin:14px 0 0;font-size:12px;"><a href="https://www.getpurpai.com" style="color:#a78bfa;text-decoration:none;">Open Purp App</a> · <a href="https://www.getpurpai.com/settings" style="color:#a78bfa;text-decoration:none;">Manage notifications</a></p>
+    </div>
+  </td></tr>
+</table></td></tr></table></body></html>"""
+
+    _send_email(to_email, "Your Week in Review — Purp", html)
+
+
+def send_weekly_digest_email_async(to_email: str, username: str, digest_data: dict) -> None:
+    threading.Thread(
+        target=_send_weekly_digest_email,
+        args=(to_email, username, digest_data),
+        daemon=True,
+    ).start()
+
+
 # ── Verification code helpers ──────────────────────────────────────────────────
 
 def _generate_code() -> str:
@@ -327,6 +430,17 @@ def create_db() -> None:
             conn.commit()
     except Exception as e:
         print(f"⚠️  Email index: {e}")
+
+    try:
+        with engine.connect() as conn:
+            if _is_postgres:
+                conn.exec_driver_sql('ALTER TABLE "user" ADD COLUMN notification_digest BOOLEAN DEFAULT TRUE')
+            else:
+                conn.exec_driver_sql('ALTER TABLE user ADD COLUMN notification_digest BOOLEAN DEFAULT 1')
+            conn.commit()
+            print("✅ Added notification_digest column")
+    except Exception as e:
+        print(f"ℹ️  notification_digest migration: {e}")
 
     try:
         with Session(engine) as s:
@@ -442,6 +556,12 @@ class AlertCreateInput(BaseModel):
 
 class CheckoutInput(BaseModel):
     plan: str = "investor"
+
+
+class PreferencesInput(BaseModel):
+    notification_email: bool
+    notification_digest: bool
+    notification_browser: bool
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -597,7 +717,7 @@ def auth_me(user_id: int = Depends(get_current_user), session: Session = Depends
     user = session.get(User, user_id)
     if not user:
         raise HTTPException(404, "User not found")
-    return {**_user_payload(user), "email": user.email, "is_verified": user.is_verified}
+    return {**_user_payload(user), "email": user.email, "is_verified": user.is_verified, "notification_digest": user.notification_digest}
 
 
 @app.post("/auth/logout")
@@ -605,13 +725,40 @@ def logout():
     return {"ok": True}
 
 
+@app.patch("/user/preferences")
+def update_user_preferences(
+    data: PreferencesInput,
+    user_id: int = Depends(get_current_user),
+    session: Session = Depends(get_session),
+):
+    user = session.get(User, user_id)
+    if not user:
+        raise HTTPException(404, "User not found")
+
+    user.notification_email = data.notification_email
+    user.notification_digest = data.notification_digest
+    user.notification_browser = data.notification_browser
+    session.add(user)
+    session.commit()
+
+    return {
+        "ok": True,
+        "notification_email": user.notification_email,
+        "notification_digest": user.notification_digest,
+        "notification_browser": user.notification_browser,
+    }
+
+
 def _user_payload(user: User) -> dict:
     return {
-        "id":          user.id,
-        "username":    user.username,
-        "plan":        user.plan,
-        "is_premium":  has_plan(user, "investor", "tax_pro"),
-        "is_verified": user.is_verified,
+        "id":                   user.id,
+        "username":             user.username,
+        "plan":                 user.plan,
+        "is_premium":           has_plan(user, "investor", "tax_pro"),
+        "is_verified":          user.is_verified,
+        "notification_email":   user.notification_email,
+        "notification_digest":  user.notification_digest,
+        "notification_browser": user.notification_browser,
     }
 
 
@@ -804,6 +951,30 @@ def check_alerts_endpoint(background_tasks: BackgroundTasks):
 def _run_alert_check():
     with Session(engine) as session:
         check_and_trigger_alerts(session, send_alert_email_async)
+
+
+@app.post("/digest/send-weekly")
+def send_weekly_digest(session: Session = Depends(get_session)):
+    users = session.exec(
+        select(User).where(
+            User.notification_email == True,
+            User.notification_digest == True,
+            User.email.is_not(None),
+        )
+    ).all()
+
+    sent = 0
+    skipped = 0
+    for user in users:
+        assets = session.exec(select(Asset).where(Asset.user_id == user.id)).all()
+        if not assets:
+            skipped += 1
+            continue
+        digest_data = generate_weekly_digest(user.id, session)
+        send_weekly_digest_email_async(user.email, user.username, digest_data)
+        sent += 1
+
+    return {"sent": sent, "skipped": skipped}
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
