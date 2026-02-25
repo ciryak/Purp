@@ -2332,96 +2332,119 @@
   /* ═══════════════════════════════════
      SIGN IN
   ═══════════════════════════════════ */
-  async function handleSignIn() {
-    const username = document.getElementById('signin-username').value.trim();
-    const password = document.getElementById('signin-password').value;
-    const btn      = document.getElementById('btn-do-signin');
-    document.getElementById('signin-error').classList.add('hidden');
 
-    if (!username) { showFieldError('signin-error','signin-error-msg','Username is required'); return; }
-    if (!password) { showFieldError('signin-error','signin-error-msg','Password is required'); return; }
+/* ──────────────────────────────────────────────
+   OVERRIDE handleSignIn (with verify support)
+   ────────────────────────────────────────────── */
+async function handleSignIn() {
+  const username = document.getElementById('signin-username').value.trim();
+  const password = document.getElementById('signin-password').value;
+  const btn      = document.getElementById('btn-do-signin');
+  document.getElementById('signin-error').classList.add('hidden');
 
-    btn.disabled = true; btn.textContent = 'Signing in…';
-    try {
-      const res  = await fetch(apiUrl('login'), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, password }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (res.ok) {
-        const token = data[CONFIG.TOKEN_KEY] || data.token || data.access_token;
-        const user  = data.user || { username };
-        if (!token) throw new Error('No token in response');
-        saveSession(token, user);
+  if (!username) { showFieldError('signin-error','signin-error-msg','Username is required'); return; }
+  if (!password) { showFieldError('signin-error','signin-error-msg','Password is required'); return; }
+
+  btn.disabled = true; btn.textContent = 'Signing in…';
+  try {
+    const res  = await fetch(apiUrl('login'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (res.ok) {
+      const token = data[CONFIG.TOKEN_KEY] || data.token || data.access_token;
+      const user  = data.user || { username };
+      if (!token) throw new Error('No token in response');
+      saveSession(token, user);
+
+      if (data.requires_verification) {
         closeAuthModal();
         document.getElementById('signin-password').value = '';
-        toast(`Welcome back, ${user.username}! 👋`, 'success');
-      } else {
-        showFieldError('signin-error','signin-error-msg', data.detail || data.message || 'Incorrect username or password');
+        openVerifyModal(token, user.email || '', (verifiedUser) => {
+          const merged = { ...currentUser, ...verifiedUser, is_verified: true };
+          saveSession(authToken, merged);
+          toast(`Welcome back, ${merged.username || username}! 👋`, 'success');
+        });
+        return;
       }
-    } catch {
-      showFieldError('signin-error','signin-error-msg','Connection error. Please try again.');
-    } finally {
-      btn.disabled = false; btn.textContent = 'Sign in to Purp';
-    }
-  }
 
-  document.getElementById('btn-do-signin').addEventListener('click', handleSignIn);
-  document.getElementById('signin-username').addEventListener('keydown', e => { if (e.key === 'Enter') document.getElementById('signin-password').focus(); });
-  document.getElementById('signin-password').addEventListener('keydown', e => { if (e.key === 'Enter') handleSignIn(); });
+      closeAuthModal();
+      document.getElementById('signin-password').value = '';
+      toast(`Welcome back, ${user.username}! 👋`, 'success');
+    } else {
+      showFieldError('signin-error','signin-error-msg', data.detail || data.message || 'Incorrect username or password');
+    }
+  } catch {
+    showFieldError('signin-error','signin-error-msg','Connection error. Please try again.');
+  } finally {
+    btn.disabled = false; btn.textContent = 'Sign in to Purp';
+  }
+}
 
   /* ═══════════════════════════════════
      REGISTER
   ═══════════════════════════════════ */
-  async function handleRegister() {
-    const username = document.getElementById('reg-username').value.trim();
-    const email    = document.getElementById('reg-email').value.trim();
-    const password = document.getElementById('reg-password').value;
-    const btn      = document.getElementById('btn-do-register');
-    document.getElementById('register-error').classList.add('hidden');
 
-    if (!username) { showFieldError('register-error','register-error-msg','Username is required'); return; }
-    if (username.length < CONFIG.MIN_USERNAME) {
-      showFieldError('register-error','register-error-msg',`Username must be at least ${CONFIG.MIN_USERNAME} characters`); return;
-    }
-    if (!email || !isValidEmail(email)) {
-      showFieldError('register-error','register-error-msg','Please enter a valid email address'); return;
-    }
-    if (!password || password.length < CONFIG.MIN_PASSWORD) {
-      showFieldError('register-error','register-error-msg',`Password must be at least ${CONFIG.MIN_PASSWORD} characters`); return;
-    }
 
-    btn.disabled = true; btn.textContent = 'Creating account…';
-    try {
-      const res  = await fetch(apiUrl('register'), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, email, password }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (res.ok) {
-        const token = data[CONFIG.TOKEN_KEY] || data.token || data.access_token;
-        const user  = data.user || { username, email };
-        if (!token) throw new Error('No token in response');
-        saveSession(token, user);
-        closeAuthModal();
-        ['reg-username','reg-email','reg-password'].forEach(id => { document.getElementById(id).value = ''; });
-        toast(`Account created! Welcome to Purp, ${user.username} 🎉`, 'success', 5000);
-      } else {
-        showFieldError('register-error','register-error-msg', data.detail || data.message || 'Registration failed. Please try again.');
-      }
-    } catch {
-      showFieldError('register-error','register-error-msg','Connection error. Check your internet and try again.');
-    } finally {
-      btn.disabled = false; btn.textContent = 'Create free account';
-    }
+/* ──────────────────────────────────────────────
+   OVERRIDE handleRegister (with verify support)
+   ────────────────────────────────────────────── */
+async function handleRegister() {
+  const username = document.getElementById('reg-username').value.trim();
+  const email    = document.getElementById('reg-email').value.trim();
+  const password = document.getElementById('reg-password').value;
+  const btn      = document.getElementById('btn-do-register');
+  document.getElementById('register-error').classList.add('hidden');
+
+  if (!username) { showFieldError('register-error','register-error-msg','Username is required'); return; }
+  if (username.length < CONFIG.MIN_USERNAME) {
+    showFieldError('register-error','register-error-msg',`Username must be at least ${CONFIG.MIN_USERNAME} characters`); return;
+  }
+  if (!email || !isValidEmail(email)) {
+    showFieldError('register-error','register-error-msg','Please enter a valid email address'); return;
+  }
+  if (!password || password.length < CONFIG.MIN_PASSWORD) {
+    showFieldError('register-error','register-error-msg',`Password must be at least ${CONFIG.MIN_PASSWORD} characters`); return;
   }
 
-  document.getElementById('btn-do-register').addEventListener('click', handleRegister);
-  document.getElementById('reg-username').addEventListener('keydown', e => { if (e.key === 'Enter') document.getElementById('reg-email').focus(); });
-  document.getElementById('reg-email').addEventListener('keydown',    e => { if (e.key === 'Enter') document.getElementById('reg-password').focus(); });
-  document.getElementById('reg-password').addEventListener('keydown', e => { if (e.key === 'Enter') handleRegister(); });
+  btn.disabled = true; btn.textContent = 'Creating account…';
+  try {
+    const res  = await fetch(apiUrl('register'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, email, password }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (res.ok) {
+      const token = data[CONFIG.TOKEN_KEY] || data.token || data.access_token;
+      const user  = data.user || { username, email };
+      if (!token) throw new Error('No token in response');
+      saveSession(token, user);
+      closeAuthModal();
+      ['reg-username','reg-email','reg-password'].forEach(id => { document.getElementById(id).value = ''; });
+
+      if (data.requires_verification) {
+        openVerifyModal(token, email, (verifiedUser) => {
+          const merged = { ...currentUser, ...verifiedUser, is_verified: true };
+          saveSession(authToken, merged);
+          toast(`Account verified! Welcome to Purp, ${merged.username || username} 🎉`, 'success', 5000);
+        });
+        return;
+      }
+
+      toast(`Account created! Welcome to Purp, ${user.username} 🎉`, 'success', 5000);
+    } else {
+      showFieldError('register-error','register-error-msg', data.detail || data.message || 'Registration failed. Please try again.');
+    }
+  } catch {
+    showFieldError('register-error','register-error-msg','Connection error. Check your internet and try again.');
+  } finally {
+    btn.disabled = false; btn.textContent = 'Create free account';
+  }
+}
+</script>
 
   /* ═══════════════════════════════════
      PRICING — Stripe checkout
@@ -2493,5 +2516,283 @@
   }
   animateMockBalance();
 </script>
+
+<!-- ════════ VERIFICATION MODAL ════════ -->
+<div id="verify-modal" style="display:none;position:fixed;inset:0;z-index:600;
+  background:rgba(5,4,12,0.88);backdrop-filter:blur(14px);
+  align-items:center;justify-content:center;padding:20px;">
+
+  <div style="background:#110f20;border:1px solid rgba(109,40,217,.35);border-radius:22px;
+       padding:38px 32px;width:100%;max-width:400px;position:relative;
+       box-shadow:0 40px 80px rgba(0,0,0,.6);animation:modalSlide .25s cubic-bezier(.4,0,.2,1);
+       font-family:var(--font-body);text-align:center;">
+
+    <button onclick="hideVerifyModal()"
+      style="position:absolute;top:14px;right:14px;width:30px;height:30px;border-radius:50%;
+             background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);
+             color:rgba(245,244,255,.3);font-size:16px;cursor:pointer;line-height:1;">✕</button>
+
+    <div style="width:60px;height:60px;background:linear-gradient(135deg,#6d28d9,#8b5cf6);
+         border-radius:16px;display:flex;align-items:center;justify-content:center;
+         font-size:28px;margin:0 auto 18px;box-shadow:0 8px 28px rgba(109,40,217,.45);">🔐</div>
+
+    <h2 style="color:#f5f4ff;font-size:20px;font-weight:800;margin:0 0 6px;
+         font-family:var(--font-head);letter-spacing:-.3px;">Verify your email</h2>
+    <p style="color:rgba(245,244,255,.4);font-size:13px;margin:0 0 26px;line-height:1.6;">
+      We sent a 6-digit code to<br>
+      <span id="vm-email-display" style="color:var(--violet-ll);font-weight:600;"></span>
+    </p>
+
+    <div id="vm-inputs" style="display:flex;gap:9px;justify-content:center;margin-bottom:18px;">
+      <input class="vmi" data-idx="0" type="text" inputmode="numeric" maxlength="1">
+      <input class="vmi" data-idx="1" type="text" inputmode="numeric" maxlength="1">
+      <input class="vmi" data-idx="2" type="text" inputmode="numeric" maxlength="1">
+      <div style="align-self:center;color:rgba(245,244,255,.15);font-size:20px;font-weight:900;margin:0 2px;">·</div>
+      <input class="vmi" data-idx="3" type="text" inputmode="numeric" maxlength="1">
+      <input class="vmi" data-idx="4" type="text" inputmode="numeric" maxlength="1">
+      <input class="vmi" data-idx="5" type="text" inputmode="numeric" maxlength="1">
+    </div>
+
+    <p id="vm-error" style="color:#fca5a5;font-size:12px;min-height:16px;margin:0 0 12px;display:none;"></p>
+
+    <button id="vm-submit-btn" onclick="vmSubmit()"
+      style="width:100%;padding:13px;background:linear-gradient(135deg,#6d28d9,#8b5cf6);
+             border:none;border-radius:12px;color:#fff;font-size:14px;font-weight:700;
+             cursor:pointer;box-shadow:0 6px 22px rgba(109,40,217,.4);margin-bottom:16px;
+             transition:opacity .15s,transform .1s;letter-spacing:.2px;">
+      Verify account
+    </button>
+
+    <p style="color:rgba(245,244,255,.3);font-size:12px;margin:0;">
+      Didn't receive it?
+      <button id="vm-resend-btn" onclick="vmResend()"
+        style="background:none;border:none;color:var(--violet-ll);font-size:12px;font-weight:600;
+               cursor:pointer;padding:0 0 0 4px;">Resend code</button>
+      <span id="vm-countdown" style="color:rgba(245,244,255,.25);font-size:12px;display:none;"></span>
+    </p>
+  </div>
+</div>
+
+<style>
+  #verify-modal.vm-open { display:flex !important; }
+  .vmi {
+    width:46px; height:54px;
+    background: rgba(109,40,217,.08);
+    border: 2px solid rgba(109,40,217,.28);
+    border-radius: 11px;
+    color: #fff;
+    font-size: 24px;
+    font-weight: 900;
+    text-align: center;
+    outline: none;
+    font-family: 'DM Mono', monospace;
+    caret-color: transparent;
+    transition: border-color .15s, background .15s;
+  }
+  .vmi:focus { border-color: var(--violet-l); background: rgba(109,40,217,.16); box-shadow: 0 0 0 3px rgba(109,40,217,.12); }
+  @keyframes vmShake {
+    0%,100%{transform:translateX(0)} 20%{transform:translateX(-7px)}
+    40%{transform:translateX(7px)} 60%{transform:translateX(-5px)} 80%{transform:translateX(5px)}
+  }
+</style>
+
+<script>
+/* ──────────────────────────────────────────────
+   VERIFY MODAL — site (index.html)
+   Integrates with existing CONFIG, saveSession, toast
+   ────────────────────────────────────────────── */
+
+let _vmToken     = null;
+let _vmOnSuccess = null;
+let _vmTimer     = null;
+
+function openVerifyModal(token, email, onSuccess) {
+  _vmToken     = token;
+  _vmOnSuccess = onSuccess || (() => {});
+
+  // Mask email
+  const masked = (() => {
+    if (!email) return '—';
+    const [local, domain] = email.split('@');
+    if (!domain) return email;
+    const vis = local.length <= 2 ? local[0] : local.slice(0, 2);
+    return `${vis}${'●'.repeat(Math.min(local.length - 2, 4))}@${domain}`;
+  })();
+
+  document.getElementById('vm-email-display').textContent = masked;
+
+  // Clear inputs
+  document.querySelectorAll('.vmi').forEach(el => {
+    el.value = '';
+    el.style.borderColor = 'rgba(109,40,217,.28)';
+    el.style.background  = 'rgba(109,40,217,.08)';
+    el.style.boxShadow   = 'none';
+  });
+  vmHideError();
+  vmResetBtn();
+
+  document.getElementById('verify-modal').classList.add('vm-open');
+  document.body.style.overflow = 'hidden';
+
+  // Attach input events fresh (clone to remove old listeners)
+  document.querySelectorAll('.vmi').forEach(el => {
+    const clone = el.cloneNode(true);
+    el.parentNode.replaceChild(clone, el);
+  });
+  document.querySelectorAll('.vmi').forEach(el => {
+    el.addEventListener('input',   vmInput);
+    el.addEventListener('keydown', vmKeydown);
+    el.addEventListener('paste',   vmPaste);
+    el.addEventListener('focus', () => { el.style.borderColor = 'var(--violet-l)'; el.style.background = 'rgba(109,40,217,.16)'; });
+    el.addEventListener('blur',  () => { el.style.borderColor = 'rgba(109,40,217,.28)'; el.style.background = 'rgba(109,40,217,.08)'; el.style.boxShadow = 'none'; });
+  });
+
+  // Resend button reset
+  const resendBtn = document.getElementById('vm-resend-btn');
+  const cdEl      = document.getElementById('vm-countdown');
+  if (resendBtn) { resendBtn.style.display = 'inline'; }
+  if (cdEl) cdEl.style.display = 'none';
+
+  setTimeout(() => document.querySelector('.vmi')?.focus(), 80);
+}
+
+function hideVerifyModal() {
+  document.getElementById('verify-modal').classList.remove('vm-open');
+  document.body.style.overflow = '';
+  if (_vmTimer) { clearInterval(_vmTimer); _vmTimer = null; }
+}
+
+function vmGetCode() {
+  return [...document.querySelectorAll('.vmi')].map(el => el.value).join('');
+}
+
+function vmInput(e) {
+  const el  = e.target;
+  const val = e.target.value.replace(/\D/g, '');
+  el.value  = val ? val[0] : '';
+  const idx = parseInt(el.dataset.idx);
+  if (val && idx < 5) {
+    document.querySelector(`.vmi[data-idx="${idx + 1}"]`)?.focus();
+  }
+  vmHideError();
+  if (vmGetCode().length === 6) setTimeout(vmSubmit, 80);
+}
+
+function vmKeydown(e) {
+  const idx = parseInt(e.target.dataset.idx);
+  if (e.key === 'Backspace' && !e.target.value && idx > 0) {
+    const prev = document.querySelector(`.vmi[data-idx="${idx - 1}"]`);
+    if (prev) { prev.value = ''; prev.focus(); }
+  }
+  if (e.key === 'Enter') vmSubmit();
+}
+
+function vmPaste(e) {
+  e.preventDefault();
+  const text = (e.clipboardData || window.clipboardData).getData('text').replace(/\D/g, '').slice(0, 6);
+  text.split('').forEach((ch, i) => {
+    const el = document.querySelector(`.vmi[data-idx="${i}"]`);
+    if (el) el.value = ch;
+  });
+  if (text.length > 0) document.querySelector(`.vmi[data-idx="${Math.min(text.length, 5)}"]`)?.focus();
+  vmHideError();
+  if (text.length === 6) setTimeout(vmSubmit, 80);
+}
+
+async function vmSubmit() {
+  const code = vmGetCode();
+  if (code.length !== 6) { vmShowError('Enter all 6 digits'); return; }
+
+  const btn = document.getElementById('vm-submit-btn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Verifying…'; }
+
+  try {
+    const res  = await fetch(`${CONFIG.API_BASE}/auth/verify-email`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', [CONFIG.AUTH_HEADER]: CONFIG.AUTH_PREFIX + _vmToken },
+      body: JSON.stringify({ code }),
+    });
+    const data = await res.json().catch(() => ({}));
+
+    if (res.ok) {
+      // Flash green
+      document.querySelectorAll('.vmi').forEach(el => {
+        el.style.borderColor = '#4ade80'; el.style.background = 'rgba(74,222,128,.1)';
+      });
+      if (btn) { btn.textContent = '✓ Verified!'; btn.style.background = 'linear-gradient(135deg,#16a34a,#4ade80)'; }
+      setTimeout(() => {
+        hideVerifyModal();
+        if (_vmOnSuccess) _vmOnSuccess(data.user || {});
+      }, 650);
+    } else {
+      vmShowError(data.detail || 'Invalid code. Please try again.');
+      vmResetBtn();
+      vmShake();
+    }
+  } catch {
+    vmShowError('Network error. Please try again.');
+    vmResetBtn();
+  }
+}
+
+async function vmResend() {
+  const resendBtn = document.getElementById('vm-resend-btn');
+  const cdEl      = document.getElementById('vm-countdown');
+  if (resendBtn) resendBtn.style.display = 'none';
+  if (cdEl)      { cdEl.style.display = 'inline'; cdEl.textContent = 'Sending…'; }
+
+  try {
+    const res  = await fetch(`${CONFIG.API_BASE}/auth/resend-verification`, {
+      method: 'POST', headers: { [CONFIG.AUTH_HEADER]: CONFIG.AUTH_PREFIX + _vmToken },
+    });
+    const data = await res.json().catch(() => ({}));
+
+    if (!res.ok) {
+      if (cdEl) cdEl.textContent = data.detail || 'Please wait.';
+      setTimeout(() => { if (resendBtn) resendBtn.style.display = 'inline'; if (cdEl) cdEl.style.display = 'none'; }, 3000);
+      return;
+    }
+    // 60-second countdown
+    let secs = 60;
+    if (_vmTimer) clearInterval(_vmTimer);
+    _vmTimer = setInterval(() => {
+      secs--;
+      if (cdEl) cdEl.textContent = `Resend in ${secs}s`;
+      if (secs <= 0) {
+        clearInterval(_vmTimer);
+        if (resendBtn) { resendBtn.style.display = 'inline'; resendBtn.textContent = 'Resend code'; }
+        if (cdEl)  cdEl.style.display = 'none';
+      }
+    }, 1000);
+  } catch {
+    if (resendBtn) resendBtn.style.display = 'inline';
+    if (cdEl)      cdEl.style.display = 'none';
+  }
+}
+
+function vmShowError(msg) {
+  const el = document.getElementById('vm-error');
+  if (el) { el.textContent = msg; el.style.display = 'block'; }
+}
+function vmHideError() {
+  const el = document.getElementById('vm-error');
+  if (el) el.style.display = 'none';
+}
+function vmResetBtn() {
+  const btn = document.getElementById('vm-submit-btn');
+  if (btn) { btn.disabled = false; btn.textContent = 'Verify account'; btn.style.background = 'linear-gradient(135deg,#6d28d9,#8b5cf6)'; }
+}
+function vmShake() {
+  const c = document.getElementById('vm-inputs');
+  if (!c) return;
+  c.style.animation = 'vmShake .32s ease';
+  c.addEventListener('animationend', () => { c.style.animation = ''; }, { once: true });
+  document.querySelectorAll('.vmi').forEach(el => {
+    el.style.borderColor = '#ef4444'; el.style.background = 'rgba(239,68,68,.08)';
+  });
+  setTimeout(() => document.querySelectorAll('.vmi').forEach(el => {
+    el.style.borderColor = 'rgba(109,40,217,.28)'; el.style.background = 'rgba(109,40,217,.08)';
+  }), 900);
+}
 </body>
 </html>

@@ -1,13 +1,16 @@
 """
-Purp — FastAPI backend v6.
-New in v6:
-  - GET /tax/form-8949?year=YYYY&method=HIFO  → IRS Form 8949 CSV download
-  - GET /tax/summary?year=YYYY                 → tax year P&L summary + bracket estimates
-  - Binance-powered services (no change to API surface)
+Purp — FastAPI backend v7.
+New in v7:
+  - Email verification on register (6-digit code, 15 min expiry)
+  - POST /auth/verify-email
+  - POST /auth/resend-verification
+  - Login blocked until account is verified
 """
 import io
 import os
 import csv
+import random
+import string
 import threading
 import concurrent.futures
 from datetime import date, datetime, timedelta
@@ -22,7 +25,7 @@ import stripe
 from jose import JWTError, jwt
 from fastapi.staticfiles import StaticFiles
 
-from models import Asset, User, Transaction, PriceAlert, WatchlistItem, ProcessedEvent, Dividend
+from models import Asset, User, Transaction, PriceAlert, WatchlistItem, ProcessedEvent, Dividend, EmailVerification
 from services import (
     get_asset_data,
     get_ai_analysis,
@@ -48,6 +51,17 @@ stripe.api_key = os.getenv("STRIPE_SECRET_KEY", "")
 _raw_db_url  = os.getenv("DATABASE_URL", "sqlite:///database.db")
 DATABASE_URL = _raw_db_url.replace("postgres://", "postgresql://")
 _is_postgres = DATABASE_URL.startswith("postgresql://")
+
+RESEND_API_KEY = os.getenv("RESEND_API_KEY", "")
+FROM_EMAIL     = os.getenv("FROM_EMAIL", "Purp <noreply@getpurpai.com>")
+
+if RESEND_API_KEY:
+    resend.api_key = RESEND_API_KEY
+    print("✅ Resend configured")
+else:
+    print("⚠️  RESEND_API_KEY not set — emails disabled")
+
+VERIFICATION_EXPIRE_MINUTES = 15
 
 
 def _build_engine():
@@ -90,9 +104,6 @@ def _build_price_plan_map() -> dict[str, str]:
 
 PRICE_PLAN_MAP: dict[str, str] = {}
 
-RESEND_API_KEY = os.getenv("RESEND_API_KEY", "")
-FROM_EMAIL     = os.getenv("FROM_EMAIL", "Purp <noreply@getpurpai.com>")
-
 
 # ── Permission helpers ─────────────────────────────────────────────────────────
 
@@ -120,16 +131,6 @@ def require_tax_pro(user: User) -> None:
 
 # ── Email helpers ──────────────────────────────────────────────────────────────
 
-RESEND_API_KEY = os.getenv("RESEND_API_KEY", "")
-FROM_EMAIL     = os.getenv("FROM_EMAIL", "Purp <noreply@getpurpai.com>")
-
-if RESEND_API_KEY:
-    resend.api_key = RESEND_API_KEY
-    print("✅ Resend configured")
-else:
-    print("⚠️  RESEND_API_KEY not set — emails disabled")
-
-
 def _send_email(to_email: str, subject: str, html: str) -> None:
     if not RESEND_API_KEY:
         print("⚠️  Email skipped — RESEND_API_KEY not configured")
@@ -144,6 +145,50 @@ def _send_email(to_email: str, subject: str, html: str) -> None:
         print(f"✅ Email sent → {to_email} | id={resp.get('id')}")
     except Exception as e:
         print(f"❌ Resend error ({to_email}): {e}")
+
+
+def _send_verification_email(to_email: str, username: str, code: str) -> None:
+    digits = list(code)
+    boxes = "".join(
+        f'<td style="padding:0 4px;"><div style="width:44px;height:52px;background:rgba(124,58,237,0.12);'
+        f'border:2px solid rgba(124,58,237,0.4);border-radius:10px;display:flex;align-items:center;'
+        f'justify-content:center;font-size:26px;font-weight:900;color:#fff;font-family:monospace;'
+        f'text-align:center;line-height:52px;">{d}</div></td>'
+        for d in digits
+    )
+    html = f"""<!DOCTYPE html>
+<html><body style="margin:0;padding:0;background:#0a0914;font-family:'Segoe UI',Arial,sans-serif;">
+<table width="100%" cellpadding="0" cellspacing="0">
+  <tr><td align="center" style="padding:48px 16px;">
+    <table width="520" cellpadding="0" cellspacing="0"
+           style="background:#110f20;border-radius:20px;border:1px solid rgba(124,58,237,.3);overflow:hidden;">
+      <tr><td style="background:linear-gradient(135deg,#7c3aed,#a78bfa);padding:36px;text-align:center;">
+        <div style="font-size:40px;margin-bottom:10px;">🔐</div>
+        <h1 style="margin:0;color:#fff;font-size:22px;font-weight:800;">Verify your Purp account</h1>
+        <p style="color:rgba(255,255,255,.75);margin:8px 0 0;font-size:13px;">Enter this code in the app to activate your account</p>
+      </td></tr>
+      <tr><td style="padding:32px 36px;text-align:center;">
+        <p style="color:#f1f0f5;font-size:14px;margin:0 0 24px;">
+          Hey <strong style="color:#a78bfa;">{username}</strong> 👋 — use the code below to complete your registration.
+        </p>
+        <table cellpadding="0" cellspacing="0" style="margin:0 auto 24px;">
+          <tr>{boxes}</tr>
+        </table>
+        <p style="color:rgba(241,240,245,.4);font-size:12px;margin:0 0 8px;">
+          ⏱ This code expires in <strong style="color:rgba(241,240,245,.7);">15 minutes</strong>.
+        </p>
+        <p style="color:rgba(241,240,245,.3);font-size:11px;margin:0;">
+          If you didn't create a Purp account, you can safely ignore this email.
+        </p>
+      </td></tr>
+      <tr><td style="padding:0 36px 24px;text-align:center;">
+        <p style="color:rgba(241,240,245,.2);font-size:10px;margin:0;">Purp · AI Portfolio Tracker</p>
+      </td></tr>
+    </table>
+  </td></tr>
+</table>
+</body></html>"""
+    _send_email(to_email, "Your Purp verification code", html)
 
 
 def _send_welcome_email(to_email: str, username: str) -> None:
@@ -208,6 +253,10 @@ def _send_alert_email(
     _send_email(to_email, f"🔔 Price Alert: {symbol} {type_text.get(alert_type,'changed')}", html)
 
 
+def send_verification_email_async(to_email: str, username: str, code: str) -> None:
+    threading.Thread(target=_send_verification_email, args=(to_email, username, code), daemon=True).start()
+
+
 def send_welcome_email_async(to_email: str, username: str) -> None:
     threading.Thread(target=_send_welcome_email, args=(to_email, username), daemon=True).start()
 
@@ -221,6 +270,36 @@ def send_alert_email_async(
         args=(to_email, username, symbol, alert_type, target, current),
         daemon=True,
     ).start()
+
+
+# ── Verification code helpers ──────────────────────────────────────────────────
+
+def _generate_code() -> str:
+    return "".join(random.choices(string.digits, k=6))
+
+
+def _create_verification_code(session: Session, user_id: int) -> str:
+    """Invalidate old codes and create a fresh one. Returns the code."""
+    old = session.exec(
+        select(EmailVerification).where(
+            EmailVerification.user_id == user_id,
+            EmailVerification.used == False,
+        )
+    ).all()
+    for v in old:
+        v.used = True
+        session.add(v)
+
+    code    = _generate_code()
+    expires = (datetime.utcnow() + timedelta(minutes=VERIFICATION_EXPIRE_MINUTES)).isoformat()
+    ev = EmailVerification(
+        user_id=user_id, code=code,
+        expires_at=expires, used=False,
+        created_at=datetime.utcnow().isoformat(),
+    )
+    session.add(ev)
+    session.commit()
+    return code
 
 
 # ── DB ─────────────────────────────────────────────────────────────────────────
@@ -255,6 +334,9 @@ def create_db() -> None:
             if u and u.plan == "free":
                 u.plan = "investor"
                 u.is_premium = True
+                # Owner is always verified
+                if not u.is_verified:
+                    u.is_verified = True
                 s.add(u); s.commit()
     except Exception as e:
         print(f"⚠️  Owner plan check: {e}")
@@ -265,7 +347,7 @@ def create_db() -> None:
 
 # ── App ────────────────────────────────────────────────────────────────────────
 
-app = FastAPI(title="Purp API", version="6.0", on_startup=[create_db])
+app = FastAPI(title="Purp API", version="7.0", on_startup=[create_db])
 app.add_middleware(
     CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"]
 )
@@ -325,6 +407,14 @@ class LoginInput(BaseModel):
     password: str
 
 
+class VerifyEmailInput(BaseModel):
+    code: str
+
+
+class ResendVerificationInput(BaseModel):
+    email: EmailStr
+
+
 class AssetInput(BaseModel):
     symbol: str
     amount: float
@@ -371,6 +461,7 @@ def register(data: RegisterInput, session: Session = Depends(get_session)):
         user = User(
             username=uname, password_hash=hash_pw(data.password),
             email=email_norm, plan="free", is_premium=False,
+            is_verified=False,
             created_at=str(date.today()),
         )
         session.add(user); session.commit(); session.refresh(user)
@@ -379,10 +470,20 @@ def register(data: RegisterInput, session: Session = Depends(get_session)):
     except Exception as e:
         session.rollback()
         raise HTTPException(503, f"Database error during registration: {e}")
+
     if user.id is None:
         raise HTTPException(500, "Failed to create user — please try again")
-    send_welcome_email_async(email_norm, uname)
-    return {"token": create_token(user.id), "user": _user_payload(user)}
+
+    # Generate and send verification code
+    code = _create_verification_code(session, user.id)
+    send_verification_email_async(email_norm, uname, code)
+
+    token = create_token(user.id)
+    return {
+        "token": token,
+        "user": _user_payload(user),
+        "requires_verification": True,
+    }
 
 
 @app.post("/auth/login")
@@ -390,7 +491,102 @@ def login(data: LoginInput, session: Session = Depends(get_session)):
     user = session.exec(select(User).where(User.username == data.username.strip())).first()
     if not user or not verify_pw(data.password, user.password_hash):
         raise HTTPException(401, "Incorrect username or password")
-    return {"token": create_token(user.id), "user": _user_payload(user)}
+
+    if not user.is_verified:
+        # Issue a limited token so the frontend can call /auth/verify-email
+        token = create_token(user.id)
+        return {
+            "token": token,
+            "user": _user_payload(user),
+            "requires_verification": True,
+        }
+
+    return {"token": create_token(user.id), "user": _user_payload(user), "requires_verification": False}
+
+
+@app.post("/auth/verify-email")
+def verify_email(
+    data: VerifyEmailInput,
+    user_id: int = Depends(get_current_user),
+    session: Session = Depends(get_session),
+):
+    user = session.get(User, user_id)
+    if not user:
+        raise HTTPException(404, "User not found")
+
+    if user.is_verified:
+        return {"ok": True, "user": _user_payload(user)}
+
+    code = data.code.strip()
+    if len(code) != 6 or not code.isdigit():
+        raise HTTPException(400, "Invalid code format — must be 6 digits")
+
+    # Find the latest unused, non-expired code for this user
+    ev = session.exec(
+        select(EmailVerification).where(
+            EmailVerification.user_id == user_id,
+            EmailVerification.used == False,
+        ).order_by(EmailVerification.id.desc())
+    ).first()
+
+    if not ev:
+        raise HTTPException(400, "No active verification code found. Please request a new one.")
+
+    # Check expiry
+    try:
+        expires = datetime.fromisoformat(ev.expires_at)
+        if datetime.utcnow() > expires:
+            ev.used = True; session.add(ev); session.commit()
+            raise HTTPException(400, "Code has expired. Please request a new one.")
+    except ValueError:
+        pass  # malformed date — proceed
+
+    if ev.code != code:
+        raise HTTPException(400, "Incorrect code. Please try again.")
+
+    # Mark code used and user verified
+    ev.used = True; session.add(ev)
+    user.is_verified = True; session.add(user)
+    session.commit()
+
+    # Send welcome email now that they're verified
+    send_welcome_email_async(user.email, user.username)
+
+    return {"ok": True, "user": _user_payload(user)}
+
+
+@app.post("/auth/resend-verification")
+def resend_verification(
+    user_id: int = Depends(get_current_user),
+    session: Session = Depends(get_session),
+):
+    user = session.get(User, user_id)
+    if not user:
+        raise HTTPException(404, "User not found")
+    if user.is_verified:
+        raise HTTPException(400, "Account is already verified")
+
+    # Rate-limit: check if a code was sent in the last 60 seconds
+    recent = session.exec(
+        select(EmailVerification).where(
+            EmailVerification.user_id == user_id,
+            EmailVerification.used == False,
+        ).order_by(EmailVerification.id.desc())
+    ).first()
+
+    if recent:
+        try:
+            created = datetime.fromisoformat(recent.created_at)
+            elapsed = (datetime.utcnow() - created).total_seconds()
+            if elapsed < 60:
+                wait = int(60 - elapsed)
+                raise HTTPException(429, f"Please wait {wait} seconds before requesting a new code.")
+        except ValueError:
+            pass
+
+    code = _create_verification_code(session, user.id)
+    send_verification_email_async(user.email, user.username, code)
+    return {"ok": True, "message": "Verification code sent"}
 
 
 @app.get("/auth/me")
@@ -398,7 +594,7 @@ def auth_me(user_id: int = Depends(get_current_user), session: Session = Depends
     user = session.get(User, user_id)
     if not user:
         raise HTTPException(404, "User not found")
-    return {**_user_payload(user), "email": user.email}
+    return {**_user_payload(user), "email": user.email, "is_verified": user.is_verified}
 
 
 @app.post("/auth/logout")
@@ -408,10 +604,11 @@ def logout():
 
 def _user_payload(user: User) -> dict:
     return {
-        "id":         user.id,
-        "username":   user.username,
-        "plan":       user.plan,
-        "is_premium": has_plan(user, "investor", "tax_pro"),
+        "id":          user.id,
+        "username":    user.username,
+        "plan":        user.plan,
+        "is_premium":  has_plan(user, "investor", "tax_pro"),
+        "is_verified": user.is_verified,
     }
 
 
@@ -421,6 +618,9 @@ def _user_payload(user: User) -> dict:
 
 @app.get("/watchlist")
 def get_watchlist(user_id: int = Depends(get_current_user), session: Session = Depends(get_session)):
+    user = session.get(User, user_id)
+    if not user or not user.is_verified:
+        raise HTTPException(403, "Account not verified")
     items = session.exec(
         select(WatchlistItem).where(WatchlistItem.user_id == user_id).order_by(WatchlistItem.order_index)
     ).all()
@@ -449,6 +649,9 @@ def add_to_watchlist(
     user_id: int = Depends(get_current_user),
     session: Session = Depends(get_session),
 ):
+    user = session.get(User, user_id)
+    if not user or not user.is_verified:
+        raise HTTPException(403, "Account not verified")
     symbol   = data.symbol.strip().upper()
     existing = session.exec(
         select(WatchlistItem).where(WatchlistItem.user_id == user_id, WatchlistItem.symbol == symbol)
@@ -456,7 +659,6 @@ def add_to_watchlist(
     if existing:
         raise HTTPException(400, f"{symbol} already in your watchlist")
 
-    user = session.get(User, user_id)
     if not has_plan(user, "investor", "tax_pro"):
         count = len(session.exec(select(WatchlistItem).where(WatchlistItem.user_id == user_id)).all())
         if count >= FREE_WATCHLIST_LIMIT:
@@ -514,6 +716,8 @@ def create_alert(
     user = session.get(User, user_id)
     if not user:
         raise HTTPException(404, "User not found")
+    if not user.is_verified:
+        raise HTTPException(403, "Account not verified")
     if not has_plan(user, "investor", "tax_pro"):
         count = len(session.exec(
             select(PriceAlert).where(PriceAlert.user_id == user_id, PriceAlert.active == True)
@@ -577,6 +781,9 @@ def create_asset(
     user_id: int = Depends(get_current_user),
     session: Session = Depends(get_session),
 ):
+    user = session.get(User, user_id)
+    if not user or not user.is_verified:
+        raise HTTPException(403, "Account not verified")
     sym = data.symbol.strip().upper()
     if not sym:
         raise HTTPException(400, "Symbol is required")
@@ -603,9 +810,6 @@ def create_asset(
         ))
         session.commit(); session.refresh(existing)
         return existing
-    user = session.get(User, user_id)
-    if not user:
-        raise HTTPException(404, "User not found")
     if not has_plan(user, "investor", "tax_pro"):
         count = len(session.exec(select(Asset).where(Asset.user_id == user_id)).all())
         if count >= FREE_ASSET_LIMIT:
@@ -685,6 +889,8 @@ async def import_csv(
     user = session.get(User, user_id)
     if not user:
         raise HTTPException(404, "User not found")
+    if not user.is_verified:
+        raise HTTPException(403, "Account not verified")
     require_investor(user)
 
     filename = (file.filename or "").lower()
@@ -863,7 +1069,7 @@ def portfolio_summary(user_id: int = Depends(get_current_user), session: Session
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# TAX  (tax_pro plan only)
+# TAX
 # ═══════════════════════════════════════════════════════════════════════════════
 
 @app.get("/portfolio/tax-loss-harvesting")
@@ -924,7 +1130,6 @@ def portfolio_cost_basis(
 
 @app.get("/tax/loss-harvesting")
 def tax_loss_harvesting(user_id: int = Depends(get_current_user), session: Session = Depends(get_session)):
-    """Legacy simplified endpoint."""
     user = session.get(User, user_id)
     if not user:
         raise HTTPException(404, "User not found")
@@ -959,25 +1164,16 @@ def tax_loss_harvesting(user_id: int = Depends(get_current_user), session: Sessi
 
 @app.get("/tax/form-8949")
 def form_8949_csv(
-    year:   int = Query(default=None, description="Tax year, e.g. 2024"),
-    method: str = Query(default="FIFO", description="Cost basis method: FIFO | HIFO | LIFO"),
+    year:   int = Query(default=None),
+    method: str = Query(default="FIFO"),
     user_id: int = Depends(get_current_user),
     session: Session = Depends(get_session),
 ):
-    """
-    Download IRS Form 8949 as a CSV file.
-    Columns match the official IRS layout:
-      Description of property | Date acquired | Date sold or disposed |
-      Proceeds | Cost or other basis | Gain or (loss)
-    """
     user = session.get(User, user_id)
     if not user:
         raise HTTPException(404, "User not found")
     require_tax_pro(user)
-
     tax_year = year or date.today().year
-
-    # Pull all transactions for this user
     txs = session.exec(
         select(Transaction).where(Transaction.user_id == user_id).order_by(Transaction.date)
     ).all()
@@ -986,109 +1182,52 @@ def form_8949_csv(
          "price": t.price, "date": t.date or ""}
         for t in txs
     ]
-
     form = generate_form_8949(tx_list, tax_year=tax_year, method=method)
-
-    # ── Build CSV in-memory ───────────────────────────────────────────────────
     output = io.StringIO()
     writer = csv.writer(output)
-
-    # Header comment rows (not IRS columns — informational)
     writer.writerow([f"IRS Form 8949 — Tax Year {tax_year}"])
     writer.writerow([f"Cost Basis Method: {form['method']}"])
     writer.writerow([f"Generated by Purp — {datetime.now().strftime('%Y-%m-%d %H:%M')}"])
     writer.writerow([])
-
-    # ── Part I — Short-Term ───────────────────────────────────────────────────
     writer.writerow(["Part I — Short-Term Capital Gains and Losses (assets held 1 year or less)"])
-    writer.writerow([
-        "Description of property",
-        "Date acquired",
-        "Date sold or disposed",
-        "Proceeds",
-        "Cost or other basis",
-        "Gain or (loss)",
-    ])
+    writer.writerow(["Description of property","Date acquired","Date sold or disposed","Proceeds","Cost or other basis","Gain or (loss)"])
     for row in form["part_I"]:
-        writer.writerow([
-            row["description"],
-            row["date_acquired"],
-            row["date_sold"],
-            f"{row['proceeds']:.2f}",
-            f"{row['cost_basis']:.2f}",
-            f"{row['gain_loss']:.2f}",
-        ])
-    writer.writerow(["", "", "Part I Totals:", "", "", f"{form['summary']['net_short_term']:.2f}"])
+        writer.writerow([row["description"],row["date_acquired"],row["date_sold"],f"{row['proceeds']:.2f}",f"{row['cost_basis']:.2f}",f"{row['gain_loss']:.2f}"])
+    writer.writerow(["","","Part I Totals:","","",f"{form['summary']['net_short_term']:.2f}"])
     writer.writerow([])
-
-    # ── Part II — Long-Term ───────────────────────────────────────────────────
     writer.writerow(["Part II — Long-Term Capital Gains and Losses (assets held more than 1 year)"])
-    writer.writerow([
-        "Description of property",
-        "Date acquired",
-        "Date sold or disposed",
-        "Proceeds",
-        "Cost or other basis",
-        "Gain or (loss)",
-    ])
+    writer.writerow(["Description of property","Date acquired","Date sold or disposed","Proceeds","Cost or other basis","Gain or (loss)"])
     for row in form["part_II"]:
-        writer.writerow([
-            row["description"],
-            row["date_acquired"],
-            row["date_sold"],
-            f"{row['proceeds']:.2f}",
-            f"{row['cost_basis']:.2f}",
-            f"{row['gain_loss']:.2f}",
-        ])
-    writer.writerow(["", "", "Part II Totals:", "", "", f"{form['summary']['net_long_term']:.2f}"])
+        writer.writerow([row["description"],row["date_acquired"],row["date_sold"],f"{row['proceeds']:.2f}",f"{row['cost_basis']:.2f}",f"{row['gain_loss']:.2f}"])
+    writer.writerow(["","","Part II Totals:","","",f"{form['summary']['net_long_term']:.2f}"])
     writer.writerow([])
-
-    # ── Summary ───────────────────────────────────────────────────────────────
     s = form["summary"]
     writer.writerow(["SUMMARY"])
-    writer.writerow(["Total Proceeds",        f"${s['total_proceeds']:,.2f}"])
-    writer.writerow(["Total Cost Basis",      f"${s['total_cost_basis']:,.2f}"])
-    writer.writerow(["Net Short-Term",        f"${s['net_short_term']:,.2f}"])
-    writer.writerow(["Net Long-Term",         f"${s['net_long_term']:,.2f}"])
-    writer.writerow(["Total Net Gain/(Loss)", f"${s['total_net_gain_loss']:,.2f}"])
-
-    csv_content = output.getvalue()
-    output.close()
-
+    writer.writerow(["Total Proceeds",f"${s['total_proceeds']:,.2f}"])
+    writer.writerow(["Total Cost Basis",f"${s['total_cost_basis']:,.2f}"])
+    writer.writerow(["Net Short-Term",f"${s['net_short_term']:,.2f}"])
+    writer.writerow(["Net Long-Term",f"${s['net_long_term']:,.2f}"])
+    writer.writerow(["Total Net Gain/(Loss)",f"${s['total_net_gain_loss']:,.2f}"])
+    csv_content = output.getvalue(); output.close()
     return StreamingResponse(
         io.BytesIO(csv_content.encode("utf-8-sig")),
         media_type="text/csv",
-        headers={
-            "Content-Disposition": f'attachment; filename="form-8949-{tax_year}.csv"',
-            "Cache-Control":       "no-store",
-        },
+        headers={"Content-Disposition": f'attachment; filename="form-8949-{tax_year}.csv"', "Cache-Control": "no-store"},
     )
 
 
 @app.get("/tax/summary")
 def tax_summary(
-    year:    int = Query(default=None, description="Tax year, e.g. 2024"),
-    method:  str = Query(default="FIFO"),
+    year: int = Query(default=None),
+    method: str = Query(default="FIFO"),
     user_id: int = Depends(get_current_user),
     session: Session = Depends(get_session),
 ):
-    """
-    Returns Form 8949 summary + estimated tax at common brackets (tax_pro only).
-    {
-      tax_year, method,
-      net_short_term, net_long_term, total_net_gain_loss,
-      total_proceeds, total_cost_basis,
-      estimated_tax_22pct, estimated_tax_24pct, estimated_tax_32pct,
-      short_term_count, long_term_count
-    }
-    """
     user = session.get(User, user_id)
     if not user:
         raise HTTPException(404, "User not found")
     require_tax_pro(user)
-
     tax_year = year or date.today().year
-
     txs = session.exec(
         select(Transaction).where(Transaction.user_id == user_id).order_by(Transaction.date)
     ).all()
@@ -1097,48 +1236,35 @@ def tax_summary(
          "price": t.price, "date": t.date or ""}
         for t in txs
     ]
-
     form = generate_form_8949(tx_list, tax_year=tax_year, method=method)
     s    = form["summary"]
-
-    # Estimated tax: short-term taxed at ordinary rates; long-term at 0/15/20 %
-    # We show three common short-term bracket scenarios
     def est_tax(bracket: float) -> float:
-        # long-term rate approximation
         lt_rate = 0.0 if bracket <= 0.12 else (0.15 if bracket <= 0.35 else 0.20)
         st = max(s["net_short_term"], 0) * bracket
         lt = max(s["net_long_term"],  0) * lt_rate
         return round(st + lt, 2)
-
     return {
-        "tax_year":              tax_year,
-        "method":                form["method"],
-        "net_short_term":        s["net_short_term"],
-        "net_long_term":         s["net_long_term"],
-        "total_net_gain_loss":   s["total_net_gain_loss"],
-        "total_proceeds":        s["total_proceeds"],
-        "total_cost_basis":      s["total_cost_basis"],
-        "estimated_tax_22pct":   est_tax(0.22),
-        "estimated_tax_24pct":   est_tax(0.24),
-        "estimated_tax_32pct":   est_tax(0.32),
-        "short_term_count":      len(form["part_I"]),
-        "long_term_count":       len(form["part_II"]),
+        "tax_year": tax_year, "method": form["method"],
+        "net_short_term": s["net_short_term"], "net_long_term": s["net_long_term"],
+        "total_net_gain_loss": s["total_net_gain_loss"],
+        "total_proceeds": s["total_proceeds"], "total_cost_basis": s["total_cost_basis"],
+        "estimated_tax_22pct": est_tax(0.22), "estimated_tax_24pct": est_tax(0.24),
+        "estimated_tax_32pct": est_tax(0.32),
+        "short_term_count": len(form["part_I"]), "long_term_count": len(form["part_II"]),
     }
 
 
 @app.get("/tax/form-8949-json")
 def form_8949_json(
-    year:    int = Query(default=None),
-    method:  str = Query(default="FIFO"),
+    year: int = Query(default=None),
+    method: str = Query(default="FIFO"),
     user_id: int = Depends(get_current_user),
     session: Session = Depends(get_session),
 ):
-    """JSON version of Form 8949 — used by the extension UI."""
     user = session.get(User, user_id)
     if not user:
         raise HTTPException(404, "User not found")
     require_tax_pro(user)
-
     tax_year = year or date.today().year
     txs = session.exec(
         select(Transaction).where(Transaction.user_id == user_id).order_by(Transaction.date)
@@ -1149,33 +1275,6 @@ def form_8949_json(
         for t in txs
     ]
     return generate_form_8949(tx_list, tax_year=tax_year, method=method)
-
-
-# ── Legacy 8949 endpoint (keep for backward compat) ───────────────────────────
-@app.get("/tax/form-8949-legacy")
-def form_8949_export_legacy(user_id: int = Depends(get_current_user), session: Session = Depends(get_session)):
-    user = session.get(User, user_id)
-    if not user:
-        raise HTTPException(404, "User not found")
-    require_tax_pro(user)
-    txs = session.exec(
-        select(Transaction).where(Transaction.user_id == user_id, Transaction.type == "sell")
-        .order_by(Transaction.date)
-    ).all()
-    rows = [
-        {"description": tx.symbol, "date_acquired": "VARIOUS", "date_sold": tx.date,
-         "proceeds": round(tx.total_usd, 2),
-         "cost_basis": round(tx.amount * (tx.total_usd / tx.amount - (tx.realized_pnl or 0) / tx.amount), 2)
-                       if tx.amount else 0,
-         "gain_loss": round(tx.realized_pnl or 0, 2), "short_or_long": "SHORT"}
-        for tx in txs
-    ]
-    return {
-        "tax_year": date.today().year, "rows": rows,
-        "total_proceeds":  round(sum(r["proceeds"]  for r in rows), 2),
-        "total_gain_loss": round(sum(r["gain_loss"] for r in rows), 2),
-    }
-
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -1190,29 +1289,12 @@ class RecordDividendInput(BaseModel):
 
 
 @app.get("/portfolio/dividends")
-def portfolio_dividends(
-    user_id: int = Depends(get_current_user),
-    session: Session = Depends(get_session),
-):
-    """
-    For every stock in the portfolio, fetch dividend data and return:
-      - total_annual_income    : sum of (annual_rate * shares) across all dividing stocks
-      - total_monthly_income   : total_annual_income / 12
-      - upcoming_payments      : ex-dates within the next 60 days
-      - assets                 : per-asset dividend metrics
-    Available to all users (investor + free).
-    """
+def portfolio_dividends(user_id: int = Depends(get_current_user), session: Session = Depends(get_session)):
     assets = session.exec(
         select(Asset).where(Asset.user_id == user_id, Asset.type == "stock")
     ).all()
-
     if not assets:
-        return {
-            "total_annual_income":  0.0,
-            "total_monthly_income": 0.0,
-            "upcoming_payments":    [],
-            "assets":               [],
-        }
+        return {"total_annual_income": 0.0, "total_monthly_income": 0.0, "upcoming_payments": [], "assets": []}
 
     def fetch_div(a: Asset):
         data = get_dividend_data(a.symbol)
@@ -1221,64 +1303,44 @@ def portfolio_dividends(
     with concurrent.futures.ThreadPoolExecutor(max_workers=8) as ex:
         results = list(ex.map(fetch_div, assets))
 
-    asset_rows        = []
-    total_annual      = 0.0
-    upcoming_payments = []
-    today             = date.today()
-    cutoff_60         = today + timedelta(days=60)
+    asset_rows = []; total_annual = 0.0; upcoming_payments = []
+    today = date.today(); cutoff_60 = today + timedelta(days=60)
 
     for a, div in results:
         annual_rate   = div.get("annual_dividend_rate") or 0.0
         div_yield     = div.get("dividend_yield") or 0.0
         annual_income = round(annual_rate * a.amount, 2)
         yield_on_cost = round((annual_rate / a.purchase_price * 100), 4) if a.purchase_price > 0 and annual_rate > 0 else 0.0
-
         total_annual += annual_income
-
-        ex_date  = div.get("ex_dividend_date")
-        pay_date = div.get("pay_date")
-
-        # Collect upcoming payments within 60 days
+        ex_date = div.get("ex_dividend_date"); pay_date = div.get("pay_date")
         if ex_date:
             try:
                 ex_dt = datetime.strptime(ex_date[:10], "%Y-%m-%d").date()
                 if today <= ex_dt <= cutoff_60:
                     upcoming_payments.append({
-                        "symbol":           a.symbol,
-                        "shares":           a.amount,
-                        "ex_date":          ex_date,
-                        "pay_date":         pay_date,
+                        "symbol": a.symbol, "shares": a.amount, "ex_date": ex_date,
+                        "pay_date": pay_date,
                         "amount_per_share": div.get("quarterly_dividend") or round(annual_rate / 4, 4),
-                        "projected_total":  round((div.get("quarterly_dividend") or annual_rate / 4) * a.amount, 2),
+                        "projected_total": round((div.get("quarterly_dividend") or annual_rate / 4) * a.amount, 2),
                     })
             except Exception:
                 pass
-
         asset_rows.append({
-            "symbol":             a.symbol,
-            "shares":             a.amount,
-            "purchase_price":     a.purchase_price,
-            "yield_current":      div_yield,
-            "yield_on_cost":      yield_on_cost,
-            "annual_income":      annual_income,
-            "monthly_income":     round(annual_income / 12, 2),
+            "symbol": a.symbol, "shares": a.amount, "purchase_price": a.purchase_price,
+            "yield_current": div_yield, "yield_on_cost": yield_on_cost,
+            "annual_income": annual_income, "monthly_income": round(annual_income / 12, 2),
             "quarterly_dividend": div.get("quarterly_dividend") or 0.0,
-            "annual_rate":        annual_rate,
-            "next_ex_date":       ex_date,
-            "next_pay_date":      pay_date,
+            "annual_rate": annual_rate, "next_ex_date": ex_date, "next_pay_date": pay_date,
             "last_12m_dividends": div.get("last_12m_dividends") or [],
-            "pays_dividend":      annual_rate > 0,
+            "pays_dividend": annual_rate > 0,
         })
 
-    # Sort: dividend-paying first, then by annual_income desc
     asset_rows.sort(key=lambda x: (-x["pays_dividend"], -x["annual_income"]))
     upcoming_payments.sort(key=lambda x: x["ex_date"])
-
     return {
-        "total_annual_income":  round(total_annual, 2),
+        "total_annual_income": round(total_annual, 2),
         "total_monthly_income": round(total_annual / 12, 2),
-        "upcoming_payments":    upcoming_payments,
-        "assets":               asset_rows,
+        "upcoming_payments": upcoming_payments, "assets": asset_rows,
     }
 
 
@@ -1288,76 +1350,38 @@ def record_dividend(
     user_id: int = Depends(get_current_user),
     session: Session = Depends(get_session),
 ):
-    """
-    Manually record a dividend payment received.
-    Looks up the user's current share count for the symbol to compute total_received.
-    """
     sym = data.symbol.strip().upper()
     if data.amount_per_share <= 0:
         raise HTTPException(400, "amount_per_share must be positive")
-
-    # Find how many shares the user holds for this symbol
-    asset = session.exec(
-        select(Asset).where(Asset.user_id == user_id, Asset.symbol == sym)
-    ).first()
-
+    asset = session.exec(select(Asset).where(Asset.user_id == user_id, Asset.symbol == sym)).first()
     if not asset:
         raise HTTPException(404, f"You don't hold any shares of {sym} in your portfolio")
-
     total_received = round(data.amount_per_share * asset.amount, 4)
-
     div = Dividend(
-        user_id=user_id,
-        symbol=sym,
-        amount_per_share=data.amount_per_share,
-        total_received=total_received,
-        ex_date=data.ex_date,
-        pay_date=data.pay_date,
+        user_id=user_id, symbol=sym, amount_per_share=data.amount_per_share,
+        total_received=total_received, ex_date=data.ex_date, pay_date=data.pay_date,
         recorded_at=str(datetime.now().date()),
     )
-    session.add(div)
-    session.commit()
-    session.refresh(div)
-
+    session.add(div); session.commit(); session.refresh(div)
     return {
-        "id":               div.id,
-        "symbol":           div.symbol,
-        "amount_per_share": div.amount_per_share,
-        "total_received":   div.total_received,
-        "shares_at_record": asset.amount,
-        "ex_date":          div.ex_date,
-        "pay_date":         div.pay_date,
-        "recorded_at":      div.recorded_at,
+        "id": div.id, "symbol": div.symbol, "amount_per_share": div.amount_per_share,
+        "total_received": div.total_received, "shares_at_record": asset.amount,
+        "ex_date": div.ex_date, "pay_date": div.pay_date, "recorded_at": div.recorded_at,
     }
 
 
 @app.get("/dividends/history")
-def dividend_history(
-    user_id: int = Depends(get_current_user),
-    session: Session = Depends(get_session),
-):
-    """Return all recorded dividend payments for the current user."""
+def dividend_history(user_id: int = Depends(get_current_user), session: Session = Depends(get_session)):
     divs = session.exec(
-        select(Dividend)
-        .where(Dividend.user_id == user_id)
-        .order_by(Dividend.pay_date.desc())
+        select(Dividend).where(Dividend.user_id == user_id).order_by(Dividend.pay_date.desc())
     ).all()
-
     total_received = round(sum(d.total_received for d in divs), 2)
-
     return {
-        "total_received": total_received,
-        "count":          len(divs),
+        "total_received": total_received, "count": len(divs),
         "dividends": [
-            {
-                "id":               d.id,
-                "symbol":           d.symbol,
-                "amount_per_share": d.amount_per_share,
-                "total_received":   d.total_received,
-                "ex_date":          d.ex_date,
-                "pay_date":         d.pay_date,
-                "recorded_at":      d.recorded_at,
-            }
+            {"id": d.id, "symbol": d.symbol, "amount_per_share": d.amount_per_share,
+             "total_received": d.total_received, "ex_date": d.ex_date,
+             "pay_date": d.pay_date, "recorded_at": d.recorded_at}
             for d in divs
         ],
     }
@@ -1549,7 +1573,6 @@ async def stripe_webhook(request: Request, session: Session = Depends(get_sessio
                 if obj.get("customer") and not u.stripe_customer_id:
                     u.stripe_customer_id = obj["customer"]
                 session.add(u); session.commit()
-                print(f"✅ User {user_id} upgraded to plan='{plan}'")
 
     elif event_type in ["customer.subscription.deleted", "customer.subscription.paused"]:
         subscription = event["data"]["object"]
@@ -1612,6 +1635,15 @@ def payment_cancelled():
 @app.get("/health")
 def health():
     return {"status": "ok", "timestamp": datetime.utcnow().isoformat()}
+
+
+@app.post("/debug/test-email")
+def test_email(user_id: int = Depends(get_current_user), session: Session = Depends(get_session)):
+    user = session.get(User, user_id)
+    if not user:
+        raise HTTPException(404, "User not found")
+    _send_email(user.email, "Purp email test ✅", "<h1>It works!</h1><p>Email system is configured correctly.</p>")
+    return {"sent_to": user.email}
 
 
 @app.get("/debug")

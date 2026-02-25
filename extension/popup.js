@@ -424,14 +424,33 @@ async function handleLogin() {
   const btn = $('btn-login'); btn.disabled = true; btn.textContent = 'Signing in…';
   try {
     const res = await apiFetch('/auth/login', { method: 'POST', headers: authHeaders(), body: JSON.stringify({ username, password }) });
+    if (data.requires_verification) {
+    VerifyScreen.show(data.token, data.user.email, (user) => showMainApp(token, user));
+    return;
+}
+
     if (!res) return;
-    if (res.ok) {
+     if (res.ok) {
       const data = await res.json();
-      saveSession(data.token, data.user); hideLoginScreen(); updateProfileBar();
+      saveSession(data.token, data.user);
+
+      if (data.requires_verification) {
+        const emailForVerify = data.user?.email || username;
+        showVerifyScreen(data.token, emailForVerify, (verifiedUser) => {
+          const updatedUser = { ...currentUser, ...verifiedUser, is_verified: true };
+          saveSession(authToken, updatedUser);
+          hideLoginScreen(); updateProfileBar();
+          fetchPortfolio(); loadMainChart(); startRefresh(); checkAIStatus();
+          toast('Email verified! Welcome to Purp 🎉', 'success', 5000);
+        });
+        return;
+      }
+
+      hideLoginScreen(); updateProfileBar();
       fetchPortfolio(); loadMainChart(); startRefresh(); checkAIStatus();
     } else { const err = await res.json().catch(() => ({})); showError('login-error', err.detail || 'Incorrect username or password'); }
-  } finally { btn.disabled = false; btn.textContent = 'Sign In'; }
-}
+
+
 
 async function handleRegister() {
   const username = $('reg-username').value.trim();
@@ -449,12 +468,31 @@ async function handleRegister() {
       res = await fetch(`${API_BASE}/auth/register`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username, email, password }),
       });
+      if (data.requires_verification) {
+      VerifyScreen.show(data.token, data.user.email, (user) => showMainApp(token, user));
+      return;
+}
     } catch (networkErr) { showError('register-error', `Network error: ${networkErr.message}`); return; }
-    if (res.ok) {
+   if (res.ok) {
       const data = await res.json();
-      saveSession(data.token, data.user); hideLoginScreen(); updateProfileBar();
+      saveSession(data.token, data.user);
+
+      if (data.requires_verification) {
+        const emailForVerify = data.user?.email || email;
+        showVerifyScreen(data.token, emailForVerify, (verifiedUser) => {
+          const updatedUser = { ...currentUser, ...verifiedUser, is_verified: true };
+          saveSession(authToken, updatedUser);
+          hideLoginScreen(); updateProfileBar();
+          fetchPortfolio(); loadMainChart(); startRefresh(); checkAIStatus();
+          toast('Account created & verified! Welcome to Purp 🎉', 'success', 5000);
+        });
+        return;
+      }
+
+      hideLoginScreen(); updateProfileBar();
       fetchPortfolio(); loadMainChart(); startRefresh(); checkAIStatus();
       toast('Account created! 🎉', 'success', 5000);
+
     } else {
       let errMsg = `HTTP ${res.status}`;
       try { const errBody = await res.json(); errMsg = errBody.detail || errBody.message || JSON.stringify(errBody); } catch {}
@@ -1603,7 +1641,17 @@ document.addEventListener('DOMContentLoaded', () => {
 
   loadSession((hasSession) => {
     if (hasSession) {
-      hideLoginScreen(); updateProfileBar(); fetchPortfolio(); loadMainChart(); startRefresh(); checkAIStatus();
+      // Check if user is already verified (stored session)
+      if (currentUser && currentUser.is_verified === false) {
+        showVerifyScreen(authToken, currentUser.email || '', (verifiedUser) => {
+          const updatedUser = { ...currentUser, ...verifiedUser, is_verified: true };
+          saveSession(authToken, updatedUser);
+          hideLoginScreen(); updateProfileBar();
+          fetchPortfolio(); loadMainChart(); startRefresh(); checkAIStatus();
+        });
+      } else {
+        hideLoginScreen(); updateProfileBar(); fetchPortfolio(); loadMainChart(); startRefresh(); checkAIStatus();
+      }
     } else { showLoginScreen(); }
   });
 

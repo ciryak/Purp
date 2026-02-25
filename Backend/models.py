@@ -16,11 +16,24 @@ class User(SQLModel, table=True):
     # Kept for backward-compat; derived from plan at runtime — do NOT rely on it for gate checks
     is_premium: bool = Field(default=False)
 
+    # ── Email verification ───────────────────────────────────────
+    is_verified: bool = Field(default=False)
+
     created_at: Optional[str] = None
 
     # Notification preferences
     notification_email: bool = Field(default=True)
     notification_browser: bool = Field(default=True)
+
+
+class EmailVerification(SQLModel, table=True):
+    """6-digit email verification codes for new accounts."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    user_id: int = Field(foreign_key="user.id", index=True)
+    code: str = Field(max_length=6)
+    expires_at: str   # ISO datetime string
+    used: bool = Field(default=False)
+    created_at: str
 
 
 class Asset(SQLModel, table=True):
