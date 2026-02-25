@@ -25,6 +25,9 @@ import bcrypt
 import stripe
 from jose import JWTError, jwt
 from fastapi.staticfiles import StaticFiles
+import sentry_sdk
+from sentry_sdk.integrations.fastapi import FastApiIntegration
+from sentry_sdk.integrations.starlette import StarletteIntegration
 
 from models import Asset, User, Transaction, PriceAlert, WatchlistItem, ProcessedEvent, Dividend, EmailVerification, NetWorthEntry
 from services import (
@@ -459,6 +462,15 @@ def create_db() -> None:
     PRICE_PLAN_MAP = _build_price_plan_map()
     print(f"💳 Price→plan map: {PRICE_PLAN_MAP}")
 
+# ── Sentry ─────────────────────────────────────────────────────────────────────
+
+sentry_sdk.init(
+    dsn=os.getenv("SENTRY_DSN"),
+    integrations=[FastApiIntegration(), StarletteIntegration()],
+    traces_sample_rate=1.0,
+    profiles_sample_rate=1.0,
+    debug=False,
+)
 
 # ── App ────────────────────────────────────────────────────────────────────────
 

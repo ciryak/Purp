@@ -34,6 +34,15 @@ const formatUSD = (v) =>
   new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(v ?? 0);
 const formatPct = (v) => `${v >= 0 ? '+' : ''}${(v || 0).toFixed(2)}%`;
 
+// ── Sentry ───────────────────────────────────────────────────────
+
+  import * as Sentry from "./sentry.bundle.min.js";
+  Sentry.init({
+    dsn: "SENTRY_DSN",
+    integrations: [new Sentry.BrowserTracing()],
+    tracesSampleRate: 1.0,
+  });
+
 // ══════════════════════════════════════════════════════════════════
 // INJECTED CSS — all new styles added here, no external file needed
 // ══════════════════════════════════════════════════════════════════
