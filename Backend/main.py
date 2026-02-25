@@ -11,7 +11,7 @@ import csv
 import threading
 import concurrent.futures
 from datetime import date, datetime, timedelta
-
+import resend
 from fastapi import FastAPI, HTTPException, Depends, Header, Request, BackgroundTasks, UploadFile, File, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
