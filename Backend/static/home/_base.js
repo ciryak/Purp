@@ -229,19 +229,12 @@ async function handleLogin() {
     if (res.ok) {
       saveSession(data.token, data.user);
 
-     if (data.requires_verification) {
+      if (data.requires_verification) {
         const emailForVerify = data.user?.email || email;
         localStorage.setItem('pending_email', emailForVerify);
-        
-        showVerifyScreen(data.token, emailForVerify, (verificationResponse) => {
-          const newToken = verificationResponse.token || data.token;
-          
-          const verifiedUser = verificationResponse.user || verificationResponse;
-          
+        showVerifyScreen(data.token, emailForVerify, (verifiedUser) => {
           const updated = { ...data.user, ...verifiedUser, is_verified: true };
-          
-          saveSession(newToken, updated);
-          
+          saveSession(data.token, updated);
           finalizeLoginUI();
           toast('Email verificado! Bem-vindo(a) 🎉', 'success', 5000);
         });
@@ -295,21 +288,13 @@ async function handleRegister() {
       saveSession(data.token, data.user);
       localStorage.setItem('pending_email', email);
 
-  if (data.requires_verification) {
-        const emailForVerify = data.user?.email || email;
-        localStorage.setItem('pending_email', emailForVerify);
-        
-        showVerifyScreen(data.token, emailForVerify, (verificationResponse) => {
-          const newToken = verificationResponse.token || data.token;
-          
-          const verifiedUser = verificationResponse.user || verificationResponse;
-          
+      if (data.requires_verification) {
+        const emailForVerify = data.email || data.user?.email || email;
+        showVerifyScreen(data.token, emailForVerify, (verifiedUser) => {
           const updated = { ...data.user, ...verifiedUser, is_verified: true };
-
-          saveSession(newToken, updated);
-          
+          saveSession(data.token, updated);
           finalizeLoginUI();
-          toast('Email verificado! Bem-vindo(a) 🎉', 'success', 5000);
+          toast('Conta criada e verificada! Bem-vindo(a) ao Purp 🎉', 'success', 5000);
         });
         return;
       }
