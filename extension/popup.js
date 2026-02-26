@@ -43,6 +43,37 @@ const formatPct = (v) => `${v >= 0 ? '+' : ''}${(v || 0).toFixed(2)}%`;
     tracesSampleRate: 1.0,
   });
 
+//
+  window.toggleAuthMode = function() {
+    const loginForm = document.getElementById('login-form') || document.getElementById('login-screen');
+    const registerForm = document.getElementById('register-form') || document.getElementById('register-screen');
+    
+    // Se a tela de login não estiver escondida, escondemos ela e mostramos o registro
+    if (!loginForm.classList.contains('hidden') && loginForm.style.display !== 'none') {
+      loginForm.classList.add('hidden');
+      if (loginForm.style.display) loginForm.style.display = 'none';
+      
+      registerForm.classList.remove('hidden');
+      registerForm.style.display = 'block';
+    } else {
+      // Caso contrário, fazemos o inverso
+      registerForm.classList.add('hidden');
+      if (registerForm.style.display) registerForm.style.display = 'none';
+      
+      loginForm.classList.remove('hidden');
+      loginForm.style.display = 'block';
+    }
+  };
+  
+  // Se você usa EventListeners para chamar a função, adicione isso dentro do seu DOMContentLoaded:
+  document.addEventListener('DOMContentLoaded', () => {
+    const toggleButtons = document.querySelectorAll('.toggle-auth-btn'); // Verifique a classe ou ID no seu HTML
+    toggleButtons.forEach(btn => {
+      btn.addEventListener('click', window.toggleAuthMode);
+    });
+  });
+
+
 // ══════════════════════════════════════════════════════════════════
 // INJECTED CSS — all new styles added here, no external file needed
 // ══════════════════════════════════════════════════════════════════
