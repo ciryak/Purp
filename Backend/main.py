@@ -812,7 +812,7 @@ def verify_email(
     if user.is_verified:
         access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
         new_token = create_access_token(
-            data={"sub": user.email}, expires_delta=access_token_expires
+            data={"sub": str(user.id)}, expires_delta=access_token_expires
         )
         return {"ok": True, "token": new_token, "user": _user_payload(user)}
 
@@ -851,7 +851,7 @@ def verify_email(
     # Send welcome email now that they're verified
     send_welcome_email_async(user.email, user.username)
     new_token = create_access_token(
-        data={"sub": user.email}, expires_delta=access_token_expires
+        data={"sub": str(user.id)}, expires_delta=access_token_expires
     )
 
     return {"ok": True, "token": new_token, "user": _user_payload(user)}
