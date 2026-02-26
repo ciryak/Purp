@@ -33,6 +33,7 @@ const $ = (id) => document.getElementById(id);
 const formatUSD = (v) =>
   new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(v ?? 0);
 const formatPct = (v) => `${v >= 0 ? '+' : ''}${(v || 0).toFixed(2)}%`;
+const hasChromeStorage = typeof chrome !== 'undefined' && !!chrome.storage?.local;
 
 // ── Sentry ───────────────────────────────────────────────────────
 
@@ -386,9 +387,15 @@ function applyVisibilityMask() {
     el.classList.toggle('is-hidden', hideSensitiveValues)
   );
 }
+function getEyeIconSvg(hidden) {
+  return hidden
+    ? `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.94 10.94 0 0 1 12 20C7 20 2.73 16.89 1 12c.74-2.08 2.06-3.93 3.77-5.33"/><path d="M9.9 4.24A10.9 10.9 0 0 1 12 4c5 0 9.27 3.11 11 8a11.8 11.8 0 0 1-2.08 3.35"/><path d="M14.12 14.12a3 3 0 1 1-4.24-4.24"/><path d="M1 1l22 22"/></svg>`
+    : `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg>`;
+}
+
 function updatePrivacyToggle() {
   const icon = $('privacy-icon');
-  if (icon) icon.textContent = hideSensitiveValues ? '🙈' : '👁️';
+  if (icon) icon.innerHTML = getEyeIconSvg(hideSensitiveValues);
   applyVisibilityMask();
 }
 
@@ -421,29 +428,45 @@ function authHeaders(extra = {}) {
 
 function saveSession(token, user) {
   authToken = token; currentUser = user;
-  chrome.storage.local.set({ purp_token: token, purp_user: JSON.stringify(user) });
+  if (hasChromeStorage) {
+    chrome.storage.local.set({ purp_token: token, purp_user: JSON.stringify(user) });
+  }
   localStorage.setItem('auth_token', token || '');
+  localStorage.setItem('purp_user', JSON.stringify(user || null));
 }
 
 function loadSession(callback) {
-  chrome.storage.local.get(['purp_token', 'purp_user'], (result) => {
-    if (result.purp_token && result.purp_user) {
-      try { authToken = result.purp_token; currentUser = JSON.parse(result.purp_user); callback(true); }
-      catch (e) { callback(false); }
-    } else {
+  if (hasChromeStorage) {
+    chrome.storage.local.get(['purp_token', 'purp_user'], (result) => {
+      if (result.purp_token && result.purp_user) {
+        try { authToken = result.purp_token; currentUser = JSON.parse(result.purp_user); callback(true); return; }
+        catch (e) {}
+      }
       const fallbackToken = localStorage.getItem('auth_token');
-      if (fallbackToken && result.purp_user) {
-        try { authToken = fallbackToken; currentUser = JSON.parse(result.purp_user); callback(true); return; }
+      const fallbackUser = localStorage.getItem('purp_user');
+      if (fallbackToken && fallbackUser) {
+        try { authToken = fallbackToken; currentUser = JSON.parse(fallbackUser); callback(true); return; }
         catch (e) {}
       }
       callback(false);
-    }
-  });
+    });
+    return;
+  }
+
+  const fallbackToken = localStorage.getItem('auth_token');
+  const fallbackUser = localStorage.getItem('purp_user');
+  if (fallbackToken && fallbackUser) {
+    try { authToken = fallbackToken; currentUser = JSON.parse(fallbackUser); callback(true); return; }
+    catch (e) {}
+  }
+  callback(false);
 }
 function clearSession() {
   authToken = null; currentUser = null; portfolioCount = 0; portfolioSymbols = new Set();
-  stopRefresh(); chrome.storage.local.remove(['purp_token', 'purp_user']);
+  stopRefresh();
+  if (hasChromeStorage) chrome.storage.local.remove(['purp_token', 'purp_user']);
   localStorage.removeItem('auth_token');
+  localStorage.removeItem('purp_user');
 }
 
 function isPremium() { return !!currentUser?.is_premium; }
