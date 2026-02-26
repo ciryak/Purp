@@ -772,25 +772,23 @@ def login(request: Request, data: LoginInput, session: Session = Depends(get_ses
     # 3. Gera o token (necessário para autorizar a verificação posterior)
     token = create_token(user.id)
 
-    # 4. VERIFICAÇÃO DE STATUS (O Pulo do Gato)
+    # 4. VERIFICAÇÃO DE STATUS
     if not user.is_verified:
-        # Se não estiver verificado, envia um novo código por e-mail automaticamente (Opcional)
-        # code = _create_verification_code(session, user.id)
-        # send_verification_email_async(user.email, user.username, code)
-        
         return {
+            "ok": True,  # <--- CORREÇÃO AQUI
             "token": token,
             "user": _user_payload(user),
-            "requires_verification": True  # Avisa o front para mudar de tela
+            "requires_verification": True 
         }
 
     # 5. Login normal para utilizadores verificados
     return {
+        "ok": True,  # <--- CORREÇÃO AQUI
         "token": token,
         "user": _user_payload(user),
         "requires_verification": False
     }
-
+  
 @app.post("/auth/forgot-password")
 @limiter.limit("3/minute")
 def forgot_password(request: Request, data: ForgotPasswordInput):
@@ -808,12 +806,9 @@ def verify_email(
     if not user:
         raise HTTPException(400, "User not found or code expired")
 
-    # Se já estiver verificado, garante que devolvemos um token válido mesmo assim
+    # Se já estiver verificado, devolve o token usando a sua função create_token
     if user.is_verified:
-        access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-        new_token = create_access_token(
-            data={"sub": str(user.id)}, expires_delta=access_token_expires
-        )
+        new_token = create_token(user.id)
         return {"ok": True, "token": new_token, "user": _user_payload(user)}
 
     code = data.code.strip()
@@ -850,12 +845,11 @@ def verify_email(
 
     # Send welcome email now that they're verified
     send_welcome_email_async(user.email, user.username)
-    new_token = create_access_token(
-        data={"sub": str(user.id)}, expires_delta=access_token_expires
-    )
+    
+    # Gera o token novo de forma limpa usando a função correta
+    new_token = create_token(user.id)
 
     return {"ok": True, "token": new_token, "user": _user_payload(user)}
-
 @app.post("/auth/resend-verification")
 @limiter.limit("2/minute")
 def resend_verification(
