@@ -1904,8 +1904,8 @@
           <span>&#9888;</span><span id="signin-error-msg">Error</span>
         </div>
         <div class="form-field">
-          <label class="form-label" for="signin-username">Username</label>
-          <input class="form-input" type="text" id="signin-username" placeholder="your username" autocomplete="username" />
+          <label class="form-label" for="signin-email">Email</label>
+          <input class="form-input" type="email" id="signin-email" placeholder="you@email.com" autocomplete="email" />
         </div>
         <div class="form-field">
           <label class="form-label" for="signin-password">Password</label>
@@ -1927,8 +1927,8 @@
           <span>&#9888;</span><span id="register-error-msg">Error</span>
         </div>
         <div class="form-field">
-          <label class="form-label" for="reg-username">Username</label>
-          <input class="form-input" type="text" id="reg-username" placeholder="choose a username" autocomplete="username" />
+          <label class="form-label" for="reg-full-name">Full name</label>
+          <input class="form-input" type="text" id="reg-full-name" placeholder="your full name" autocomplete="name" />
         </div>
         <div class="form-field">
           <label class="form-label" for="reg-email">Email</label>
@@ -2157,7 +2157,7 @@
     AUTH_PREFIX:   '',
     STORAGE_TOKEN: 'purp_token',
     STORAGE_USER:  'purp_user',
-    MIN_USERNAME:  3,
+    MIN_FULL_NAME: 3,
     MIN_PASSWORD:  6,
   };
 
@@ -2256,8 +2256,8 @@
     const userBtn  = document.getElementById('nav-user-btn');
     if (currentUser && authToken) {
       authBtns.classList.add('hidden'); userBtn.classList.remove('hidden');
-      document.getElementById('nav-username').textContent = currentUser.username;
-      document.getElementById('nav-avatar-letter').textContent = currentUser.username.charAt(0).toUpperCase();
+      document.getElementById('nav-username').textContent = currentUser.full_name || currentUser.username || 'User';
+      document.getElementById('nav-avatar-letter').textContent = (currentUser.full_name || currentUser.username || 'U').charAt(0).toUpperCase();
     } else {
       authBtns.classList.remove('hidden'); userBtn.classList.add('hidden');
     }
@@ -2278,7 +2278,7 @@
     if (!currentUser) return;
     if (!window.__logoutPending) {
       window.__logoutPending = true;
-      toast(`Tap again to sign out of <b>${currentUser.username}</b>`, 'info', 2800);
+      toast(`Tap again to sign out of <b>${currentUser.full_name || currentUser.username}</b>`, 'info', 2800);
       setTimeout(() => { window.__logoutPending = false; }, 2800);
     } else {
       window.__logoutPending = false; clearSession(); toast('Signed out successfully', 'info');
@@ -2313,50 +2313,50 @@
   function isValidEmail(v) { return /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(v); }
 
   async function handleSignIn() {
-    const username = document.getElementById('signin-username').value.trim();
+    const email = document.getElementById('signin-email').value.trim().toLowerCase();
     const password = document.getElementById('signin-password').value;
     const btn      = document.getElementById('btn-do-signin');
     document.getElementById('signin-error').classList.add('hidden');
-    if (!username) { showFieldError('signin-error','signin-error-msg','Username is required'); return; }
+    if (!email) { showFieldError('signin-error','signin-error-msg','Email is required'); return; }
     if (!password) { showFieldError('signin-error','signin-error-msg','Password is required'); return; }
     btn.disabled = true; btn.textContent = 'Signing in…';
     try {
-      const res  = await fetch(apiUrl('login'), { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ username, password }) });
+      const res  = await fetch(apiUrl('login'), { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ email, password }) });
       const data = await res.json().catch(() => ({}));
       if (res.ok) {
         const token = data[CONFIG.TOKEN_KEY] || data.token || data.access_token;
-        const user  = data.user || { username };
+        const user  = data.user || { email };
         if (!token) throw new Error('No token');
         saveSession(token, user);
-        if (data.requires_verification) { closeAuthModal(); document.getElementById('signin-password').value = ''; openVerifyModal(token, user.email || '', (v) => { saveSession(authToken, {...currentUser,...v,is_verified:true}); toast(`Welcome back, ${currentUser.username}! 👋`, 'success'); }); return; }
-        closeAuthModal(); document.getElementById('signin-password').value = ''; toast(`Welcome back, ${user.username}! 👋`, 'success');
-      } else { showFieldError('signin-error','signin-error-msg', data.detail || data.message || 'Incorrect username or password'); }
+        if (data.requires_verification) { closeAuthModal(); document.getElementById('signin-password').value = ''; openVerifyModal(token, user.email || '', (v) => { saveSession(authToken, {...currentUser,...v,is_verified:true}); toast(`Welcome back, ${currentUser.full_name || currentUser.username}! 👋`, 'success'); }); return; }
+        closeAuthModal(); document.getElementById('signin-password').value = ''; toast(`Welcome back, ${user.full_name || user.username}! 👋`, 'success');
+      } else { showFieldError('signin-error','signin-error-msg', data.detail || data.message || 'Incorrect email or password'); }
     } catch { showFieldError('signin-error','signin-error-msg','Connection error. Please try again.'); }
     finally { btn.disabled = false; btn.textContent = 'Sign in to Purp'; }
   }
 
   async function handleRegister() {
-    const username = document.getElementById('reg-username').value.trim();
+    const fullName = document.getElementById('reg-full-name').value.trim();
     const email    = document.getElementById('reg-email').value.trim();
     const password = document.getElementById('reg-password').value;
     const btn      = document.getElementById('btn-do-register');
     document.getElementById('register-error').classList.add('hidden');
-    if (!username) { showFieldError('register-error','register-error-msg','Username is required'); return; }
-    if (username.length < CONFIG.MIN_USERNAME) { showFieldError('register-error','register-error-msg',`Username must be at least ${CONFIG.MIN_USERNAME} characters`); return; }
+    if (!fullName) { showFieldError('register-error','register-error-msg','Full name is required'); return; }
+    if (fullName.length < CONFIG.MIN_FULL_NAME) { showFieldError('register-error','register-error-msg',`Full name must be at least ${CONFIG.MIN_FULL_NAME} characters`); return; }
     if (!email || !isValidEmail(email)) { showFieldError('register-error','register-error-msg','Please enter a valid email address'); return; }
     if (!password || password.length < CONFIG.MIN_PASSWORD) { showFieldError('register-error','register-error-msg',`Password must be at least ${CONFIG.MIN_PASSWORD} characters`); return; }
     btn.disabled = true; btn.textContent = 'Creating account…';
     try {
-      const res  = await fetch(apiUrl('register'), { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ username, email, password }) });
+      const res  = await fetch(apiUrl('register'), { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ full_name: fullName, email, password }) });
       const data = await res.json().catch(() => ({}));
       if (res.ok) {
         const token = data[CONFIG.TOKEN_KEY] || data.token || data.access_token;
-        const user  = data.user || { username, email };
+        const user  = data.user || { full_name: fullName, email };
         if (!token) throw new Error('No token');
         saveSession(token, user); closeAuthModal();
-        ['reg-username','reg-email','reg-password'].forEach(id => { document.getElementById(id).value = ''; });
-        if (data.requires_verification) { openVerifyModal(token, email, (v) => { saveSession(authToken, {...currentUser,...v,is_verified:true}); toast(`Account verified! Welcome to Purp, ${currentUser.username} 🎉`, 'success', 5000); }); return; }
-        toast(`Account created! Welcome to Purp, ${user.username} 🎉`, 'success', 5000);
+        ['reg-full-name','reg-email','reg-password'].forEach(id => { document.getElementById(id).value = ''; });
+        if (data.requires_verification) { openVerifyModal(token, email, (v) => { saveSession(authToken, {...currentUser,...v,is_verified:true}); toast(`Account verified! Welcome to Purp, ${currentUser.full_name || currentUser.username} 🎉`, 'success', 5000); }); return; }
+        toast(`Account created! Welcome to Purp, ${user.full_name || user.username} 🎉`, 'success', 5000);
       } else { showFieldError('register-error','register-error-msg', data.detail || data.message || 'Registration failed. Please try again.'); }
     } catch { showFieldError('register-error','register-error-msg','Connection error. Check your internet and try again.'); }
     finally { btn.disabled = false; btn.textContent = 'Create free account'; }

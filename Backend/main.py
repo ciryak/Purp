@@ -90,15 +90,15 @@ VERIFICATION_EXPIRE_MINUTES = 15
 CRON_SECRET = os.getenv("CRON_SECRET", "")
 SYMBOL_PATTERN = re.compile(r"^[A-Z0-9.\-\^]+$")
 MAX_SYMBOL_LENGTH = 20
-MAX_USERNAME_LENGTH = 30
+MAX_FULL_NAME_LENGTH = 60
 
 
-def sanitize_username(username: str) -> str:
-    cleaned = username.strip()
+def sanitize_full_name(full_name: str) -> str:
+    cleaned = full_name.strip()
     if len(cleaned) < 3:
-        raise HTTPException(400, "Username must be at least 3 characters")
-    if len(cleaned) > MAX_USERNAME_LENGTH:
-        raise HTTPException(400, f"Username must be at most {MAX_USERNAME_LENGTH} characters")
+        raise HTTPException(400, "Full name must be at least 3 characters")
+    if len(cleaned) > MAX_FULL_NAME_LENGTH:
+        raise HTTPException(400, f"Full name must be at most {MAX_FULL_NAME_LENGTH} characters")
     return cleaned
 
 
@@ -578,11 +578,20 @@ def create_token(user_id: int) -> str:
     return jwt.encode({"sub": str(user_id), "exp": exp}, SECRET_KEY, algorithm=ALGORITHM)
 
 
-def get_current_user(token: str | None = Header(None, alias="X-Auth-Token")) -> int:
-    if not token:
+def get_current_user(
+    token: str | None = Header(None, alias="X-Auth-Token"),
+    authorization: str | None = Header(None, alias="Authorization"),
+) -> int:
+    resolved_token = token
+    if not resolved_token and authorization:
+        auth_value = authorization.strip()
+        if auth_value.lower().startswith("bearer "):
+            resolved_token = auth_value[7:].strip()
+
+    if not resolved_token:
         raise HTTPException(401, "Not authenticated — please log in")
     try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        payload = jwt.decode(resolved_token, SECRET_KEY, algorithms=[ALGORITHM])
         return int(payload["sub"])
     except (JWTError, ValueError, KeyError, TypeError):
         raise HTTPException(401, "Invalid or expired session — please log in again")
@@ -606,13 +615,13 @@ def _history_days_for_user(user: User) -> int:
 # ── Schemas ────────────────────────────────────────────────────────────────────
 
 class RegisterInput(BaseModel):
-    username: str
+    full_name: str
     password: str
     email: EmailStr
 
 
 class LoginInput(BaseModel):
-    username: str
+    email: EmailStr
     password: str
 
 
@@ -680,18 +689,16 @@ class RebalanceInput(BaseModel):
 @app.post("/auth/register")
 @limiter.limit("5/minute")
 def register(request: Request, data: RegisterInput, session: Session = Depends(get_session)):
-    uname = sanitize_username(data.username)
+    full_name = sanitize_full_name(data.full_name)
     if len(data.password) < 4:
         raise HTTPException(400, "Password must be at least 4 characters")
     try:
-        if session.exec(select(User).where(User.username == uname)).first():
-            raise HTTPException(400, "Username already taken")
         email_norm = str(data.email).strip().lower()
         if session.exec(select(User).where(User.email == email_norm)).first():
             raise HTTPException(400, "Email already registered")
         
         user = User(
-            username=uname, 
+            username=full_name, 
             password_hash=hash_pw(data.password),
             email=email_norm, 
             plan="free", 
@@ -713,7 +720,7 @@ def register(request: Request, data: RegisterInput, session: Session = Depends(g
 
     # Gera e envia o código
     code = _create_verification_code(session, user.id)
-    send_verification_email_async(email_norm, uname, code)
+    send_verification_email_async(email_norm, full_name, code)
 
     token = create_token(user.id)
     
@@ -728,10 +735,13 @@ def register(request: Request, data: RegisterInput, session: Session = Depends(g
 @limiter.limit("10/minute")
 def login(request: Request, data: LoginInput, session: Session = Depends(get_session)):
     email_norm = str(data.email).strip().lower()
-    
-    # 1. Procura o utilizador
+
+    if not email_norm:
+        raise HTTPException(400, "E-mail is required")
+
+    # 1. Procura o utilizador por e-mail
     user = session.exec(select(User).where(User.email == email_norm)).first()
-    
+
     # 2. Valida credenciais
     if not user or not verify_pw(data.password, user.password_hash):
         raise HTTPException(401, "E-mail ou senha incorretos")
@@ -773,7 +783,7 @@ def verify_email(
 ):
     user = session.get(User, user_id)
     if not user:
-        raise HTTPException(404, "User not found")
+        raise HTTPException(400, "User not found or code expired")
 
     if user.is_verified:
         return {"ok": True, "user": _user_payload(user)}
@@ -817,7 +827,9 @@ def verify_email(
 
 
 @app.post("/auth/resend-verification")
+@limiter.limit("2/minute")
 def resend_verification(
+    request: Request,
     user_id: int = Depends(get_current_user),
     session: Session = Depends(get_session),
 ):
@@ -890,7 +902,7 @@ def update_user_preferences(
 def _user_payload(user: User) -> dict:
     return {
         "id":                   user.id,
-        "username":             user.username,
+        "full_name":            user.username,
         "plan":                 user.plan,
         "is_premium":           has_plan(user, "investor", "tax_pro"),
         "is_verified":          user.is_verified,
