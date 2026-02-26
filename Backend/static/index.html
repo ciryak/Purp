@@ -2312,6 +2312,8 @@
   function showFieldError(containerId, msgId, msg) { document.getElementById(containerId).classList.remove('hidden'); document.getElementById(msgId).textContent = msg; }
   function isValidEmail(v) { return /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(v); }
 
+  function goToHomeDashboard() { window.location.href = '/home'; }
+
   async function handleSignIn() {
     const email = document.getElementById('signin-email').value.trim().toLowerCase();
     const password = document.getElementById('signin-password').value;
@@ -2328,8 +2330,8 @@
         const user  = data.user || { email };
         if (!token) throw new Error('No token');
         saveSession(token, user);
-        if (data.requires_verification) { closeAuthModal(); document.getElementById('signin-password').value = ''; openVerifyModal(token, user.email || '', (v) => { saveSession(authToken, {...currentUser,...v,is_verified:true}); toast(`Welcome back, ${currentUser.full_name || currentUser.username}! 👋`, 'success'); }); return; }
-        closeAuthModal(); document.getElementById('signin-password').value = ''; toast(`Welcome back, ${user.full_name || user.username}! 👋`, 'success');
+        if (data.requires_verification) { closeAuthModal(); document.getElementById('signin-password').value = ''; openVerifyModal(token, user.email || '', (v) => { saveSession(authToken, {...currentUser,...v,is_verified:true}); toast(`Welcome back, ${currentUser.full_name || currentUser.username}! 👋`, 'success'); goToHomeDashboard(); }); return; }
+        closeAuthModal(); document.getElementById('signin-password').value = ''; toast(`Welcome back, ${user.full_name || user.username}! 👋`, 'success'); goToHomeDashboard();
       } else { showFieldError('signin-error','signin-error-msg', data.detail || data.message || 'Incorrect email or password'); }
     } catch { showFieldError('signin-error','signin-error-msg','Connection error. Please try again.'); }
     finally { btn.disabled = false; btn.textContent = 'Sign in to Purp'; }
@@ -2355,8 +2357,8 @@
         if (!token) throw new Error('No token');
         saveSession(token, user); closeAuthModal();
         ['reg-full-name','reg-email','reg-password'].forEach(id => { document.getElementById(id).value = ''; });
-        if (data.requires_verification) { openVerifyModal(token, email, (v) => { saveSession(authToken, {...currentUser,...v,is_verified:true}); toast(`Account verified! Welcome to Purp, ${currentUser.full_name || currentUser.username} 🎉`, 'success', 5000); }); return; }
-        toast(`Account created! Welcome to Purp, ${user.full_name || user.username} 🎉`, 'success', 5000);
+        if (data.requires_verification) { openVerifyModal(token, email, (v) => { saveSession(authToken, {...currentUser,...v,is_verified:true}); toast(`Account verified! Welcome to Purp, ${currentUser.full_name || currentUser.username} 🎉`, 'success', 5000); goToHomeDashboard(); }); return; }
+        toast(`Account created! Welcome to Purp, ${user.full_name || user.username} 🎉`, 'success', 5000); goToHomeDashboard();
       } else { showFieldError('register-error','register-error-msg', data.detail || data.message || 'Registration failed. Please try again.'); }
     } catch { showFieldError('register-error','register-error-msg','Connection error. Check your internet and try again.'); }
     finally { btn.disabled = false; btn.textContent = 'Create free account'; }

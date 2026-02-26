@@ -185,6 +185,8 @@
   border-color: rgba(124,58,237,0.4);
   color: var(--accent-l);
 }
+#privacy-icon { display:inline-flex; align-items:center; justify-content:center; }
+#privacy-icon svg { width:16px; height:16px; }
 .header-spacer { flex: 1; }
    
    /* ═══ NAV MENU ════════════════════════════════════ */

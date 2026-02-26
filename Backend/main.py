@@ -563,9 +563,32 @@ async def add_security_headers(request: Request, call_next):
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
+EXTENSION_STATIC_DIR = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "extension"))
+if os.path.isdir(EXTENSION_STATIC_DIR):
+    app.mount("/extension-assets", StaticFiles(directory=EXTENSION_STATIC_DIR), name="extension-assets")
+
 @app.get("/")
 async def read_index():
     return FileResponse("static/index.html")
+
+@app.get("/home")
+async def home_dashboard():
+    return FileResponse("static/home.html")
+
+HOME_SECTION_FILES = {
+    "market": "static/home/market.html",
+    "add-asset": "static/home/add-asset.html",
+    "alerts": "static/home/alerts.html",
+    "import": "static/home/import.html",
+    "transactions": "static/home/transactions.html",
+}
+
+@app.get("/home/{section}")
+async def home_section(section: str):
+    section_file = HOME_SECTION_FILES.get(section)
+    if not section_file:
+        raise HTTPException(404, "Section not found")
+    return FileResponse(section_file)
 
 
 def get_session():
