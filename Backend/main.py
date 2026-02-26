@@ -808,8 +808,13 @@ def verify_email(
     if not user:
         raise HTTPException(400, "User not found or code expired")
 
+    # Se já estiver verificado, garante que devolvemos um token válido mesmo assim
     if user.is_verified:
-        return {"ok": True, "user": _user_payload(user)}
+        access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+        new_token = create_access_token(
+            data={"sub": user.email}, expires_delta=access_token_expires
+        )
+        return {"ok": True, "token": new_token, "user": _user_payload(user)}
 
     code = data.code.strip()
     if len(code) != 6 or not code.isdigit():
@@ -845,9 +850,11 @@ def verify_email(
 
     # Send welcome email now that they're verified
     send_welcome_email_async(user.email, user.username)
+    new_token = create_access_token(
+        data={"sub": user.email}, expires_delta=access_token_expires
+    )
 
-    return {"ok": True, "user": _user_payload(user)}
-
+    return {"ok": True, "token": new_token, "user": _user_payload(user)}
 
 @app.post("/auth/resend-verification")
 @limiter.limit("2/minute")
