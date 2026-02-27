@@ -376,6 +376,67 @@ def get_asset_data(symbol: str) -> dict | None:
             print(f"⚠️  yfinance '{sym}': {e}")
             continue
 
+    # ── 3) Fallback crypto: CoinCap (gratuito, sem API key) ─────────────────────
+    if not _is_likely_stock(base):
+        try:
+            r = requests.get(
+                f"https://api.coincap.io/v2/assets/{base.lower()}",
+                headers={"User-Agent": "Purp/2.0"},
+                timeout=8,
+            )
+            if r.ok:
+                j = r.json()
+                d = j.get("data") or {}
+                price = float(d.get("priceUsd") or 0)
+                if price > 0:
+                    ch = d.get("changePercent24Hr")
+                    change = float(ch) if ch is not None else 0.0
+                    result = {
+                        "symbol": base,
+                        "real_symbol": base,
+                        "name": d.get("name") or base,
+                        "current_price": price,
+                        "percent_change": change,
+                        "history": [price],
+                        "type": "crypto",
+                        "icon": _coin_icon(base),
+                    }
+                    _cache_set(f"asset_{base}", result)
+                    return result
+        except Exception as e:
+            print(f"⚠️  CoinCap fallback '{base}': {e}")
+
+    # ── 4) Fallback stocks: Finnhub (gratuito com API key) ─────────────────────
+    finnhub_key = os.getenv("FINNHUB_API_KEY", "").strip()
+    if finnhub_key and _is_likely_stock(base):
+        try:
+            r = requests.get(
+                "https://finnhub.io/api/v1/quote",
+                params={"symbol": base},
+                headers={"X-Finnhub-Token": finnhub_key},
+                timeout=8,
+            )
+            if r.ok:
+                j = r.json()
+                price = float(j.get("c") or j.get("pc") or 0)
+                if price > 0:
+                    prev = float(j.get("pc") or price)
+                    change = ((price - prev) / prev * 100) if prev else 0
+                    result = {
+                        "symbol": base,
+                        "real_symbol": base,
+                        "name": base,
+                        "current_price": price,
+                        "percent_change": change,
+                        "history": [price],
+                        "type": "stock",
+                        "icon": "",
+                    }
+                    _cache_set(f"asset_{base}", result)
+                    return result
+        except Exception as e:
+            print(f"⚠️  Finnhub fallback '{base}': {e}")
+
     print(f"❌ Could not resolve asset: {symbol}")
     return None
 

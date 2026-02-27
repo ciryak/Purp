@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;0,9..40,800&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/home/home-style.css">
+  <link rel="stylesheet" href="/static/home/dashboard.css">
+  <title>Purp — Meu perfil</title>
+</head>
+<body class="home-dashboard-view" data-page="profile">
+
+<div id="toast-container" aria-live="polite"></div>
+
+<div id="login-screen" class="screen hidden">
+  <div class="login-glow"></div>
+  <div class="login-box">
+    <div class="login-logo"><div class="login-logo-icon">P</div><span class="login-logo-name">Purp</span></div>
+    <p class="login-tagline">AI-powered portfolio tracker</p>
+    <div id="login-form">
+      <div class="field-group"><label class="field-label">Email</label><input type="email" id="login-email" placeholder="you@email.com" autocomplete="email"></div>
+      <div class="field-group"><label class="field-label">Password</label><input type="password" id="login-password" placeholder="••••••••" autocomplete="current-password"></div>
+      <button type="button" id="btn-login" class="btn-primary">Sign In</button>
+      <div class="auth-switch">No account? <button type="button" id="btn-show-register" class="btn-link">Create one</button></div>
+      <div id="login-error" class="error-pill hidden"></div>
+    </div>
+    <div id="register-form" style="display:none;">
+      <div class="field-group"><label class="field-label">Full name</label><input type="text" id="reg-full-name" placeholder="your full name" autocomplete="name"></div>
+      <div class="field-group"><label class="field-label">Email</label><input type="email" id="reg-email" placeholder="you@email.com" autocomplete="email"></div>
+      <div class="field-group"><label class="field-label">Password</label><input type="password" id="reg-password" placeholder="at least 4 characters" autocomplete="new-password"></div>
+      <button type="button" id="btn-register" class="btn-primary">Create Account</button>
+      <div class="auth-switch">Already have an account? <button type="button" id="btn-show-login" class="btn-link">Sign in</button></div>
+      <div id="register-error" class="error-pill hidden"></div>
+    </div>
+  </div>
+</div>
+
+<div id="app-shell" class="app-shell hidden">
+  <aside id="sidebar" class="sidebar" aria-label="Main navigation">
+    <a href="/home" class="sidebar-brand" aria-label="Go to dashboard home"><div class="sidebar-brand-icon">P</div><span class="sidebar-brand-name">Purp</span></a>
+    <div class="sidebar-profile">
+      <div class="sidebar-avatar" id="profile-avatar">U</div>
+      <div class="sidebar-profile-info">
+        <div class="sidebar-profile-name" id="profile-full-name">—</div>
+        <div class="sidebar-profile-meta"><span id="profile-plan" class="plan-badge">Free</span><span id="profile-count" class="asset-count">0/4</span></div>
+      </div>
+      <button type="button" id="btn-privacy-toggle" class="privacy-btn sidebar-privacy" aria-label="Toggle value visibility"><span id="privacy-icon" aria-hidden="true"></span></button>
+    </div>
+    <nav id="nav-menu" role="navigation">
+      <a href="/home" class="nav-item" id="nav-portfolio"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg><span>Portfolio</span></a>
+      <a href="/home/market" class="nav-item" id="nav-market"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 17l6-6 4 4 7-7"/><path d="M14 8h6v6"/></svg><span>Market</span></a>
+      <a href="/home/add-asset" class="nav-item" id="nav-add"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 8v8M8 12h8"/></svg><span>Add Asset</span></a>
+      <a href="/home/alerts" class="nav-item" id="nav-alerts"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 17h5l-1.4-1.4A2 2 0 0 1 18 14.2V11a6 6 0 1 0-12 0v3.2a2 2 0 0 1-.6 1.4L4 17h5"/><path d="M10 20a2 2 0 0 0 4 0"/></svg><span>Alerts</span></a>
+      <a href="/home/transactions" class="nav-item" id="nav-transactions"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 6h11M9 12h11M9 18h11"/><path d="M4 6h.01M4 12h.01M4 18h.01"/></svg><span>Transactions</span></a>
+      <a href="/home/import" class="nav-item" id="nav-import"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg><span>Import CSV</span></a>
+      <a href="/home/profile" class="nav-item active" id="nav-profile"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg><span>Meu perfil</span></a>
+      <a href="/home/settings" class="nav-item" id="nav-settings"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg><span>Configurações</span></a>
+    </nav>
+    <footer class="sidebar-footer">
+      <button type="button" id="btn-upgrade" class="btn-upgrade sidebar-upgrade">⭐ Upgrade</button>
+      <button type="button" id="nav-logout" class="nav-item nav-danger sidebar-logout"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9"/></svg><span>Sign Out</span></button>
+      <a class="sidebar-link" href="https://getpurpai.com" target="_blank" rel="noopener noreferrer">getpurpai.com</a>
+    </footer>
+  </aside>
+  <header class="mobile-topbar" aria-label="Mobile header">
+    <button type="button" id="btn-hamburger" class="hamburger-btn" aria-label="Open menu" aria-expanded="false"><span></span><span></span><span></span></button>
+    <span class="app-title">Purp</span>
+    <button type="button" id="btn-privacy-toggle-mobile" class="privacy-btn" aria-label="Toggle value visibility"><span id="privacy-icon-mobile" aria-hidden="true"></span></button>
+  </header>
+  <div id="sidebar-overlay" class="sidebar-overlay" aria-hidden="true"></div>
+
+  <main id="main-content" class="main-content" role="main">
+    <section class="page-content" aria-label="Meu perfil">
+      <header class="panel-header">
+        <h1 class="panel-title">Meu perfil</h1>
+        <p class="panel-sub">Dados da sua conta e plano</p>
+      </header>
+      <div class="panel-body panel-body--narrow">
+        <div class="form-card">
+          <div class="profile-left" style="margin-bottom:16px;">
+            <div class="sidebar-avatar" id="profile-avatar-page" style="width:56px;height:56px;font-size:22px;">U</div>
+            <div>
+              <div class="sidebar-profile-name" id="profile-name-page" style="font-size:18px;">—</div>
+              <div class="sidebar-profile-meta" style="margin-top:4px;">
+                <span id="profile-plan-page" class="plan-badge">Free</span>
+                <span id="profile-email-page" class="asset-count" style="margin-left:8px;">—</span>
+              </div>
+            </div>
+          </div>
+          <p class="panel-sub" style="margin:0;">Alteração de nome e email em breve. Entre em contato pelo suporte se precisar.</p>
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<script src="/extension-assets/bundle.min.js"></script>
+<script src="/static/home/_base.js" defer></script>
+</body>
+</html>

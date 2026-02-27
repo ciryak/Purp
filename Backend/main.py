@@ -54,6 +54,7 @@ from services import (
     generate_weekly_digest,
     calculate_portfolio_score,
 )
+from brokers import fetch_broker_data
 
 sentry_sdk.init(
     dsn=os.getenv("SENTRY_DSN", ""),
@@ -488,6 +489,21 @@ def _create_verification_code(session: Session, user_id: int) -> str:
 
 
 # ── DB ─────────────────────────────────────────────────────────────────────────
+api_connection_ok = True  # validado no startup
+
+
+def validate_api_on_startup() -> None:
+    """Valida conexão com APIs de preço ao iniciar (usa fallback em runtime se falhar)."""
+    global api_connection_ok
+    try:
+        data = get_asset_data("AAPL")
+        api_connection_ok = data is not None and (data.get("current_price") or 0) > 0
+    except Exception as e:
+        api_connection_ok = False
+        print(f"⚠️  API connection check failed: {e}")
+    print("✅ API connection OK" if api_connection_ok else "⚠️  API connection check failed — fallbacks will be used at runtime")
+
+
 def create_db() -> None:
     global PRICE_PLAN_MAP
     print(f"🗄️  DB: {DATABASE_URL[:50]}…")
@@ -551,7 +567,7 @@ def create_db() -> None:
 
 # ── App ────────────────────────────────────────────────────────────────────────
 
-app = FastAPI(title="Purp API", version="7.0", on_startup=[create_db])
+app = FastAPI(title="Purp API", version="7.0", on_startup=[create_db, validate_api_on_startup])
 app.add_middleware(
     CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"]
 )
@@ -604,6 +620,8 @@ HOME_SECTION_FILES = {
     "alerts": "static/home/alerts.html",
     "import": "static/home/import.html",
     "transactions": "static/home/transactions.html",
+    "profile": "static/home/profile.html",
+    "settings": "static/home/settings.html",
 }
 
 @app.get("/home/{section}")
@@ -747,6 +765,12 @@ class NetWorthEntryInput(BaseModel):
 
 class RebalanceInput(BaseModel):
     targets: dict[str, float]
+
+
+class BrokerFetchInput(BaseModel):
+    broker: str  # coinbase | kraken | robinhood | fidelity
+    api_key: str = ""
+    api_secret: str = ""
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -1361,6 +1385,27 @@ def sell_asset(
     ))
     session.commit()
     return {"status": status, "remaining": max(new_amt, 0), "pnl": pnl}
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# BROKER API (fetch holdings from Coinbase / Kraken)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@app.post("/broker/fetch")
+def broker_fetch(
+    data: BrokerFetchInput,
+    user_id: int = Depends(get_current_user),
+    session: Session = Depends(get_session),
+):
+    """Fetch holdings from a connected broker (Coinbase/Kraken API; Robinhood/Fidelity CSV only)."""
+    user = session.get(User, user_id)
+    if not user:
+        raise HTTPException(404, "User not found")
+    broker = (data.broker or "").strip().lower()
+    if broker not in ("coinbase", "kraken", "robinhood", "fidelity"):
+        raise HTTPException(400, "Broker must be one of: coinbase, kraken, robinhood, fidelity")
+    result = fetch_broker_data(broker, data.api_key or "", data.api_secret or "")
+    return result
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -2491,7 +2536,7 @@ def payment_cancelled():
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "timestamp": datetime.utcnow().isoformat()}
+    return {"status": "ok", "api_ok": api_connection_ok, "timestamp": datetime.utcnow().isoformat()}
 
 
 @app.post("/debug/test-email")

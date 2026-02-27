@@ -2410,6 +2410,52 @@ document.addEventListener('DOMContentLoaded', () => {
   }
   $('modal-import-csv')?.addEventListener('click', (e) => { if (e.target === $('modal-import-csv')) closeImportModal(); });
 
+  // Broker connect list: API vs CSV
+  document.querySelector('.broker-connect-list')?.addEventListener('click', (e) => {
+    const action = e.target.closest('.broker-action');
+    const row = e.target.closest('.broker-item');
+    if (!action || !row) return;
+    const broker = row.dataset.broker || '';
+    if (action.dataset.action === 'api') {
+      $('broker-api-name').value = broker;
+      $('broker-api-title').textContent = `Conectar ${broker.charAt(0).toUpperCase() + broker.slice(1)}`;
+      $('broker-api-key').value = '';
+      $('broker-api-secret').value = '';
+      $('broker-api-result').style.display = 'none';
+      $('modal-broker-api').classList.add('active');
+    } else {
+      if ($('import-broker-select')) $('import-broker-select').value = broker;
+      openImportModal();
+    }
+  });
+  $('btn-broker-api-cancel')?.addEventListener('click', () => $('modal-broker-api').classList.remove('active'));
+  $('btn-broker-api-fetch')?.addEventListener('click', async () => {
+    const broker = $('broker-api-name').value;
+    const apiKey = $('broker-api-key').value.trim();
+    const apiSecret = $('broker-api-secret').value.trim();
+    const resultEl = $('broker-api-result');
+    if (!broker) return;
+    resultEl.style.display = 'block';
+    resultEl.innerHTML = 'Buscando…';
+    const res = await apiFetch('/broker/fetch', {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify({ broker, api_key: apiKey, api_secret: apiSecret }),
+    });
+    if (!res) { resultEl.innerHTML = '<span style="color:var(--red);">Erro de conexão.</span>'; return; }
+    const data = await res.json().catch(() => ({}));
+    if (data.use_csv) {
+      resultEl.innerHTML = '<span style="color:var(--text2);">Use Importar CSV para esta corretora.</span>';
+      return;
+    }
+    if (!data.ok) {
+      resultEl.innerHTML = `<span style="color:var(--red);">${data.error || 'Erro ao buscar dados.'}</span>`;
+      return;
+    }
+    const count = (data.holdings || []).length;
+    resultEl.innerHTML = `<span style="color:var(--green);">${count} ativo(s) encontrado(s).</span>${count ? '<br><small>Em breve: adicionar ao portfólio em um clique.</small>' : ''}`;
+  });
+
   // Tax Pro
   $('btn-upgrade-tax-pro')?.addEventListener('click', () => showTaxProUpgradeModal());
   $('btn-taxpro-cancel')?.addEventListener('click',   () => hideTaxProUpgradeModal());

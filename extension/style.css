@@ -167,6 +167,7 @@
      background: linear-gradient(135deg,#fff 0%,var(--accent-l) 100%);
      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
 }
+.app-logo { margin-right: 6px; border-radius: 6px; flex-shrink: 0; }
 .privacy-btn {
   width: 34px;
   height: 34px;
@@ -392,6 +393,32 @@
      font-size: 10px; font-family: var(--font); cursor: pointer;
    }
    .select-ctrl:focus { outline: none; border-color: rgba(124,58,237,0.5); }
+   select.purp-select, .purp-select { background-color: var(--bg2); color: var(--text); }
+   select.purp-select option, .purp-select option { background: var(--bg2); color: var(--text); }
+
+   /* Listas no padrão do projeto */
+   ul.purp-list, ol.purp-list, .list-panel {
+     list-style: none; margin: 0; padding: 0;
+     background: var(--bg2); border: 1px solid var(--border);
+     border-radius: var(--r-sm); overflow: hidden;
+   }
+   ul.purp-list li, ol.purp-list li, .list-panel .list-item {
+     padding: 8px 12px; color: var(--text2); font-size: 12px;
+     border-bottom: 1px solid rgba(255,255,255,0.05);
+   }
+   ul.purp-list li:last-child, .list-panel .list-item:last-child { border-bottom: none; }
+   ul.purp-list li:hover, .list-panel .list-item:hover { background: rgba(124,58,237,0.1); color: var(--text); }
+   ul.purp-list li.selected, .list-panel .list-item.selected { background: rgba(124,58,237,0.25); color: #fff; }
+   .list-panel-title {
+     padding: 8px 12px; font-size: 10px; font-weight: 700; color: var(--text3);
+     background: rgba(0,0,0,0.25); border-bottom: 1px solid var(--border);
+   }
+   .broker-connect-list .list-item { display: flex; align-items: center; gap: 10px; }
+   .broker-logo { width: 28px; height: 28px; border-radius: 8px; object-fit: contain; flex-shrink: 0; }
+   .broker-fb { width: 28px; height: 28px; border-radius: 8px; background: var(--card); display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 800; flex-shrink: 0; }
+   .broker-item .broker-name { flex: 1; }
+   .broker-action { font-size: 10px; font-weight: 700; color: var(--accent-l); cursor: pointer; }
+   .broker-action:hover { text-decoration: underline; }
    
    .time-pills {
      display: flex; gap: 3px;
@@ -406,7 +433,7 @@
    .pill.active { background: var(--accent); color: #fff; box-shadow: 0 2px 8px var(--accent-glow); }
    .pill:not(.active):hover { color: var(--text); }
    
-   .main-chart-wrap { height: 96px; margin-top: 12px; position: relative; }
+   .main-chart-wrap { min-height: 140px; height: 140px; margin-top: 12px; position: relative; }
    
    .chart-legend {
      display: flex; align-items: center; gap: 10px;

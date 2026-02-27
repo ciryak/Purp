@@ -325,6 +325,7 @@ a.sidebar-brand {
   display: flex;
   flex-direction: column;
   gap: 16px;
+  min-width: 0;
 }
 
 /* Coluna direita — sticky no topo em desktop */
@@ -382,8 +383,10 @@ a.sidebar-brand {
 }
 .main-chart-wrap {
   height: 160px;
+  min-height: 160px;
   margin-top: 14px;
   position: relative;
+  overflow: hidden;
 }
 
 /* ── BANNER CARD ─────────────────────────────────────────────────  */
@@ -534,6 +537,8 @@ a.sidebar-brand {
   .main-content {
     margin-left: 0;
     padding-top: var(--topbar-h);
+    overflow-y: auto;
+    overflow-x: hidden;
   }
 
   .dash-grid {
@@ -541,12 +546,24 @@ a.sidebar-brand {
     flex-direction: column;
     gap: 12px;
     padding: 14px 14px 60px;
+    min-height: 0;
   }
 
   .dash-col-right {
     position: static;
     max-height: none;
     overflow: visible;
+  }
+
+  .balance-card,
+  .info-card {
+    overflow: visible;
+    min-height: 0;
+  }
+
+  .main-chart-wrap {
+    min-height: 200px;
+    height: 200px;
   }
 
   .panel-header { padding: 18px 16px 0; }

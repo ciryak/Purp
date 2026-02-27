@@ -69,6 +69,7 @@
   <button type="button" id="btn-hamburger" class="hamburger-btn" aria-label="Menu">
     <span></span><span></span><span></span>
   </button>
+  <img src="icons/icon16.png" alt="" class="app-logo" width="24" height="24" onerror="this.style.display='none'">
   <span class="app-title">Purp</span>
   <button type="button" id="btn-privacy-toggle" class="privacy-btn" aria-label="Toggle value visibility" title="Hide or show values">
     <span id="privacy-icon" aria-hidden="true"></span>
@@ -392,7 +393,7 @@
     <div class="section-heading" style="margin-bottom:10px;">Advanced Alerts</div>
     <div class="field-group">
       <label class="field-label">Alert type</label>
-      <select id="alert-type-input" title="Choose a basic or advanced alert condition.">
+      <select id="alert-type-input" class="purp-select select-ctrl" title="Choose a basic or advanced alert condition.">
         <option value="price_above">Price Above</option>
         <option value="price_below">Price Below</option>
         <option value="percent_change_up">Percent Change Up</option>
@@ -438,8 +439,40 @@
 <!-- ═══ IMPORT CSV ═══ -->
 <div id="import-page" class="page">
   <div class="page-header">
-    <div class="page-title">Import CSV</div>
-    <div class="page-sub">Import broker files from a dedicated page</div>
+    <div class="page-title">Import</div>
+    <div class="page-sub">Conectar corretora ou importar CSV</div>
+  </div>
+
+  <!-- ── Conectar corretora (API) ── -->
+  <div class="form-card" style="margin-bottom:12px;">
+    <h2 class="section-heading" style="margin-bottom:10px;">Conectar corretora</h2>
+    <p class="panel-sub" style="margin-bottom:12px;font-size:12px;">Importe ativos e histórico via API ou CSV.</p>
+    <ul class="purp-list broker-connect-list" style="max-height:280px;">
+      <li class="list-item broker-item" data-broker="coinbase">
+        <img src="https://logo.clearbit.com/coinbase.com" alt="" class="broker-logo" onerror="this.style.display='none';this.nextElementSibling?.classList.remove('broker-fb');">
+        <span class="broker-fb" style="display:none;">C</span>
+        <span class="broker-name">Coinbase</span>
+        <span class="broker-action" data-action="api">Conectar API</span>
+      </li>
+      <li class="list-item broker-item" data-broker="robinhood">
+        <img src="https://logo.clearbit.com/robinhood.com" alt="" class="broker-logo" onerror="this.style.display='none';this.nextElementSibling?.classList.remove('broker-fb');">
+        <span class="broker-fb" style="display:none;">R</span>
+        <span class="broker-name">Robinhood</span>
+        <span class="broker-action" data-action="csv">Importar CSV</span>
+      </li>
+      <li class="list-item broker-item" data-broker="fidelity">
+        <img src="https://logo.clearbit.com/fidelity.com" alt="" class="broker-logo" onerror="this.style.display='none';this.nextElementSibling?.classList.remove('broker-fb');">
+        <span class="broker-fb" style="display:none;">F</span>
+        <span class="broker-name">Fidelity</span>
+        <span class="broker-action" data-action="csv">Importar CSV</span>
+      </li>
+      <li class="list-item broker-item" data-broker="kraken">
+        <img src="https://logo.clearbit.com/kraken.com" alt="" class="broker-logo" onerror="this.style.display='none';this.nextElementSibling?.classList.remove('broker-fb');">
+        <span class="broker-fb" style="display:none;">K</span>
+        <span class="broker-name">Kraken</span>
+        <span class="broker-action" data-action="api">Conectar API</span>
+      </li>
+    </ul>
   </div>
 
   <!-- ── Import CSV card (investor/tax_pro only) ── -->
@@ -448,7 +481,7 @@
       <div class="import-card-icon">📥</div>
       <div>
         <div class="import-card-title">Import from Broker</div>
-        <div class="import-card-sub">Coinbase · Robinhood · Fidelity · Kraken · Schwab</div>
+        <div class="import-card-sub">Coinbase · Robinhood · Fidelity · Kraken</div>
       </div>
     </div>
     <button type="button" id="btn-open-import" class="btn-import-open">
@@ -555,6 +588,28 @@
     <div class="modal-actions">
       <button class="btn-ghost"            id="btn-taxpro-cancel">Maybe later</button>
       <button class="btn-primary btn-gold" id="btn-taxpro-confirm">Upgrade to Tax Pro</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ BROKER API MODAL ── -->
+<div id="modal-broker-api" class="modal-overlay">
+  <div class="modal-box">
+    <div class="modal-title" id="broker-api-title">Conectar API</div>
+    <p class="panel-sub" style="margin-bottom:12px;">Insira as chaves de API (não são armazenadas no servidor).</p>
+    <input type="hidden" id="broker-api-name" value="">
+    <div class="field-group">
+      <label class="field-label">API Key</label>
+      <input type="text" id="broker-api-key" placeholder="Sua API key" autocomplete="off">
+    </div>
+    <div class="field-group">
+      <label class="field-label">API Secret</label>
+      <input type="password" id="broker-api-secret" placeholder="Sua API secret" autocomplete="off">
+    </div>
+    <div id="broker-api-result" class="broker-api-result" style="display:none;"></div>
+    <div class="modal-actions">
+      <button type="button" class="btn-ghost" id="btn-broker-api-cancel">Cancelar</button>
+      <button type="button" class="btn-primary" id="btn-broker-api-fetch">Buscar dados</button>
     </div>
   </div>
 </div>
