@@ -113,14 +113,14 @@ async function apiFetch(path, opts = {}) {
     const res = await fetch(`${API_BASE}${path}`, opts);
     if (res.status === 401) {
       clearSession();
-      toast('Sessão expirada — faça login novamente.', 'warning');
+      toast('Session expired — please sign in again.', 'warning');
       setTimeout(() => { window.location.href = '/'; }, 1500);
       return null;
     }
     return res;
   } catch (e) {
     console.error('Network error:', e);
-    toast('Erro de conexão. Verifique sua internet.', 'error');
+    toast('Connection error. Check your internet.', 'error');
     return null;
   }
 }
@@ -206,6 +206,7 @@ function startRefresh() {
     } else if (path === '/home/alerts' && $('alerts-list')) {
       loadAlerts();
     }
+  }, REFRESH_MS);
 }
 function stopRefresh() {
   if (refreshTimer) { clearInterval(refreshTimer); refreshTimer = null; }
@@ -234,7 +235,7 @@ async function handleLogin() {
   clearError('login-error');
 
   if (!email || !password) {
-    showError('login-error', 'Preencha email e senha.'); return;
+    showError('login-error', 'Please fill in email and password.'); return;
   }
 
   const btn = $('btn-login');
@@ -259,13 +260,13 @@ async function handleLogin() {
           const updated = { ...data.user, ...verifiedUser, is_verified: true };
           saveSession(newToken || data.token, updated);
           finalizeLoginUI();
-          toast('Email verificado! Bem-vindo(a) 🎉', 'success', 5000);
+          toast('Email verified! Welcome 🎉', 'success', 5000);
         });
         return;
       }
 
       finalizeLoginUI();
-      toast('Bem-vindo(a) de volta! 🎉', 'success', 3000);
+      toast('Welcome back! 🎉', 'success', 3000);
     } else {
       showError('login-error', apiErrorDetail(data.detail, 'Email ou senha incorretos.'));
     }
@@ -283,21 +284,21 @@ async function handleRegister() {
   clearError('register-error');
 
   if (!fullName || !email || !password) {
-    showError('register-error', 'Todos os campos são obrigatórios.'); return;
+    showError('register-error', 'All fields are required.'); return;
   }
   if (fullName.length < 3) {
-    showError('register-error', 'Nome completo deve ter pelo menos 3 caracteres.'); return;
+    showError('register-error', 'Full name must be at least 3 characters.'); return;
   }
   if (password.length < 4) {
-    showError('register-error', 'Senha deve ter pelo menos 4 caracteres.'); return;
+    showError('register-error', 'Password must be at least 4 characters.'); return;
   }
   if (!email.includes('@')) {
-    showError('register-error', 'Insira um email válido.'); return;
+    showError('register-error', 'Enter a valid email.'); return;
   }
 
   const btn = $('btn-register');
   const orig = btn?.textContent;
-  if (btn) { btn.disabled = true; btn.textContent = 'Criando conta…'; }
+  if (btn) { btn.disabled = true; btn.textContent = 'Creating account…'; }
 
   try {
     const res = await fetch(`${API_BASE}/auth/register`, {
@@ -317,13 +318,13 @@ async function handleRegister() {
           const updated = { ...data.user, ...verifiedUser, is_verified: true };
           saveSession(newToken || data.token, updated);
           finalizeLoginUI();
-          toast('Conta criada e verificada! Bem-vindo(a) ao Purp 🎉', 'success', 5000);
+          toast('Account created and verified! Welcome to Purp 🎉', 'success', 5000);
         });
         return;
       }
 
       finalizeLoginUI();
-      toast('Conta criada! 🎉', 'success', 5000);
+      toast('Account created! 🎉', 'success', 5000);
     } else {
       showError('register-error', apiErrorDetail(data.detail, data.message || `Erro ${res.status}`));
     }
@@ -711,10 +712,10 @@ async function createCheckout(plan) {
     if (res.ok && (data.checkout_url || data.url)) {
       window.open(data.checkout_url || data.url, '_blank');
     } else {
-      toast(apiErrorDetail(data.detail, 'Não foi possível abrir o checkout.'), 'error');
+      toast(apiErrorDetail(data.detail, 'Could not open checkout.'), 'error');
     }
   } finally {
-    if (btn) { btn.disabled = false; btn.textContent = 'Fazer upgrade'; }
+    if (btn) { btn.disabled = false; btn.textContent = 'Upgrade'; }
   }
 }
 
@@ -1005,8 +1006,8 @@ async function fetchPortfolio() {
     list.innerHTML = `
       <div class="empty-state">
         <div class="empty-icon">📭</div>
-        <div class="empty-title">Portfólio vazio</div>
-        <div class="empty-sub">Adicione seu primeiro ativo para começar a acompanhar seus investimentos.</div>
+        <div class="empty-title">Empty portfolio</div>
+        <div class="empty-sub">Add your first asset to start tracking your investments.</div>
       </div>`;
     return;
   }
@@ -1335,7 +1336,7 @@ function renderMarketRows(containerId, rows) {
   const root = $(containerId); if (!root) return;
   root.innerHTML = '';
   if (!rows.length) {
-    root.innerHTML = '<div class="empty-sub">Não foi possível carregar cotações agora.</div>';
+    root.innerHTML = '<div class="empty-sub">Could not load quotes right now.</div>';
     return;
   }
   const isStocks = containerId.includes('stocks');
@@ -1394,7 +1395,7 @@ async function loadWatchlist() {
   }
   const res = await apiFetch('/watchlist', { headers: authHeaders() });
   if (!res || !res.ok) {
-    if (listEl) listEl.innerHTML = '<div class="empty-sub">Não foi possível carregar a watchlist.</div>';
+    if (listEl) listEl.innerHTML = '<div class="empty-sub">Could not load watchlist.</div>';
     watchlistSymbols.clear();
     watchlistIdBySymbol = {};
     return;
@@ -1406,7 +1407,7 @@ async function loadWatchlist() {
 
   if (listEl) {
     if (!items.length) {
-      listEl.innerHTML = '<div class="empty-sub">Nenhum ativo na watchlist. Use "+ Watchlist" nos ativos abaixo.</div>';
+      listEl.innerHTML = '<div class="empty-sub">No assets in your watchlist yet. Use "+ Watchlist" on the assets below.</div>';
     } else {
       listEl.innerHTML = items.map((w) => {
         const price = w.current_price ?? 0;
@@ -1459,11 +1460,11 @@ async function addToWatchlist(symbol, type) {
     await loadWatchlist();
     if (lastMarketStocks.length) renderMarketRows('market-stocks-list', lastMarketStocks);
     if (lastMarketCryptos.length) renderMarketRows('market-cryptos-list', lastMarketCryptos);
-    toast('Adicionado à watchlist.', 'success');
+    toast('Added to watchlist.', 'success');
   } else {
     const err = await res?.json().catch(() => ({}));
-    if (res?.status === 402) showUpgradeModal(apiErrorDetail(err.detail, 'Limite da watchlist no plano Free.'));
-    else toast(apiErrorDetail(err.detail, 'Não foi possível adicionar à watchlist.'), 'error');
+    if (res?.status === 402) showUpgradeModal(apiErrorDetail(err.detail, 'Watchlist limit reached on Free plan.'));
+    else toast(apiErrorDetail(err.detail, 'Could not add to watchlist.'), 'error');
   }
 }
 
@@ -1474,9 +1475,9 @@ async function removeFromWatchlist(itemId) {
     await loadWatchlist();
     if (lastMarketStocks.length) renderMarketRows('market-stocks-list', lastMarketStocks);
     if (lastMarketCryptos.length) renderMarketRows('market-cryptos-list', lastMarketCryptos);
-    toast('Removido da watchlist.', 'success');
+    toast('Removed from watchlist.', 'success');
   } else {
-    toast('Não foi possível remover.', 'error');
+    toast('Could not remove.', 'error');
   }
 }
 
@@ -1520,8 +1521,8 @@ async function loadTransactions() {
     list.innerHTML = `
       <div class="empty-state">
         <div class="empty-icon">🧾</div>
-        <div class="empty-title">Sem transações ainda</div>
-        <div class="empty-sub">Suas operações de compra e venda aparecerão aqui.</div>
+        <div class="empty-title">No transactions yet</div>
+        <div class="empty-sub">Your buy and sell operations will appear here.</div>
       </div>`;
     return;
   }
@@ -1656,7 +1657,7 @@ async function saveNetWorthEntry() {
     headers: authHeaders(),
     body:    JSON.stringify({ category, label, value }),
   });
-  if (!res || !res.ok) { toast('Não foi possível salvar o item.', 'error'); return; }
+  if (!res || !res.ok) { toast('Could not save item.', 'error'); return; }
 
   if ($('nw-label')) $('nw-label').value = '';
   if ($('nw-value')) $('nw-value').value = '';
@@ -1673,7 +1674,7 @@ function renderRebalanceTargets(assets = []) {
   const root = $('rebalance-targets'); if (!root) return;
   rebalanceSymbols = [...new Set((assets || []).map(a => (a.symbol || '').toUpperCase()).filter(Boolean))];
   if (!rebalanceSymbols.length) {
-    root.innerHTML = '<div class="score-sub">Adicione ativos para calcular o rebalanceamento.</div>';
+    root.innerHTML = '<div class="score-sub">Add assets to calculate rebalancing.</div>';
     return;
   }
   const equal = (100 / rebalanceSymbols.length).toFixed(1);
@@ -1693,7 +1694,7 @@ function updateRebalanceTargetSum() {
   const inputs   = qsa('.rebalance-target');
   const sum      = inputs.reduce((acc, el) => acc + (parseFloat(el.value || '0') || 0), 0);
   const warningEl = $('rebalance-sum-warning'); if (!warningEl) return;
-  warningEl.textContent = `Soma dos alvos: ${sum.toFixed(1)}%`;
+  warningEl.textContent = `Target sum: ${sum.toFixed(1)}%`;
   warningEl.style.color = Math.abs(sum - 100) < 0.05 ? '#86efac' : '#fca5a5';
 }
 
@@ -1713,7 +1714,7 @@ async function calculateRebalance() {
     headers: authHeaders(),
     body:    JSON.stringify({ targets }),
   });
-  if (!res || !res.ok) { toast('Não foi possível calcular o rebalanceamento.', 'error'); return; }
+  if (!res || !res.ok) { toast('Could not calculate rebalance.', 'error'); return; }
 
   const data    = await res.json();
   const actions = data.actions || [];
@@ -1755,7 +1756,7 @@ async function exportPortfolioCsv() {
     apiFetch('/portfolio/balance', { headers: authHeaders() }),
     apiFetch('/transactions',      { headers: authHeaders() }),
   ]);
-  if (!balanceRes || !balanceRes.ok) { toast('Não foi possível exportar o CSV agora.', 'error'); return; }
+  if (!balanceRes || !balanceRes.ok) { toast('Could not export CSV now.', 'error'); return; }
 
   const balance = await balanceRes.json();
   const txs     = (txRes && txRes.ok) ? await txRes.json() : [];
@@ -2041,7 +2042,7 @@ function renderAlertsList(alerts = []) {
         await loadAlerts();
       } else {
         const err = await res?.json().catch(() => ({})) || {};
-        toast(apiErrorDetail(err.detail, 'Não foi possível alternar o alerta.'), 'error');
+        toast(apiErrorDetail(err.detail, 'Could not toggle alert.'), 'error');
         btn.disabled = false;
       }
     });
@@ -2059,7 +2060,7 @@ function renderAlertsList(alerts = []) {
         }
       } else {
         const err = await res?.json().catch(() => ({})) || {};
-        toast(apiErrorDetail(err.detail, 'Não foi possível excluir o alerta.'), 'error');
+        toast(apiErrorDetail(err.detail, 'Could not delete alert.'), 'error');
         btn.disabled = false;
       }
     });
@@ -2114,7 +2115,7 @@ async function handleCreateAlert() {
       await loadAlerts();
     } else {
       const err = await res.json().catch(() => ({}));
-      toast(apiErrorDetail(err.detail, 'Não foi possível criar o alerta.'), 'error');
+      toast(apiErrorDetail(err.detail, 'Could not create alert.'), 'error');
     }
   } finally {
     if (btn) { btn.disabled = false; btn.textContent = 'Criar Alerta'; }
@@ -2128,7 +2129,7 @@ async function handleCreateAlert() {
 async function sharePerformanceCard() {
   if (!authToken) return;
   const res = await apiFetch('/portfolio/share-card?period=1mo', { headers: authHeaders() });
-  if (!res || !res.ok) { toast('Não foi possível gerar o card.', 'error'); return; }
+  if (!res || !res.ok) { toast('Could not generate card.', 'error'); return; }
   const blob = await res.blob();
   const url  = URL.createObjectURL(blob);
   window.open(url, '_blank');
@@ -2271,7 +2272,7 @@ async function loadForm8949Preview() {
   if (loadEl) loadEl.style.display = 'none';
 
   if (!res || !res.ok) {
-    preview.innerHTML = '<div class="form8949-empty">Não foi possível carregar as transações.</div>';
+    preview.innerHTML = '<div class="form8949-empty">Could not load transactions.</div>';
     return;
   }
   const data = await res.json();
@@ -2331,7 +2332,7 @@ async function handleDownload8949() {
     if (res.status === 402) { toast('Plano Tax Pro necessário.', 'warning'); showTaxProUpgradeModal(); return; }
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
-      toast(apiErrorDetail(err.detail, 'Não foi possível gerar o Form 8949.'), 'error'); return;
+      toast(apiErrorDetail(err.detail, 'Could not generate Form 8949.'), 'error'); return;
     }
     const blob = await res.blob();
     const url  = URL.createObjectURL(blob);
@@ -2358,7 +2359,7 @@ async function loadTaxSummary() {
 
   const res = await apiFetch(`/tax/summary?year=${year}&method=${method}`, { headers: authHeaders() });
   if (!res || !res.ok) {
-    contentEl.innerHTML = '<div class="form8949-empty">Não foi possível carregar o resumo fiscal.</div>';
+    contentEl.innerHTML = '<div class="form8949-empty">Could not load tax summary.</div>';
     return;
   }
   const d = await res.json();
@@ -2428,7 +2429,7 @@ async function loadTaxLossHarvesting() {
   listEl.innerHTML = '<div class="tlh-empty"><div class="tlh-empty-icon">⏳</div>Buscando preços…</div>';
 
   const res = await apiFetch(`/portfolio/tax-loss-harvesting?tax_bracket=${bracket}`, { headers: authHeaders() });
-  if (!res) { listEl.innerHTML = '<div class="tlh-empty">Não foi possível carregar os dados.</div>'; return; }
+  if (!res) { listEl.innerHTML = '<div class="tlh-empty">Could not load data.</div>'; return; }
   if (res.status === 402) { listEl.innerHTML = '<div class="tlh-empty">Plano Tax Pro necessário.</div>'; return; }
   if (!res.ok) { listEl.innerHTML = '<div class="tlh-empty">Erro ao carregar oportunidades.</div>'; return; }
 
@@ -2518,7 +2519,7 @@ async function loadDividendCard(force = false) {
 
   const res = await apiFetch('/portfolio/dividends', { headers: authHeaders() });
   if (!res || !res.ok) {
-    bodyEl.innerHTML = '<div class="div-empty">Não foi possível carregar os dados de dividendos.</div>';
+    bodyEl.innerHTML = '<div class="div-empty">Could not load dividend data.</div>';
     return;
   }
   const data = await res.json();

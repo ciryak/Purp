@@ -2442,14 +2442,14 @@ document.addEventListener('DOMContentLoaded', () => {
       headers: authHeaders(),
       body: JSON.stringify({ broker, api_key: apiKey, api_secret: apiSecret }),
     });
-    if (!res) { resultEl.innerHTML = '<span style="color:var(--red);">Erro de conexão.</span>'; return; }
+    if (!res) { resultEl.innerHTML = '<span style="color:var(--red);">Connection error.</span>'; return; }
     const data = await res.json().catch(() => ({}));
     if (data.use_csv) {
-      resultEl.innerHTML = '<span style="color:var(--text2);">Use Importar CSV para esta corretora.</span>';
+      resultEl.innerHTML = '<span style="color:var(--text2);">Use CSV import for this broker.</span>';
       return;
     }
     if (!data.ok) {
-      resultEl.innerHTML = `<span style="color:var(--red);">${data.error || 'Erro ao buscar dados.'}</span>`;
+      resultEl.innerHTML = `<span style="color:var(--red);">${data.error || 'Error fetching data.'}</span>`;
       return;
     }
     const count = (data.holdings || []).length;
