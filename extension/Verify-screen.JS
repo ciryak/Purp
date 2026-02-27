@@ -179,7 +179,8 @@ function showVerifyScreen(token, email, onSuccess) {
           const screen = document.getElementById('verify-screen');
           if (screen) screen.remove();
           if (_vfyTimer) clearInterval(_vfyTimer);
-          onSuccess(data.user || {});
+          // Passa o token novo junto com o user para o callback
+          onSuccess(data.user || {}, data.token || null);
         }, 800);
       } else {
         showVfyError(data.detail || 'Invalid code. Try again.');

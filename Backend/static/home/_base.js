@@ -87,6 +87,16 @@ function ensureAuth() {
 const isPremium = () => !!(currentUser?.is_premium) || ['investor','tax_pro'].includes(currentUser?.plan);
 const isTaxPro  = () => currentUser?.plan === 'tax_pro';
 
+// Converte o campo detail do FastAPI para string legível (pode vir como array em erros 422)
+function apiErrorDetail(detail, fallback = 'Algo deu errado. Tente novamente.') {
+  if (!detail) return fallback;
+  if (typeof detail === 'string') return detail;
+  if (Array.isArray(detail) && detail.length) {
+    return detail.map(d => d.msg || d.message || JSON.stringify(d)).join('; ');
+  }
+  return fallback;
+}
+
 // ════════════════════════════════════════════════════════════════
 // API FETCH — com tratamento de 401
 // ════════════════════════════════════════════════════════════════
@@ -232,9 +242,9 @@ async function handleLogin() {
       if (data.requires_verification) {
         const emailForVerify = data.user?.email || email;
         localStorage.setItem('pending_email', emailForVerify);
-        showVerifyScreen(data.token, emailForVerify, (verifiedUser) => {
+        showVerifyScreen(data.token, emailForVerify, (verifiedUser, newToken) => {
           const updated = { ...data.user, ...verifiedUser, is_verified: true };
-          saveSession(data.token, updated);
+          saveSession(newToken || data.token, updated);
           finalizeLoginUI();
           toast('Email verificado! Bem-vindo(a) 🎉', 'success', 5000);
         });
@@ -244,7 +254,7 @@ async function handleLogin() {
       finalizeLoginUI();
       toast('Bem-vindo(a) de volta! 🎉', 'success', 3000);
     } else {
-      showError('login-error', data.detail || 'Email ou senha incorretos.');
+      showError('login-error', apiErrorDetail(data.detail, 'Email ou senha incorretos.'));
     }
   } catch (err) {
     showError('login-error', 'Falha na conexão com o servidor.');
@@ -290,9 +300,9 @@ async function handleRegister() {
 
       if (data.requires_verification) {
         const emailForVerify = data.email || data.user?.email || email;
-        showVerifyScreen(data.token, emailForVerify, (verifiedUser) => {
+        showVerifyScreen(data.token, emailForVerify, (verifiedUser, newToken) => {
           const updated = { ...data.user, ...verifiedUser, is_verified: true };
-          saveSession(data.token, updated);
+          saveSession(newToken || data.token, updated);
           finalizeLoginUI();
           toast('Conta criada e verificada! Bem-vindo(a) ao Purp 🎉', 'success', 5000);
         });
@@ -302,7 +312,7 @@ async function handleRegister() {
       finalizeLoginUI();
       toast('Conta criada! 🎉', 'success', 5000);
     } else {
-      showError('register-error', data.detail || data.message || `Erro ${res.status}`);
+      showError('register-error', apiErrorDetail(data.detail, data.message || `Erro ${res.status}`));
     }
   } catch (err) {
     showError('register-error', `Falha de conexão: ${err.message}`);
@@ -470,10 +480,10 @@ function showVerifyScreen(token, email, onSuccess) {
         setTimeout(() => {
           document.getElementById('verify-screen')?.remove();
           if (_vfyTimer) clearInterval(_vfyTimer);
-          onSuccess(data.user || {});
+          onSuccess(data.user || {}, data.token || null);
         }, 800);
       } else {
-        showVfyError(data.detail || 'Código inválido. Tente novamente.');
+        showVfyError(apiErrorDetail(data.detail, 'Código inválido. Tente novamente.'));
         shakeInputs();
         if (btn) { btn.disabled = false; btn.textContent = 'Verificar conta'; }
       }
@@ -497,7 +507,7 @@ function showVerifyScreen(token, email, onSuccess) {
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        if (countdown) countdown.textContent = err.detail || 'Aguarde um momento.';
+        if (countdown) countdown.textContent = apiErrorDetail(err.detail, 'Aguarde um momento.');
         setTimeout(() => {
           if (resendBtn) resendBtn.style.display = 'inline';
           if (countdown) countdown.style.display = 'none';
@@ -695,7 +705,7 @@ async function createCheckout(plan) {
     if (res.ok && (data.checkout_url || data.url)) {
       window.open(data.checkout_url || data.url, '_blank');
     } else {
-      toast(data.detail || 'Não foi possível abrir o checkout.', 'error');
+      toast(apiErrorDetail(data.detail, 'Não foi possível abrir o checkout.'), 'error');
     }
   } finally {
     if (btn) { btn.disabled = false; btn.textContent = 'Fazer upgrade'; }
@@ -1117,7 +1127,7 @@ async function confirmSell() {
       closeSellModal(); fetchPortfolio(); loadMainChart();
     } else {
       const err = await res.json().catch(() => ({}));
-      toast(err.detail || 'Falha ao vender. Tente novamente.', 'error');
+      toast(apiErrorDetail(err.detail, 'Falha ao vender. Tente novamente.'), 'error');
     }
   } finally {
     if (btn) { btn.disabled = false; btn.textContent = 'Confirmar venda'; }
@@ -1172,12 +1182,12 @@ async function handleAddAsset() {
       toast(`${sym} adicionado ao portfólio ✓`, 'success');
     } else if (res.status === 402) {
       const err = await res.json().catch(() => ({}));
-      showUpgradeModal(err.detail || 'Faça upgrade para adicionar mais ativos.');
+      showUpgradeModal(apiErrorDetail(err.detail, 'Faça upgrade para adicionar mais ativos.'));
     } else if (res.status === 404) {
       toast(`Ativo '${sym}' não encontrado.`, 'error');
     } else {
       const err = await res.json().catch(() => ({}));
-      toast(err.detail || 'Falha ao adicionar ativo.', 'error');
+      toast(apiErrorDetail(err.detail, 'Falha ao adicionar ativo.'), 'error');
     }
   } finally {
     if (btn) { btn.disabled = false; btn.textContent = 'Salvar Ativo'; }
@@ -1361,7 +1371,7 @@ async function requestAssetAI(asset) {
   } else if (res.status === 402) {
     el.style.display = 'none';
     const err = await res.json().catch(() => ({}));
-    showUpgradeModal(err.detail || 'Recurso Premium.');
+    showUpgradeModal(apiErrorDetail(err.detail, 'Recurso Premium.'));
   } else {
     el.style.display = 'none';
     toast('Análise IA temporariamente indisponível.', 'warning');
@@ -1391,7 +1401,7 @@ async function handlePortfolioAI() {
       }
     } else if (res.status === 402) {
       const err = await res.json().catch(() => ({}));
-      showUpgradeModal(err.detail || 'Recurso Premium.');
+      showUpgradeModal(apiErrorDetail(err.detail, 'Recurso Premium.'));
       if (textEl) textEl.textContent = 'Disponível no plano Premium.';
     } else {
       if (textEl) textEl.textContent = 'Erro na análise. Tente novamente.';
@@ -1670,12 +1680,12 @@ async function handleImportConfirm() {
 
     if (res.status === 402) {
       closeImportModal();
-      showUpgradeModal(data.detail || 'Importação CSV requer plano Investor ou Tax Pro.');
+      showUpgradeModal(apiErrorDetail(data.detail, 'Importação CSV requer plano Investor ou Tax Pro.'));
       return;
     }
     if (!res.ok) {
       if (progEl) progEl.style.display = 'none';
-      showImportResult('error', data.detail || 'Importação falhou.', null);
+      showImportResult('error', apiErrorDetail(data.detail, 'Importação falhou.'), null);
       return;
     }
     if (progEl) progEl.style.display = 'none';
@@ -1781,13 +1791,62 @@ function renderAlertsList(alerts = []) {
   if (!alerts.length) { root.innerHTML = '<div class="empty-sub">Nenhum alerta ainda.</div>'; return; }
   root.innerHTML = alerts.map(a => {
     const sym    = a.symbol || 'PORTFOLIO';
-    const status = a.active ? 'Ativo' : 'Inativo';
-    return `<div class="market-row">
-      <span class="market-symbol">${sym}</span>
-      <span class="market-price">${a.alert_type}</span>
-      <span class="market-change">${a.target_value} · ${status}</span>
-    </div>`;
+    const active = a.active !== false;
+    const statusLabel = active ? 'Ativo' : 'Inativo';
+    const statusColor = active ? 'var(--green)' : 'var(--text3)';
+    return `
+      <div class="market-row alert-row" data-id="${a.id}">
+        <span class="market-symbol">${sym}</span>
+        <span class="market-price" style="font-size:10px;">${a.alert_type}</span>
+        <span class="market-change" style="font-family:var(--mono);font-size:11px;">${a.target_value}</span>
+        <span style="font-size:10px;color:${statusColor};min-width:46px;text-align:right;">${statusLabel}</span>
+        <div style="display:flex;gap:4px;margin-left:8px;">
+          <button class="alert-toggle-btn" data-id="${a.id}" data-active="${active}"
+            title="${active ? 'Desativar alerta' : 'Ativar alerta'}"
+            style="background:rgba(124,58,237,.15);border:1px solid rgba(124,58,237,.3);color:var(--accent-l);
+                   border-radius:6px;padding:3px 8px;font-size:10px;cursor:pointer;font-family:var(--font);
+                   transition:all .15s;">${active ? '⏸' : '▶'}</button>
+          <button class="alert-delete-btn" data-id="${a.id}"
+            title="Excluir alerta"
+            style="background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.25);color:var(--red-l);
+                   border-radius:6px;padding:3px 8px;font-size:10px;cursor:pointer;font-family:var(--font);
+                   transition:all .15s;">✕</button>
+        </div>
+      </div>`;
   }).join('');
+
+  root.querySelectorAll('.alert-toggle-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const id = parseInt(btn.dataset.id, 10);
+      btn.disabled = true;
+      const res = await apiFetch(`/alerts/${id}/toggle`, { method: 'POST', headers: authHeaders() });
+      if (res && res.ok) {
+        await loadAlerts();
+      } else {
+        const err = await res?.json().catch(() => ({})) || {};
+        toast(apiErrorDetail(err.detail, 'Não foi possível alternar o alerta.'), 'error');
+        btn.disabled = false;
+      }
+    });
+  });
+
+  root.querySelectorAll('.alert-delete-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const id = parseInt(btn.dataset.id, 10);
+      btn.disabled = true;
+      const res = await apiFetch(`/alerts/${id}`, { method: 'DELETE', headers: authHeaders() });
+      if (res && res.ok) {
+        btn.closest('.alert-row')?.remove();
+        if (!root.querySelector('.alert-row')) {
+          root.innerHTML = '<div class="empty-sub">Nenhum alerta ainda.</div>';
+        }
+      } else {
+        const err = await res?.json().catch(() => ({})) || {};
+        toast(apiErrorDetail(err.detail, 'Não foi possível excluir o alerta.'), 'error');
+        btn.disabled = false;
+      }
+    });
+  });
 }
 
 async function loadAlerts() {
@@ -1838,7 +1897,7 @@ async function handleCreateAlert() {
       await loadAlerts();
     } else {
       const err = await res.json().catch(() => ({}));
-      toast(err.detail || 'Não foi possível criar o alerta.', 'error');
+      toast(apiErrorDetail(err.detail, 'Não foi possível criar o alerta.'), 'error');
     }
   } finally {
     if (btn) { btn.disabled = false; btn.textContent = 'Criar Alerta'; }
@@ -2055,7 +2114,7 @@ async function handleDownload8949() {
     if (res.status === 402) { toast('Plano Tax Pro necessário.', 'warning'); showTaxProUpgradeModal(); return; }
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
-      toast(err.detail || 'Não foi possível gerar o Form 8949.', 'error'); return;
+      toast(apiErrorDetail(err.detail, 'Não foi possível gerar o Form 8949.'), 'error'); return;
     }
     const blob = await res.blob();
     const url  = URL.createObjectURL(blob);
@@ -2480,9 +2539,9 @@ document.addEventListener('DOMContentLoaded', () => {
     if (hasSession) {
       // Verificação de email pendente
       if (currentUser && currentUser.is_verified === false) {
-        showVerifyScreen(authToken, currentUser.email || localStorage.getItem('pending_email') || '', (verifiedUser) => {
+        showVerifyScreen(authToken, currentUser.email || localStorage.getItem('pending_email') || '', (verifiedUser, newToken) => {
           const updated = { ...currentUser, ...verifiedUser, is_verified: true };
-          saveSession(authToken, updated);
+          saveSession(newToken || authToken, updated);
           finalizeLoginUI();
         });
       } else {

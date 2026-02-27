@@ -16,22 +16,24 @@
       min-width: 100%;
       max-width: none;
       margin: 0;
-      padding: 0 24px 24px;
+      padding: 0;
       overflow-y: auto;
     }
 
-    @media (max-width: 768px) {
-      body.home-dashboard-view { padding: 0 10px 16px; }
-      .app-header { position: sticky; top: 0; z-index: 20; }
-      .top-tabs { position: sticky; top: 54px; z-index: 19; overflow-x: auto; }
-      .top-tab { white-space: nowrap; min-width: 140px; text-align: center; }
-      .nav-menu { max-height: 70vh; overflow-y: auto; }
-      .nav-item { text-decoration: none; }
+    /* Mobile: padding lateral mínimo, header e tabs fixos no topo */
+    @media (max-width: 767px) {
+      body.home-dashboard-view { padding: 0; }
+      .app-header  { position: sticky; top: 0; z-index: 60; }
+      .top-tabs    { position: sticky; top: 54px; z-index: 50; overflow-x: auto; padding: 10px 14px 0; }
+      .top-tab     { white-space: nowrap; min-width: 130px; text-align: center; }
+      .nav-menu    { max-height: 70vh; overflow-y: auto; }
+      .nav-item    { text-decoration: none; }
+      .page        { padding: 14px 14px 60px; }
     }
-    @media (min-width: 769px) {
-      body.home-dashboard-view { padding: 0 28px 24px; }
-      .top-tabs { max-width: 1180px; margin: 0 auto 10px; }
-      #dashboard, #market-watch { max-width: 1180px; margin: 0 auto; }
+
+    /* Desktop: sem padding extra no body, o CSS principal controla o layout */
+    @media (min-width: 768px) {
+      body.home-dashboard-view { padding: 0; }
     }
   </style>
 </head>
@@ -156,17 +158,17 @@
     <button type="button" id="btn-upgrade" class="btn-upgrade">⭐ Premium</button>
   </div>
 
-  <section class="card" style="margin:12px 0 10px;border:1px solid rgba(124,58,237,.35);background:linear-gradient(135deg,rgba(124,58,237,.16),rgba(30,16,53,.9));">
+  <section id="dash-banner" class="card dash-full-row" style="margin:12px 0 10px;border:1px solid rgba(124,58,237,.35);background:linear-gradient(135deg,rgba(124,58,237,.16),rgba(30,16,53,.9));">
     <div style="display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap;">
       <div>
         <div style="font-size:12px;font-weight:800;color:#c4b5fd;letter-spacing:.4px;">EXTENSÃO PURP</div>
         <div style="font-size:13px;color:var(--text2);margin-top:2px;">Tenha alertas e insights direto no navegador.</div>
       </div>
-      <a href="https://getpurpai.extensão.link" target="_blank" rel="noopener noreferrer" class="btn-primary" style="text-decoration:none;padding:8px 12px;font-size:12px;">Instalar extensão</a>
+      <a href="https://getpurpai.extensão.link" target="_blank" rel="noopener noreferrer" class="btn-primary" style="text-decoration:none;padding:8px 12px;font-size:12px;max-width:160px;">Instalar extensão</a>
     </div>
   </section>
 
-  <section class="card" style="margin:0 0 12px;">
+  <section id="dash-plans" class="card dash-full-row" style="margin:0 0 12px;">
     <div class="section-title">Choose your plan</div>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:8px;">
       <div class="mini-card" style="padding:10px;border:1px solid rgba(255,255,255,.08);border-radius:10px;">
@@ -258,6 +260,12 @@
 
     <div class="score-gauge-wrap">
       <svg class="score-gauge" viewBox="0 0 220 120" aria-hidden="true">
+        <defs>
+          <linearGradient id="gaugeGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+            <stop offset="0%"   stop-color="#7c3aed"/>
+            <stop offset="100%" stop-color="#a78bfa"/>
+          </linearGradient>
+        </defs>
         <path d="M20 110 A90 90 0 0 1 200 110" class="gauge-track" />
         <path d="M20 110 A90 90 0 0 1 200 110" class="gauge-value" id="score-gauge-value" />
       </svg>
@@ -371,11 +379,13 @@
   </div>
 
   <!-- Assets -->
-  <div class="section-heading-row">
-    <div class="section-heading">Your Assets</div>
-    <button type="button" id="btn-export-csv" class="btn-export-csv">Export CSV</button>
+  <div id="dash-assets-section">
+    <div class="section-heading-row">
+      <div class="section-heading">Your Assets</div>
+      <button type="button" id="btn-export-csv" class="btn-export-csv">Export CSV</button>
+    </div>
+    <div id="assets-list"></div>
   </div>
-  <div id="assets-list"></div>
 
 </div>
 

@@ -1606,10 +1606,15 @@ input[type="date"] { color: var(--text2); }
 @media (min-width: 768px) {
   body.home-dashboard-view { padding: 0 0 32px; }
 
+  .app-header {
+    padding: 12px 32px;
+    max-width: none;
+  }
+
   .top-tabs {
-    max-width: 1200px;
+    max-width: 1280px;
     margin: 0 auto;
-    padding: 14px 28px 0;
+    padding: 14px 32px 0;
   }
 
   #dashboard,
@@ -1618,47 +1623,94 @@ input[type="date"] { color: var(--text2); }
   #add-asset,
   #alerts-page,
   #import-page {
-    max-width: 1200px;
+    max-width: 1280px;
     margin: 0 auto;
   }
 
-  .page { padding: 20px 28px 60px; }
+  .page { padding: 20px 32px 60px; }
 
   .balance-value { font-size: 48px; }
-  .main-chart-wrap { height: 160px; }
+  .main-chart-wrap { height: 180px; }
 
+  /* Dashboard: grid 2 colunas — coluna esquerda cresce, direita fixa */
   #dashboard {
     display: grid;
-    grid-template-columns: 1fr 340px;
-    grid-template-rows: auto;
-    gap: 0 20px;
+    grid-template-columns: minmax(0, 1fr) 360px;
+    gap: 0 24px;
     align-items: start;
   }
 
-  /* Left column */
-  .profile-bar             { grid-column: 1 / -1; }
-  .card[style*="EXTENSÃO"] { grid-column: 1 / -1; }
-  .card[style*="plan"]     { grid-column: 1 / -1; }
-  .quick-actions           { grid-column: 1; }
-  .balance-card            { grid-column: 1; }
-  .section-heading-row     { grid-column: 1; }
-  #assets-list             { grid-column: 1; }
+  /* Elementos em largura total (full-row) */
+  .profile-bar,
+  .dash-full-row,
+  #dash-banner,
+  #dash-plans {
+    grid-column: 1 / -1;
+  }
 
-  /* Right column */
-  .ai-card              { grid-column: 2; grid-row: 3 / 7; }
-  #portfolio-score-card { grid-column: 2; }
-  #tax-tools-section    { grid-column: 2; }
-  #tax-pro-cta          { grid-column: 2; }
-  #net-worth-card       { grid-column: 2; }
-  #rebalance-card       { grid-column: 2; }
+  /* Coluna esquerda */
+  .quick-actions,
+  .balance-card,
+  #dash-assets-section {
+    grid-column: 1;
+  }
+
+  /* Coluna direita */
+  .ai-card,
+  #portfolio-score-card,
+  #tax-tools-section,
+  #tax-pro-cta,
+  #net-worth-card,
+  #rebalance-card,
+  #dividend-card {
+    grid-column: 2;
+  }
+
+  /* Ajustes visuais para o painel lateral direito */
+  .ai-card { position: sticky; top: calc(56px + 12px); }
 
   .detail-chart-wrap { min-height: 280px; }
-  .overlay-screen { padding: 28px; max-width: 800px; left: 50%; transform: translateX(-50%); }
+  .overlay-screen { padding: 32px; max-width: 860px; left: 50%; transform: translateX(-50%); }
+
+  /* Formulários de duas colunas ganham mais espaço */
+  .form-card { max-width: 640px; }
+
+  /* Transações e mercado em tabela mais espaçada */
+  .market-row { padding: 10px 14px; }
+  .tx-row     { padding: 10px 14px; }
 }
 
 @media (min-width: 1024px) {
-  .app-header { padding: 14px 28px; }
+  .app-header { padding: 14px 40px; }
   .top-tab { font-size: 13px; }
+  .top-tabs,
+  #dashboard,
+  #market-watch,
+  #transactions-page,
+  #add-asset,
+  #alerts-page,
+  #import-page {
+    max-width: 1400px;
+  }
+  /* Sidebar direita um pouco mais larga em telas grandes */
+  #dashboard { grid-template-columns: minmax(0, 1fr) 400px; }
+
+  /* Chart principal maior */
+  .main-chart-wrap { height: 220px; }
+  .balance-value   { font-size: 52px; }
+}
+
+@media (min-width: 1280px) {
+  .app-header { padding: 14px 56px; }
+  .top-tabs,
+  #dashboard,
+  #market-watch,
+  #transactions-page,
+  #add-asset,
+  #alerts-page,
+  #import-page {
+    max-width: 1600px;
+  }
 }
 
 /* ── MOBILE SPECIFICS ────────────────────────────── */

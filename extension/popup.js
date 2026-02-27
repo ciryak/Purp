@@ -35,6 +35,16 @@ const formatUSD = (v) =>
 const formatPct = (v) => `${v >= 0 ? '+' : ''}${(v || 0).toFixed(2)}%`;
 const hasChromeStorage = typeof chrome !== 'undefined' && !!chrome.storage?.local;
 
+// Converte o campo detail do FastAPI para string legível (pode vir como array em erros 422)
+function apiErrorDetail(detail, fallback = 'Algo deu errado. Tente novamente.') {
+  if (!detail) return fallback;
+  if (typeof detail === 'string') return detail;
+  if (Array.isArray(detail) && detail.length) {
+    return detail.map(d => d.msg || d.message || JSON.stringify(d)).join('; ');
+  }
+  return fallback;
+}
+
 // ── Sentry ───────────────────────────────────────────────────────
 
 
@@ -567,14 +577,11 @@ async function handleLogin() {
         // Armazena para persistência caso o popup feche
         localStorage.setItem('pending_email', emailForVerify);
 
-        showVerifyScreen(data.token, emailForVerify, (verifiedUser) => {
+        showVerifyScreen(data.token, emailForVerify, (verifiedUser, newToken) => {
           // Callback disparado após sucesso no Verify-screen.JS
           const updatedUser = { ...data.user, ...verifiedUser, is_verified: true };
-          
-          // Salva sessão final com user verificado
-          saveSession(data.token, updatedUser);
-          
-          // Entra no App
+          // Usa o token devolvido por /auth/verify-email (novo), com fallback para o anterior
+          saveSession(newToken || data.token, updatedUser);
           finalizeLoginUI();
           toast('Email verified! Welcome back 🎉', 'success', 5000);
         });
@@ -587,7 +594,7 @@ async function handleLogin() {
 
     } else {
       // 7. Tratamento de Erro (Senha incorreta / User não existe)
-      const errMsg = data.detail || 'Incorrect email or password';
+      const errMsg = apiErrorDetail(data.detail, 'Incorrect email or password');
       showError('login-error', errMsg);
     }
   } catch (err) {
@@ -668,11 +675,11 @@ async function handleRegister() {
         if ($('auth-screen')) $('auth-screen').classList.add('hidden');
         if ($('verify-screen')) $('verify-screen').classList.remove('hidden');
 
-        showVerifyScreen(data.token, emailForVerify, (verifiedUser) => {
+        showVerifyScreen(data.token, emailForVerify, (verifiedUser, newToken) => {
           // Callback executado após o sucesso no Verify-screen.JS
           const updatedUser = { ...data.user, ...verifiedUser, is_verified: true };
-          saveSession(data.token, updatedUser);
-          
+          // Usa o token devolvido por /auth/verify-email (novo), com fallback para o anterior
+          saveSession(newToken || data.token, updatedUser);
           hideLoginScreen();
           updateProfileBar();
           fetchPortfolio();
@@ -695,7 +702,7 @@ async function handleRegister() {
       
     } else {
       // Tratamento de Erros do Backend
-      const errMsg = data.detail || data.message || `Error ${res.status}`;
+      const errMsg = apiErrorDetail(data.detail, data.message || `Error ${res.status}`);
       showError('register-error', errMsg);
     }
   } catch (networkErr) {
@@ -738,7 +745,7 @@ async function handleUpgrade() {
     const res = await apiFetch('/stripe/create-checkout', { method: 'POST', headers: authHeaders(), body: JSON.stringify({ plan: 'investor' }) });
     if (!res) return;
     if (res.ok) { const data = await res.json(); if (data.checkout_url) window.open(data.checkout_url, '_blank'); }
-    else { const err = await res.json().catch(() => ({})); toast(err.detail || 'Could not initiate payment.', 'error'); }
+    else { const err = await res.json().catch(() => ({})); toast(apiErrorDetail(err.detail, 'Could not initiate payment.'), 'error'); }
   } finally { btn.disabled = false; btn.textContent = 'Get Premium'; }
 }
 
@@ -1290,7 +1297,7 @@ async function confirmSell() {
       const pnl  = data.pnl ?? 0;
       toast(`Sold! P&L: ${pnl >= 0 ? '+' : ''}${formatUSD(pnl)}`, pnl >= 0 ? 'success' : 'info');
       closeSellModal(); fetchPortfolio(); loadMainChart();
-    } else { const err = await res.json().catch(() => ({})); toast(err.detail || 'Failed to sell. Try again.', 'error'); }
+    } else { const err = await res.json().catch(() => ({})); toast(apiErrorDetail(err.detail, 'Failed to sell. Try again.'), 'error'); }
   } finally { btn.disabled = false; btn.textContent = 'Confirm Sale'; }
 }
 
@@ -1306,7 +1313,7 @@ async function requestAssetAI(asset) {
     const data = await res.json();
     el.innerHTML = `<strong style="color:var(--accent-l)">AI:</strong> ${data.analysis}`;
   } else if (res.status === 402) {
-    el.style.display = 'none'; const err = await res.json().catch(() => ({})); showUpgradeModal(err.detail || 'Premium feature.');
+    el.style.display = 'none'; const err = await res.json().catch(() => ({})); showUpgradeModal(apiErrorDetail(err.detail, 'Premium feature.'));
   } else { el.style.display = 'none'; toast('AI analysis temporarily unavailable', 'warning'); }
 }
 
@@ -1327,7 +1334,7 @@ async function handlePortfolioAI() {
         badgeEl.textContent = `${v >= 0 ? '+' : ''}${v.toFixed(2)}%`;
       }
     } else if (res.status === 402) {
-      const err = await res.json().catch(() => ({})); showUpgradeModal(err.detail || 'Premium feature.'); textEl.textContent = 'Available on Premium plan.';
+      const err = await res.json().catch(() => ({})); showUpgradeModal(apiErrorDetail(err.detail, 'Premium feature.')); textEl.textContent = 'Available on Premium plan.';
     } else { textEl.textContent = 'Analysis error. Please try again.'; }
   } finally { btn.disabled = false; btn.textContent = '✨ Analyze Portfolio'; }
 }
@@ -1355,9 +1362,9 @@ async function handleAddAsset() {
       selectedAddAssetType = null; setAddAmountInputMode(null); $('search-dropdown').style.display = 'none';
       switchTab('dashboard'); await fetchPortfolio(); loadMainChart(); toast(`${sym} added to your portfolio ✓`, 'success');
     } else if (res.status === 402) {
-      const err = await res.json().catch(() => ({})); showUpgradeModal(err.detail || 'Upgrade to Premium for more assets.');
+      const err = await res.json().catch(() => ({})); showUpgradeModal(apiErrorDetail(err.detail, 'Upgrade to Premium for more assets.'));
     } else if (res.status === 404) { toast(`Asset '${sym}' not found.`, 'error');
-    } else { const err = await res.json().catch(() => ({})); toast(err.detail || 'Failed to add asset.', 'error'); }
+    } else { const err = await res.json().catch(() => ({})); toast(apiErrorDetail(err.detail, 'Failed to add asset.'), 'error'); }
   } finally { btn.disabled = false; btn.textContent = 'Save Asset'; }
 }
 
@@ -1422,10 +1429,65 @@ function renderAlertsList(alerts = []) {
     return;
   }
   root.innerHTML = alerts.map((a) => {
-    const sym = a.symbol || 'PORTFOLIO';
-    const status = a.active ? 'Active' : 'Inactive';
-    return `<div class="market-row"><span class="market-symbol">${sym}</span><span class="market-price">${a.alert_type}</span><span class="market-change">${a.target_value} · ${status}</span></div>`;
+    const sym    = a.symbol || 'PORTFOLIO';
+    const active = a.active !== false;
+    const statusLabel = active ? 'Active' : 'Inactive';
+    const statusColor = active ? 'var(--green)' : 'var(--text3)';
+    return `
+      <div class="market-row alert-row" data-id="${a.id}">
+        <span class="market-symbol">${sym}</span>
+        <span class="market-price" style="font-size:10px;">${a.alert_type}</span>
+        <span class="market-change" style="font-family:var(--mono);font-size:11px;">${a.target_value}</span>
+        <span style="font-size:10px;color:${statusColor};min-width:46px;text-align:right;">${statusLabel}</span>
+        <div style="display:flex;gap:4px;margin-left:6px;">
+          <button class="alert-toggle-btn" data-id="${a.id}" data-active="${active}"
+            title="${active ? 'Deactivate alert' : 'Activate alert'}"
+            style="background:rgba(124,58,237,.15);border:1px solid rgba(124,58,237,.3);color:var(--accent-l);
+                   border-radius:6px;padding:3px 7px;font-size:10px;cursor:pointer;font-family:var(--font);
+                   transition:all .15s;">${active ? '⏸' : '▶'}</button>
+          <button class="alert-delete-btn" data-id="${a.id}"
+            title="Delete alert"
+            style="background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.25);color:var(--red-l);
+                   border-radius:6px;padding:3px 7px;font-size:10px;cursor:pointer;font-family:var(--font);
+                   transition:all .15s;">✕</button>
+        </div>
+      </div>`;
   }).join('');
+
+  // Delegação de eventos para toggle e delete
+  root.querySelectorAll('.alert-toggle-btn').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const id = parseInt(btn.dataset.id, 10);
+      btn.disabled = true;
+      const res = await apiFetch(`/alerts/${id}/toggle`, { method: 'POST', headers: authHeaders() });
+      if (res && res.ok) {
+        await loadAlerts();
+      } else {
+        const err = await res?.json().catch(() => ({})) || {};
+        toast(apiErrorDetail(err.detail, 'Could not toggle alert.'), 'error');
+        btn.disabled = false;
+      }
+    });
+  });
+
+  root.querySelectorAll('.alert-delete-btn').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const id = parseInt(btn.dataset.id, 10);
+      btn.disabled = true;
+      const res = await apiFetch(`/alerts/${id}`, { method: 'DELETE', headers: authHeaders() });
+      if (res && res.ok) {
+        // Remove o item do DOM imediatamente para feedback instantâneo
+        btn.closest('.alert-row')?.remove();
+        if (!root.querySelector('.alert-row')) {
+          root.innerHTML = '<div class="empty-sub">No alerts yet.</div>';
+        }
+      } else {
+        const err = await res?.json().catch(() => ({})) || {};
+        toast(apiErrorDetail(err.detail, 'Could not delete alert.'), 'error');
+        btn.disabled = false;
+      }
+    });
+  });
 }
 
 async function loadAlerts() {
@@ -1485,7 +1547,7 @@ async function handleCreateAlert() {
       await loadAlerts();
     } else {
       const err = await res.json().catch(() => ({}));
-      toast(err.detail || 'Could not create alert.', 'error');
+      toast(apiErrorDetail(err.detail, 'Could not create alert.'), 'error');
     }
   } finally {
     if (btn) {
@@ -1548,8 +1610,8 @@ async function handleImportConfirm() {
     if (!res) { toast('Network error during import.', 'error'); return; }
     const data = await res.json().catch(() => ({}));
     fill.style.width = '100%';
-    if (res.status === 402) { closeImportModal(); showUpgradeModal(data.detail || 'CSV import requires an Investor or Tax Pro plan.'); return; }
-    if (!res.ok) { $('import-progress').style.display = 'none'; showImportResult('error', data.detail || 'Import failed.', null); return; }
+    if (res.status === 402) { closeImportModal(); showUpgradeModal(apiErrorDetail(data.detail, 'CSV import requires an Investor or Tax Pro plan.')); return; }
+    if (!res.ok) { $('import-progress').style.display = 'none'; showImportResult('error', apiErrorDetail(data.detail, 'Import failed.'), null); return; }
     $('import-progress').style.display = 'none';
     const imported = data.imported ?? 0, skipped = data.skipped ?? 0, errors = data.errors ?? [];
     showImportResult('success', null, { imported, skipped, errors, broker: importSelectedBroker });
@@ -1770,7 +1832,7 @@ async function handleDownload8949() {
     const res = await apiFetch(`/tax/form-8949?year=${year}&method=${method}`, { headers: authHeaders() });
     if (!res) { toast('Network error. Try again.', 'error'); return; }
     if (res.status === 402) { toast('Tax Pro plan required.', 'warning'); showTaxProUpgradeModal(); return; }
-    if (!res.ok) { const err = await res.json().catch(() => ({})); toast(err.detail || 'Could not generate Form 8949.', 'error'); return; }
+    if (!res.ok) { const err = await res.json().catch(() => ({})); toast(apiErrorDetail(err.detail, 'Could not generate Form 8949.'), 'error'); return; }
     const blob = await res.blob();
     const url  = URL.createObjectURL(blob);
     const a    = document.createElement('a');
@@ -1942,7 +2004,7 @@ async function handleTaxProUpgrade() {
     const res = await apiFetch('/stripe/create-checkout', { method: 'POST', headers: authHeaders(), body: JSON.stringify({ plan: 'tax_pro' }) });
     if (!res) return;
     if (res.ok) { const data = await res.json(); if (data.checkout_url) window.open(data.checkout_url, '_blank'); }
-    else { const err = await res.json().catch(() => ({})); toast(err.detail || 'Could not initiate payment.', 'error'); }
+    else { const err = await res.json().catch(() => ({})); toast(apiErrorDetail(err.detail, 'Could not initiate payment.'), 'error'); }
   } finally { btn.disabled = false; btn.textContent = 'Upgrade to Tax Pro'; }
 }
 
@@ -2156,9 +2218,10 @@ document.addEventListener('DOMContentLoaded', () => {
     if (hasSession) {
       // Check if user is already verified (stored session)
       if (currentUser && currentUser.is_verified === false) {
-        showVerifyScreen(authToken, currentUser.email || '', (verifiedUser) => {
+        showVerifyScreen(authToken, currentUser.email || '', (verifiedUser, newToken) => {
           const updatedUser = { ...currentUser, ...verifiedUser, is_verified: true };
-          saveSession(authToken, updatedUser);
+          // Usa o token devolvido por /auth/verify-email (novo), com fallback para o anterior
+          saveSession(newToken || authToken, updatedUser);
           hideLoginScreen(); updateProfileBar();
           fetchPortfolio(); loadMainChart(); startRefresh(); checkAIStatus();
         });
