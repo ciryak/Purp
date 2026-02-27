@@ -24,9 +24,14 @@
   --red:         #ef4444;
   --text:        #f2f0ff;
   --text2:       rgba(242,240,255,0.6);
-  --text3:       rgba(242,240,255,0.32);
-  --r:           14px;
+  /* WCAG AA 4.5:1 contrast on --bg (#07060f): opacity raised from 0.32 to 0.55 */
+  --text3:       rgba(242,240,255,0.55);
+  /* Border-radius scale */
+  --r-xs:        6px;
   --r-sm:        9px;
+  --r:           14px;
+  --r-lg:        20px;
+  --r-xl:        28px;
   --font:        'DM Sans', system-ui, sans-serif;
   --mono:        'DM Mono', 'Courier New', monospace;
   --shadow:      0 8px 28px rgba(0,0,0,0.45);
@@ -284,7 +289,7 @@ html, body {
   width: min(100%, 420px);
   background: var(--bg2);
   border: 1px solid var(--border-l);
-  border-radius: 20px;
+  border-radius: var(--r-lg);
   padding: 26px 22px;
   box-shadow: var(--shadow-xl);
   animation: modalIn 0.24s cubic-bezier(0.22,1,0.36,1);
@@ -358,3 +363,159 @@ html, body {
   .actions { grid-template-columns: 1fr; }
   .card h2 { font-size: 16px; }
 }
+
+/* ── FIELD VALIDATION ────────────────────────────── */
+.field-error {
+  display: block;
+  font-size: 11px;
+  color: var(--red);
+  margin-top: 4px;
+  min-height: 16px;
+  font-weight: 600;
+}
+
+input.input-error,
+select.input-error {
+  border-color: var(--red) !important;
+  box-shadow: 0 0 0 2px rgba(239,68,68,0.18);
+}
+
+/* ── EMPTY STATE ─────────────────────────────────── */
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 48px 24px;
+  text-align: center;
+}
+
+.empty-state__icon {
+  font-size: 48px;
+  line-height: 1;
+  opacity: 0.7;
+}
+
+.empty-state__title {
+  font-size: 16px;
+  font-weight: 800;
+  color: var(--text);
+  margin: 0;
+}
+
+.empty-state__body {
+  font-size: 13px;
+  color: var(--text2);
+  line-height: 1.6;
+  max-width: 320px;
+  margin: 0;
+}
+
+/* ── SEMANTIC SPACING HELPERS ────────────────────── */
+.section-mb  { margin-bottom: 12px; }
+.section-mt  { margin-top: 20px; }
+.section-mb-sm { margin-bottom: 8px; }
+
+/* ── CONCENTRATION BANNER ────────────────────────── */
+.concentration-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px 16px;
+  background: rgba(245,158,11,0.08);
+  border: 1px solid rgba(245,158,11,0.35);
+  border-radius: var(--r);
+  margin-bottom: 14px;
+}
+
+.concentration-banner__icon {
+  font-size: 20px;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.concentration-banner__body { flex: 1; }
+
+.concentration-banner__title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--gold-l);
+  margin-bottom: 4px;
+}
+
+.concentration-banner__text {
+  font-size: 12px;
+  color: var(--text2);
+  line-height: 1.5;
+}
+
+/* ── SECTION CARD VARIANTS ───────────────────────── */
+.security-card {
+  background: rgba(124,58,237,0.06);
+  border: 1px solid rgba(124,58,237,0.25);
+  border-radius: var(--r);
+  padding: 18px 20px;
+}
+
+.security-card__icon { font-size: 24px; margin-bottom: 10px; }
+
+.security-card__title {
+  font-size: 14px;
+  font-weight: 800;
+  color: var(--accent-l);
+  margin-bottom: 8px;
+}
+
+.security-card__item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+  color: var(--text2);
+}
+
+.security-card__item:last-child { border-bottom: none; }
+
+.security-card__check {
+  color: var(--green);
+  font-weight: 700;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+/* ── P&L TABLE ───────────────────────────────────── */
+.pl-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.pl-table th {
+  text-align: left;
+  color: var(--text3);
+  font-weight: 600;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+.pl-table td {
+  padding: 8px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text2);
+}
+
+.pl-table tr:last-child td { border-bottom: none; }
+
+.pl-table .gain  { color: var(--green); font-weight: 700; }
+.pl-table .loss  { color: var(--red);   font-weight: 700; }
+.pl-table .total { font-weight: 800; color: var(--text); }
+
+/* ── TAX LAYOUT HELPERS (replaces inline styles in home.html) ── */
+.tax-tools-emoji { font-size: 24px; margin-bottom: 6px; }
+.tlh-bracket-row { margin-bottom: 10px; display: flex; align-items: center; gap: 8px; }
+.tlh-bracket-label { font-size: 10px; color: var(--text2); }
+.balance-value-lg { font-size: 28px; margin-top: 2px; }

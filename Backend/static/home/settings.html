@@ -71,18 +71,69 @@
   <div id="sidebar-overlay" class="sidebar-overlay" aria-hidden="true"></div>
 
   <main id="main-content" class="main-content" role="main">
-    <section class="page-content" aria-label="Configurações">
+    <section class="page-content" aria-label="Settings">
       <header class="panel-header">
-        <h1 class="panel-title">Configurações</h1>
-        <p class="panel-sub">Preferências e integrações</p>
+        <h1 class="panel-title">Settings</h1>
+        <p class="panel-sub">Preferences and integrations</p>
       </header>
       <div class="panel-body panel-body--narrow">
-        <div class="form-card">
-          <h2 class="section-heading" style="margin-bottom:12px;">Privacidade</h2>
-          <p class="panel-sub" style="margin-bottom:12px;">Use o botão no topo ou na sidebar para ocultar/mostrar valores em tela.</p>
-          <h2 class="section-heading" style="margin:20px 0 12px;">API e dados</h2>
-          <p class="panel-sub" style="margin:0;">Cotações vêm de fontes gratuitas com fallback automático. Status da conexão é verificado ao iniciar o servidor.</p>
+
+        <!-- Privacy -->
+        <div class="form-card section-mb">
+          <h2 class="section-heading section-mb">Privacy</h2>
+          <p class="panel-sub section-mb">Use the toggle at the top or in the sidebar to hide/show portfolio values on screen. Your data is only visible to you.</p>
+          <h2 class="section-heading section-mt section-mb">API & Data</h2>
+          <p class="panel-sub">Prices come from free sources (Binance, Yahoo Finance, CoinCap) with automatic fallback. Connection health is verified on server startup.</p>
         </div>
+
+        <!-- Security -->
+        <div class="form-card">
+          <div class="security-card">
+            <div class="security-card__icon">🔒</div>
+            <div class="security-card__title">Security &amp; Data Protection</div>
+
+            <div class="security-card__item">
+              <span class="security-card__check">✓</span>
+              <div>
+                <strong>Encrypted at rest</strong><br>
+                All API keys and sensitive credentials are stored encrypted using AES-256 on the server. Your raw keys are never logged or exposed.
+              </div>
+            </div>
+
+            <div class="security-card__item">
+              <span class="security-card__check">✓</span>
+              <div>
+                <strong>TLS / HTTPS everywhere</strong><br>
+                All communication between your browser and Purp servers is encrypted in transit via HTTPS (TLS 1.2+). We do not operate over plain HTTP.
+              </div>
+            </div>
+
+            <div class="security-card__item">
+              <span class="security-card__check">✓</span>
+              <div>
+                <strong>Read-only API keys</strong><br>
+                When connecting a broker via API key, only read-only permissions are required. Purp never requests trading or withdrawal permissions.
+              </div>
+            </div>
+
+            <div class="security-card__item">
+              <span class="security-card__check">✓</span>
+              <div>
+                <strong>Session tokens</strong><br>
+                Authentication uses short-lived JWT tokens stored in your browser's localStorage. Tokens expire automatically and are never stored server-side.
+              </div>
+            </div>
+
+            <div class="security-card__item">
+              <span class="security-card__check">✓</span>
+              <div>
+                <strong>No password storage</strong><br>
+                Passwords are hashed using bcrypt before storage. Purp never stores plaintext passwords.
+              </div>
+            </div>
+          </div>
+        </div>
+
       </div>
     </section>
   </main>

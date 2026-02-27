@@ -579,3 +579,12 @@ a.sidebar-brand {
   .info-card { padding: 14px; }
   .dash-grid { padding: 12px 12px 60px; }
 }
+
+/* ── INLINE-STYLE REPLACEMENTS ───────────────────── */
+.tax-tools-title { color: #fbbf24; margin: 0; }
+
+.btn-tax-pro-upgrade {
+  margin-top: 12px;
+  font-size: 12px;
+  padding: 10px;
+}

@@ -18,7 +18,8 @@
      --red:         #ef4444;
      --text:        #f1f0f5;
      --text2:       rgba(241,240,245,0.6);
-     --text3:       rgba(241,240,245,0.35);
+     /* WCAG AA 4.5:1 contrast — raised from 0.35 to 0.55 */
+     --text3:       rgba(241,240,245,0.55);
      --r:           14px;
      --r-sm:        8px;
      --font:        'DM Sans', system-ui, sans-serif;

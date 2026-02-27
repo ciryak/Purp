@@ -68,6 +68,21 @@ SECRET_KEY   = os.getenv("SECRET_KEY", "")
 ALGORITHM    = os.getenv("ALGORITHM", "HS256")
 TOKEN_EXPIRE = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", 10080))
 
+# ── Startup safety checks ──────────────────────────────────────────────────────
+_INSECURE_KEYS = {"", "changeme", "secret", "your-secret-key", "dev", "test", "insecure"}
+if not SECRET_KEY or SECRET_KEY.lower().strip() in _INSECURE_KEYS or len(SECRET_KEY) < 32:
+    import sys
+    print(
+        "FATAL: SECRET_KEY is missing or insecure.\n"
+        "  Set a strong SECRET_KEY (minimum 32 random characters) and restart.\n"
+        "  Generate one with: python -c \"import secrets; print(secrets.token_hex(32))\""
+    )
+    sys.exit(1)
+
+CRON_SECRET = os.getenv("CRON_SECRET", "")
+if not CRON_SECRET:
+    print("WARNING: CRON_SECRET is not set — cron endpoints are unprotected.")
+
 stripe.api_key = os.getenv("STRIPE_SECRET_KEY", "")
 
 _raw_db_url  = os.getenv("DATABASE_URL", "sqlite:///database.db")
@@ -87,7 +102,6 @@ FRONTEND_URL = os.getenv("FRONTEND_URL", "").rstrip("/")  # ex: https://getpurpa
 
 VERIFICATION_EXPIRE_MINUTES = 15
 RESET_PASSWORD_EXPIRE_MINUTES = 60
-CRON_SECRET = os.getenv("CRON_SECRET", "")
 SYMBOL_PATTERN = re.compile(r"^[A-Z0-9.\-\^]+$")
 MAX_SYMBOL_LENGTH = 20
 MAX_FULL_NAME_LENGTH = 60
@@ -369,6 +383,19 @@ def _send_weekly_digest_email(to_email: str, username: str, digest_data: dict) -
     tax_ops = digest_data.get("tax_opportunities") or []
     alerts_triggered = int(digest_data.get("alerts_triggered", 0) or 0)
     tx_count = int(digest_data.get("transactions_count", 0) or 0)
+    ai_insight = (digest_data.get("ai_insight") or "").strip()
+
+    # AI insight block
+    ai_html = ""
+    if ai_insight:
+        ai_html = f"""
+        <tr><td style="padding:0 36px 18px;">
+          <div style="background:rgba(124,58,237,.1);border:1px solid rgba(124,58,237,.35);border-radius:14px;padding:18px;">
+            <h3 style="margin:0 0 8px;color:#a78bfa;font-size:15px;">✨ AI Portfolio Insight</h3>
+            <p style="margin:0;color:rgba(241,240,245,.88);font-size:13px;line-height:1.6;">{ai_insight}</p>
+          </div>
+        </td></tr>
+        """
 
     dividends_html = ""
     if float(dividends.get("total", 0) or 0) > 0:
@@ -436,6 +463,7 @@ def _send_weekly_digest_email(to_email: str, username: str, digest_data: dict) -
     </tr></table>
   </td></tr>
 
+  {ai_html}
   {dividends_html}
   {tax_html}
 
@@ -1980,6 +2008,69 @@ def portfolio_score(user_id: int = Depends(get_current_user), session: Session =
     return score
 
 
+@app.get("/portfolio/concentration-alert")
+def portfolio_concentration_alert(
+    user_id: int = Depends(get_current_user),
+    session: Session = Depends(get_session),
+):
+    """
+    Returns a concentration warning when any single asset exceeds 50% of portfolio value.
+    Optionally includes an AI-generated diversification message via Gemini.
+    """
+    assets = session.exec(select(Asset).where(Asset.user_id == user_id)).all()
+    if not assets:
+        return {"concentrated": False, "symbol": None, "pct": 0.0, "ai_message": ""}
+
+    enriched = []
+    for a in assets:
+        md = get_asset_data(a.symbol)
+        if not md:
+            continue
+        price = float(md.get("current_price") or 0)
+        enriched.append({
+            "symbol":         a.symbol,
+            "type":           md.get("type", "asset"),
+            "position_value": price * float(a.amount or 0),
+            "change_pct":     float(md.get("percent_change") or 0),
+        })
+
+    total_value = sum(e["position_value"] for e in enriched)
+    if total_value <= 0:
+        return {"concentrated": False, "symbol": None, "pct": 0.0, "ai_message": ""}
+
+    for e in enriched:
+        e["allocation_pct"] = (e["position_value"] / total_value) * 100
+
+    top = max(enriched, key=lambda x: x["position_value"])
+    top_pct = top["allocation_pct"]
+
+    if top_pct < 50.0:
+        return {"concentrated": False, "symbol": top["symbol"], "pct": round(top_pct, 1), "ai_message": ""}
+
+    # Generate AI message for concentrated portfolio
+    ai_message = ""
+    try:
+        from gateways.gemini import _gemini_client, _extract_gemini_text
+        if _gemini_client:
+            prompt = (
+                f"A portfolio has {len(enriched)} assets and {top['symbol']} represents {top_pct:.1f}% of its total value. "
+                "This is highly concentrated. In 2-3 sentences, explain the risks of this concentration "
+                "and suggest generic diversification strategies (without recommending specific assets). "
+                "Be concise, practical and professional. Respond in English."
+            )
+            res = _gemini_client.models.generate_content(model="gemini-1.5-flash", contents=prompt)
+            ai_message = _extract_gemini_text(res) or ""
+    except Exception as e:
+        print(f"[WARN] concentration-alert AI: {e}")
+
+    return {
+        "concentrated": True,
+        "symbol":       top["symbol"],
+        "pct":          round(top_pct, 1),
+        "ai_message":   ai_message,
+    }
+
+
 @app.get("/portfolio/share-card")
 def portfolio_share_card(
     period: str = Query(default="1mo"),
@@ -2026,30 +2117,61 @@ def portfolio_share_card(
     beat_delta = period_perf - bench_perf
     beat_text = f"Beat S&P 500 by {abs(beat_delta):.1f}%" if beat_delta >= 0 else f"Behind S&P 500 by {abs(beat_delta):.1f}%"
 
+    # Sort by position value for top holdings
+    total_val = sum(e["position_value"] for e in enriched_assets)
+    top_holdings = sorted(enriched_assets, key=lambda x: -x["position_value"])[:5]
+    holdings_with_pct = [(h, (h["position_value"] / total_val * 100) if total_val > 0 else 0) for h in top_holdings]
+
     w, h = 1200, 630
     image = Image.new("RGB", (w, h), "#0a0914")
     draw = ImageDraw.Draw(image)
 
-    title_f = _safe_font(56)
-    big_f = _safe_font(78)
-    body_f = _safe_font(34)
-    small_f = _safe_font(26)
+    title_f = _safe_font(48)
+    big_f = _safe_font(64)
+    body_f = _safe_font(28)
+    small_f = _safe_font(22)
+    micro_f = _safe_font(18)
 
-    draw.rounded_rectangle((40, 40, w - 40, h - 40), radius=28, outline="#7c3aed", width=3, fill="#110f20")
-    draw.text((78, 78), "Purp", font=title_f, fill="#a78bfa")
+    # Card frame
+    draw.rounded_rectangle((36, 36, w - 36, h - 36), radius=24, outline="#7c3aed", width=2, fill="#110f20")
 
+    # Header row: Purp + performance compact
+    draw.text((48, 44), "Purp", font=title_f, fill="#a78bfa")
     perf_sign = "+" if period_perf >= 0 else ""
     perf_color = "#10b981" if period_perf >= 0 else "#ef4444"
-    draw.text((78, 200), f"{perf_sign}{period_perf:.1f}%", font=big_f, fill=perf_color)
-    draw.text((78, 295), f"{valid_periods[period]}", font=body_f, fill="#f1f0f5")
+    draw.text((w - 220, 48), f"{perf_sign}{period_perf:.1f}%", font=big_f, fill=perf_color)
 
+    # Metrics row (compact pills)
+    y_metrics = 118
+    draw.text((48, y_metrics), f"{valid_periods[period]}", font=small_f, fill="#c4b5fd")
     if abs(year_perf) > 0:
         year_sign = "+" if year_perf >= 0 else ""
-        draw.text((78, 360), f"Annual: {year_sign}{year_perf:.1f}%", font=small_f, fill="#c4b5fd")
+        draw.text((48, y_metrics + 28), f"YTD: {year_sign}{year_perf:.1f}%", font=micro_f, fill="#8b5cf6")
+    draw.text((48, y_metrics + 52), beat_text, font=micro_f, fill="#f1f0f5")
 
-    draw.text((78, 412), beat_text, font=body_f, fill="#f1f0f5")
-    draw.text((78, 468), f"Portfolio Grade: {score.get('grade', '—')}", font=body_f, fill="#fbbf24")
-    draw.text((78, 548), "Tracked with purp.com", font=small_f, fill="#8b5cf6")
+    # Top holdings section
+    y_holdings = 210
+    draw.text((48, y_holdings), "TOP HOLDINGS", font=micro_f, fill="#6b7280")
+    bar_w = 420
+    bar_h = 8
+    bar_x = 48
+    for i, (hold, pct) in enumerate(holdings_with_pct):
+        y = y_holdings + 36 + i * 44
+        sym = hold["real_symbol"] or hold["symbol"]
+        draw.text((bar_x, y - 4), sym, font=body_f, fill="#f1f0f5")
+        draw.text((bar_x + 100, y - 4), f"{pct:.0f}%", font=small_f, fill="#a78bfa")
+        # Allocation bar
+        draw.rounded_rectangle((bar_x + 140, y, bar_x + 140 + bar_w, y + bar_h), radius=4, fill="#1f1b2e")
+        fill_w = int(bar_w * min(pct / 100, 1.0))
+        if fill_w > 0:
+            draw.rounded_rectangle((bar_x + 140, y, bar_x + 140 + fill_w, y + bar_h), radius=4, fill="#7c3aed")
+
+    # Grade badge (right side)
+    grade = score.get("grade", "—")
+    draw.text((w - 280, y_holdings + 20), f"Grade: {grade}", font=body_f, fill="#fbbf24")
+
+    # Footer
+    draw.text((48, h - 52), "Tracked with getpurpai.com", font=micro_f, fill="#6b7280")
 
     output = io.BytesIO()
     image.save(output, format="PNG")
@@ -2264,6 +2386,95 @@ def form_8949_json(
         for t in txs
     ]
     return generate_form_8949(tx_list, tax_year=tax_year, method=method)
+
+
+@app.get("/tax/pl-report")
+def pl_report(
+    year: int = Query(default=None),
+    method: str = Query(default="FIFO"),
+    fmt: str = Query(default="json"),
+    user_id: int = Depends(get_current_user),
+    session: Session = Depends(get_session),
+):
+    """
+    P&L (Profit & Loss) quarterly breakdown for a tax year.
+    Returns JSON by default; pass fmt=csv to download a CSV file.
+    """
+    user = session.get(User, user_id)
+    if not user:
+        raise HTTPException(404, "User not found")
+    require_tax_pro(user)
+
+    tax_year = year or date.today().year
+
+    txs = session.exec(
+        select(Transaction).where(Transaction.user_id == user_id).order_by(Transaction.date)
+    ).all()
+
+    tx_list = [
+        {"type": t.type, "symbol": t.symbol, "amount": t.amount,
+         "price": t.price, "date": t.date or ""}
+        for t in txs
+    ]
+
+    form_data = generate_form_8949(tx_list, tax_year=tax_year, method=method)
+
+    all_rows = form_data.get("part_I", []) + form_data.get("part_II", [])
+
+    # Group by quarter
+    quarters: dict[str, dict] = {
+        "Q1": {"label": "Jan–Mar", "proceeds": 0.0, "cost_basis": 0.0, "gain_loss": 0.0, "trades": 0},
+        "Q2": {"label": "Apr–Jun", "proceeds": 0.0, "cost_basis": 0.0, "gain_loss": 0.0, "trades": 0},
+        "Q3": {"label": "Jul–Sep", "proceeds": 0.0, "cost_basis": 0.0, "gain_loss": 0.0, "trades": 0},
+        "Q4": {"label": "Oct–Dec", "proceeds": 0.0, "cost_basis": 0.0, "gain_loss": 0.0, "trades": 0},
+    }
+
+    for row in all_rows:
+        sold_date = row.get("date_sold") or ""
+        try:
+            m = int(sold_date[5:7])
+        except (ValueError, IndexError):
+            m = 1
+        q = "Q1" if m <= 3 else "Q2" if m <= 6 else "Q3" if m <= 9 else "Q4"
+        quarters[q]["proceeds"]   += float(row.get("proceeds",   0) or 0)
+        quarters[q]["cost_basis"] += float(row.get("cost_basis", 0) or 0)
+        quarters[q]["gain_loss"]  += float(row.get("gain_loss",  0) or 0)
+        quarters[q]["trades"]     += 1
+
+    for q in quarters.values():
+        q["proceeds"]   = round(q["proceeds"],   2)
+        q["cost_basis"] = round(q["cost_basis"], 2)
+        q["gain_loss"]  = round(q["gain_loss"],  2)
+
+    summary = form_data.get("summary", {})
+
+    if fmt == "csv":
+        import io as _io, csv as _csv
+        buf = _io.StringIO()
+        w = _csv.writer(buf)
+        w.writerow(["Quarter", "Period", "Proceeds", "Cost Basis", "Gain/Loss", "Trades"])
+        for qk, qv in quarters.items():
+            w.writerow([qk, qv["label"],
+                        f"${qv['proceeds']:,.2f}", f"${qv['cost_basis']:,.2f}",
+                        f"${qv['gain_loss']:,.2f}", qv["trades"]])
+        w.writerow([])
+        w.writerow(["TOTAL", "", f"${summary.get('total_proceeds',0):,.2f}",
+                    f"${summary.get('total_cost_basis',0):,.2f}",
+                    f"${summary.get('total_net_gain_loss',0):,.2f}", ""])
+        csv_content = buf.getvalue()
+        from fastapi.responses import Response
+        return Response(
+            content=csv_content,
+            media_type="text/csv",
+            headers={"Content-Disposition": f"attachment; filename=purp-pl-{tax_year}.csv"},
+        )
+
+    return {
+        "tax_year": tax_year,
+        "method":   method,
+        "quarters": quarters,
+        "summary":  summary,
+    }
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

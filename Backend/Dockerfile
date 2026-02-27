@@ -25,7 +25,18 @@ COPY services.py .
 COPY brokers.py .
 COPY static/ static/
 
+# Copia as novas camadas de arquitetura
+COPY gateways/ gateways/
+COPY domain/ domain/
+COPY infrastructure/ infrastructure/
 
+# Diretório persistente para SQLite (montado como volume no Railway/Docker)
+RUN mkdir -p /data
+VOLUME ["/data"]
+
+# Fallback: usa SQLite em /data se DATABASE_URL não estiver definida
+# (Railway injeta DATABASE_URL apontando para Postgres automaticamente)
+ENV DATABASE_URL=sqlite:////data/database.db
 
 # Porta exposta
 EXPOSE 8080

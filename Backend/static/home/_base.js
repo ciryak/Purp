@@ -105,22 +105,105 @@ function apiErrorDetail(detail, fallback = 'Algo deu errado. Tente novamente.') 
 }
 
 // ════════════════════════════════════════════════════════════════
-// API FETCH — com tratamento de 401
+// ERROR MAPPING — actionable messages by HTTP status code
 // ════════════════════════════════════════════════════════════════
+
+const ERROR_MAP = {
+  400: 'Invalid request — check the data entered.',
+  402: 'Plan limit reached. Upgrade to add more assets.',
+  403: 'Permission denied. Check your API key in Settings.',
+  404: 'Resource not found.',
+  409: 'Conflict — this item already exists.',
+  422: 'Validation error — check the fields and try again.',
+  429: 'Too many requests — wait a moment and try again.',
+  500: 'Server error — our team has been notified.',
+  502: 'Service temporarily unavailable. Try again shortly.',
+  503: 'API connection failed — price data may be delayed.',
+};
+
+function _errorMsgForStatus(status, path) {
+  if (status === 403 && (path.includes('/broker') || path.includes('/analysis') || path.includes('/exchange'))) {
+    return 'API key permission error — go to Settings and verify your key.';
+  }
+  return ERROR_MAP[status] || `Unexpected error (${status}).`;
+}
+
+// ── Form draft helpers (used by graceful expire) ──────────────────
+function _saveFormDraft() {
+  const draft = {};
+  const fields = ['symbol-input', 'amount-input', 'price-input', 'date-input'];
+  fields.forEach(id => {
+    const el = document.getElementById(id);
+    if (el && el.value) draft[id] = el.value;
+  });
+  if (Object.keys(draft).length) {
+    sessionStorage.setItem('purp_form_draft', JSON.stringify(draft));
+  }
+}
+
+function _restoreFormDraft() {
+  try {
+    const raw = sessionStorage.getItem('purp_form_draft');
+    if (!raw) return;
+    const draft = JSON.parse(raw);
+    Object.entries(draft).forEach(([id, val]) => {
+      const el = document.getElementById(id);
+      if (el) el.value = val;
+    });
+    sessionStorage.removeItem('purp_form_draft');
+    toast('Your unsaved form data has been restored.', 'info', 4000);
+  } catch (_) {}
+}
+
+// ════════════════════════════════════════════════════════════════
+// API FETCH — error mapping + graceful 401
+// ════════════════════════════════════════════════════════════════
+
+let _expireCountdown = null;
+
+function gracefulExpire() {
+  if (_expireCountdown) return; // already running
+  _saveFormDraft();
+  let secs = 5;
+  toast(`Session expired — redirecting in ${secs}s… (or sign in below)`, 'warning', 5500);
+  _expireCountdown = setInterval(() => {
+    secs -= 1;
+    if (secs <= 0) {
+      clearInterval(_expireCountdown);
+      _expireCountdown = null;
+      clearSession();
+      window.location.href = '/';
+    }
+  }, 1000);
+}
 
 async function apiFetch(path, opts = {}) {
   try {
     const res = await fetch(`${API_BASE}${path}`, opts);
     if (res.status === 401) {
-      clearSession();
-      toast('Session expired — please sign in again.', 'warning');
-      setTimeout(() => { window.location.href = '/'; }, 1500);
+      gracefulExpire();
       return null;
+    }
+    if (!res.ok && res.status !== 402) {
+      // 402 is handled inline by callers (upgrade modal); all others get a toast
+      const msg = _errorMsgForStatus(res.status, path);
+      // Try to get backend detail for 422/400
+      if (res.status === 422 || res.status === 400) {
+        try {
+          const body = await res.clone().json();
+          const detail = apiErrorDetail(body?.detail);
+          if (detail && detail !== 'Algo deu errado. Tente novamente.') {
+            toast(detail, 'error');
+            return res;
+          }
+        } catch (_) {}
+      }
+      toast(msg, 'error');
     }
     return res;
   } catch (e) {
     console.error('Network error:', e);
-    toast('Connection error. Check your internet.', 'error');
+    toast('Connection error — check your internet connection.', 'error');
     return null;
   }
 }
@@ -195,9 +278,6 @@ function clearError(elId) {
 function startRefresh() {
   stopRefresh();
   const path = (window.location.pathname || '').replace(/\/$/, '') || '/home';
-   // #region agent log
-  fetch('http://127.0.0.1:7351/ingest/64ae4719-d813-458e-9378-1f1b6cba8148',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'39d11f'},body:JSON.stringify({sessionId:'39d11f',runId:'pre-fix',hypothesisId:'H1',location:'static/home/_base.js:startRefresh',message:'startRefresh',data:{path},timestamp:Date.now()})}).catch(()=>{});
-  // #endregion agent log
   refreshTimer = setInterval(() => {
     if (!authToken) return;
     fetchPortfolio();
@@ -269,6 +349,7 @@ async function handleLogin() {
       }
 
       finalizeLoginUI();
+      _restoreFormDraft();
       toast('Welcome back! 🎉', 'success', 3000);
     } else {
       showError('login-error', apiErrorDetail(data.detail, 'Email ou senha incorretos.'));
@@ -327,6 +408,7 @@ async function handleRegister() {
       }
 
       finalizeLoginUI();
+      _restoreFormDraft();
       toast('Account created! 🎉', 'success', 5000);
     } else {
       showError('register-error', apiErrorDetail(data.detail, data.message || `Erro ${res.status}`));
@@ -594,11 +676,25 @@ function updateProfileBar() {
   const countEl = $('profile-count');
   if (countEl) {
     countEl.textContent = isPremium()
-      ? `${portfolioCount} ativos`
-      : `${portfolioCount}/${FREE_ASSET_LIMIT} ativos`;
+      ? `${portfolioCount} assets`
+      : `${portfolioCount}/${FREE_ASSET_LIMIT} assets`;
   }
   const upgradeBtn = $('btn-upgrade');
   if (upgradeBtn) upgradeBtn.style.display = isPremium() ? 'none' : '';
+
+  // Proactive limit warning when one slot remains
+  if (!isPremium() && portfolioCount === FREE_ASSET_LIMIT - 1) {
+    if (!sessionStorage.getItem('purp_limit_warned')) {
+      sessionStorage.setItem('purp_limit_warned', '1');
+      setTimeout(() => {
+        toast(
+          `You have ${portfolioCount}/${FREE_ASSET_LIMIT} free assets — upgrade to Investor or Tax Pro for unlimited tracking.`,
+          'warning',
+          6500
+        );
+      }, 1200);
+    }
+  }
 
   const importCard = $('import-csv-card');
   if (importCard) importCard.style.display = isPremium() ? '' : 'none';
@@ -979,11 +1075,7 @@ async function loadPortfolioScore() {
 // ════════════════════════════════════════════════════════════════
 
 async function fetchPortfolio() {
-  // #region agent log
-  fetch('http://127.0.0.1:7351/ingest/64ae4719-d813-458e-9378-1f1b6cba8148',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'39d11f'},body:JSON.stringify({sessionId:'39d11f',runId:'pre-fix',hypothesisId:'H1',location:'static/home/_base.js:fetchPortfolio',message:'fetchPortfolio start',data:{path:window.location.pathname},timestamp:Date.now()})}).catch(()=>{});
-  // #endregion agent log
   if (!authToken) return;
-  const _t0 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
   const res = await apiFetch('/portfolio/balance', { headers: authHeaders() });
   if (!res || !res.ok) return;
   const data = await res.json();
@@ -1004,10 +1096,7 @@ async function fetchPortfolio() {
   updateProfileBar();
   await loadPortfolioScore();
   await loadNetWorth();
-
-  // #region agent log
-  (function(){const now=(typeof performance!=='undefined'&&performance.now)?performance.now():Date.now();const dur=now-_t0;fetch('http://127.0.0.1:7351/ingest/64ae4719-d813-458e-9378-1f1b6cba8148',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'39d11f'},body:JSON.stringify({sessionId:'39d11f',runId:'pre-fix',hypothesisId:'H2',location:'static/home/_base.js:fetchPortfolio',message:'fetchPortfolio after net worth',data:{durationMs:dur,assetCount:(data.assets||[]).length},timestamp:Date.now()})}).catch(()=>{});})();
-  // #endregion agent log
+  _checkConcentrationAlert();
 
   const list = $('assets-list');
   if (!list) return;
@@ -1016,9 +1105,10 @@ async function fetchPortfolio() {
   if (!data.assets?.length) {
     list.innerHTML = `
       <div class="empty-state">
-        <div class="empty-icon">📭</div>
-        <div class="empty-title">Empty portfolio</div>
-        <div class="empty-sub">Add your first asset to start tracking your investments.</div>
+        <div class="empty-state__icon">📊</div>
+        <h3 class="empty-state__title">Your portfolio is empty</h3>
+        <p class="empty-state__body">Add your first asset to start tracking performance and get AI insights.</p>
+        <button class="btn primary" onclick="switchTab('add-asset')" style="margin-top:8px;">Add Asset</button>
       </div>`;
     return;
   }
@@ -1062,7 +1152,7 @@ async function fetchPortfolio() {
       </div>
       <div class="action-bar">
         <button class="action-btn ai"   data-id="${asset.id}">✨ AI Analysis</button>
-        <button class="action-btn sell" data-id="${asset.id}">📉 Vender</button>
+        <button class="action-btn sell" data-id="${asset.id}">Sell</button>
       </div>
       <div class="ai-result" id="ai-res-${asset.id}"></div>`;
 
@@ -1082,10 +1172,46 @@ async function fetchPortfolio() {
   loadAlerts();
 }
 
+// ── Concentration alert banner ────────────────────────────────────
+async function _checkConcentrationAlert() {
+  if (!authToken) return;
+  try {
+    const res = await apiFetch('/portfolio/concentration-alert', { headers: authHeaders() });
+    if (!res || !res.ok) return;
+    const data = await res.json();
+
+    // Remove existing banner if any
+    const existing = document.getElementById('concentration-banner');
+    if (existing) existing.remove();
+
+    if (!data.concentrated) return;
+
+    const list = $('assets-list');
+    if (!list) return;
+
+    const banner = document.createElement('div');
+    banner.id = 'concentration-banner';
+    banner.className = 'concentration-banner';
+    banner.innerHTML = `
+      <div class="concentration-banner__icon">⚠️</div>
+      <div class="concentration-banner__body">
+        <div class="concentration-banner__title">
+          High Concentration — ${data.symbol} is ${data.pct}% of your portfolio
+        </div>
+        <div class="concentration-banner__text">
+          ${data.ai_message || 'Concentrating more than 50% in a single asset significantly increases portfolio risk. Consider diversifying across different assets and sectors.'}
+        </div>
+      </div>`;
+    list.parentNode.insertBefore(banner, list);
+  } catch (e) {
+    console.warn('concentration-alert:', e);
+  }
+}
+
 // ── Balance performance pills ─────────────────────────────────────
 async function loadBalancePerformance() {
   if (!authToken) return;
-  const periods = ['1mo', '6mo', '1y'];
+  const periods = ['1mo', '3mo', '6mo', '1y'];
   const updates = await Promise.all(periods.map(async period => {
     const res = await apiFetch(
       `/portfolio/history?period=${period}&benchmark=%5EGSPC`,
@@ -1100,7 +1226,7 @@ async function loadBalancePerformance() {
 
   updates.forEach(({ period, value }) => {
     const pill  = qs(`.perf-pill[data-period="${period}"]`); if (!pill) return;
-    const label = period === '1mo' ? '1M' : period === '6mo' ? '6M' : '12M';
+    const label = period === '1mo' ? '1M' : period === '3mo' ? '3M' : period === '6mo' ? '6M' : '1Y';
     if (value == null || Number.isNaN(value)) {
       pill.textContent = `${label}: —`; pill.classList.remove('pos','neg'); return;
     }
@@ -1531,9 +1657,9 @@ async function loadTransactions() {
   if (!txs.length) {
     list.innerHTML = `
       <div class="empty-state">
-        <div class="empty-icon">🧾</div>
-        <div class="empty-title">No transactions yet</div>
-        <div class="empty-sub">Your buy and sell operations will appear here.</div>
+        <div class="empty-state__icon">🧾</div>
+        <h3 class="empty-state__title">No transactions yet</h3>
+        <p class="empty-state__body">Your buy and sell operations will appear here once you start trading.</p>
       </div>`;
     return;
   }
@@ -2134,17 +2260,118 @@ async function handleCreateAlert() {
 }
 
 // ════════════════════════════════════════════════════════════════
-// SHARE PERFORMANCE
+// SHARE PERFORMANCE — improved modal with preview + period selector
 // ════════════════════════════════════════════════════════════════
+
+let _shareCardBlobUrl = null;
+
+function _openShareModal() {
+  let modal = document.getElementById('share-card-modal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'share-card-modal';
+    modal.style.cssText = [
+      'position:fixed;inset:0;z-index:9000;background:rgba(7,6,15,0.88)',
+      'display:flex;align-items:center;justify-content:center;padding:20px',
+      'backdrop-filter:blur(14px)',
+    ].join(';');
+    modal.innerHTML = `
+      <div style="background:var(--bg2);border:1px solid var(--border-l);border-radius:var(--r-lg);width:min(100%,600px);padding:24px;animation:modalIn 0.22s ease;">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
+          <h3 style="font-size:15px;font-weight:800;margin:0;">📤 Share Your Portfolio Card</h3>
+          <button id="share-modal-close" style="background:none;border:none;color:var(--text3);font-size:20px;cursor:pointer;line-height:1;">✕</button>
+        </div>
+
+        <!-- Period selector -->
+        <div style="display:flex;gap:8px;margin-bottom:16px;">
+          ${['1mo','3mo','1y'].map(p => `
+            <button class="share-period-btn btn ghost" data-period="${p}" style="flex:1;padding:8px;font-size:12px;">
+              ${p === '1mo' ? 'This Month' : p === '3mo' ? 'This Quarter' : 'This Year'}
+            </button>`).join('')}
+        </div>
+
+        <!-- Preview area -->
+        <div id="share-preview" style="background:var(--bg3);border-radius:var(--r-sm);overflow:hidden;min-height:180px;display:flex;align-items:center;justify-content:center;margin-bottom:16px;">
+          <span style="color:var(--text3);font-size:13px;">Select a period to preview</span>
+        </div>
+
+        <!-- Actions -->
+        <div style="display:flex;gap:10px;">
+          <button id="share-btn-download" class="btn ghost" style="flex:1;" disabled>⬇ Download</button>
+          <button id="share-btn-copy"     class="btn ghost" style="flex:1;" disabled>🔗 Copy Link</button>
+        </div>
+      </div>`;
+    document.body.appendChild(modal);
+
+    document.getElementById('share-modal-close').addEventListener('click', () => {
+      modal.remove();
+      if (_shareCardBlobUrl) { URL.revokeObjectURL(_shareCardBlobUrl); _shareCardBlobUrl = null; }
+    });
+    modal.addEventListener('click', e => {
+      if (e.target === modal) {
+        modal.remove();
+        if (_shareCardBlobUrl) { URL.revokeObjectURL(_shareCardBlobUrl); _shareCardBlobUrl = null; }
+      }
+    });
+
+    modal.querySelectorAll('.share-period-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        modal.querySelectorAll('.share-period-btn').forEach(b => b.classList.remove('primary'));
+        btn.classList.add('primary');
+        _loadSharePreview(btn.dataset.period);
+      });
+    });
+
+    document.getElementById('share-btn-download').addEventListener('click', () => {
+      if (!_shareCardBlobUrl) return;
+      const a = document.createElement('a');
+      a.href     = _shareCardBlobUrl;
+      a.download = 'purp-portfolio.png';
+      a.click();
+    });
+
+    document.getElementById('share-btn-copy').addEventListener('click', async () => {
+      if (!_shareCardBlobUrl) return;
+      try {
+        await navigator.clipboard.writeText(_shareCardBlobUrl);
+        toast('Link copied to clipboard!', 'success', 2500);
+      } catch (_) {
+        window.open(_shareCardBlobUrl, '_blank');
+      }
+    });
+  }
+  modal.style.display = 'flex';
+}
+
+async function _loadSharePreview(period) {
+  const preview   = document.getElementById('share-preview');
+  const dlBtn     = document.getElementById('share-btn-download');
+  const copyBtn   = document.getElementById('share-btn-copy');
+  if (!preview) return;
+
+  preview.innerHTML = '<span style="color:var(--text3);font-size:13px;">Generating…</span>';
+  if (dlBtn)   dlBtn.disabled   = true;
+  if (copyBtn) copyBtn.disabled = true;
+
+  if (_shareCardBlobUrl) { URL.revokeObjectURL(_shareCardBlobUrl); _shareCardBlobUrl = null; }
+
+  const res = await apiFetch(`/portfolio/share-card?period=${period}`, { headers: authHeaders() });
+  if (!res || !res.ok) {
+    preview.innerHTML = '<span style="color:var(--red);font-size:13px;">Could not generate card.</span>';
+    return;
+  }
+
+  const blob = await res.blob();
+  _shareCardBlobUrl = URL.createObjectURL(blob);
+
+  preview.innerHTML = `<img src="${_shareCardBlobUrl}" alt="Portfolio card" style="width:100%;height:auto;display:block;border-radius:var(--r-sm);">`;
+  if (dlBtn)   { dlBtn.disabled   = false; }
+  if (copyBtn) { copyBtn.disabled = false; }
+}
 
 async function sharePerformanceCard() {
   if (!authToken) return;
-  const res = await apiFetch('/portfolio/share-card?period=1mo', { headers: authHeaders() });
-  if (!res || !res.ok) { toast('Could not generate card.', 'error'); return; }
-  const blob = await res.blob();
-  const url  = URL.createObjectURL(blob);
-  window.open(url, '_blank');
-  setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  _openShareModal();
 }
 
 // ════════════════════════════════════════════════════════════════
@@ -2180,7 +2407,8 @@ function buildTaxTabBar() {
     <div class="tax-tab-bar" id="tax-tab-bar">
       <button class="tax-tab-btn active" data-tab="tlh"><span class="tab-icon">🌿</span>Tax Loss</button>
       <button class="tax-tab-btn" data-tab="form8949"><span class="tab-icon">📄</span>Form 8949</button>
-      <button class="tax-tab-btn" data-tab="summary"><span class="tab-icon">📊</span>Resumo</button>
+      <button class="tax-tab-btn" data-tab="pl"><span class="tab-icon">📈</span>P&amp;L</button>
+      <button class="tax-tab-btn" data-tab="summary"><span class="tab-icon">📊</span>Summary</button>
     </div>`;
   taxSection.insertBefore(barWrapper, taxSection.firstChild);
 
@@ -2231,11 +2459,37 @@ function buildTaxTabBar() {
     </div>`;
   taxSection.appendChild(sumPanel);
 
+  // P&L panel
+  const plPanel = document.createElement('div');
+  plPanel.id = 'tax-panel-pl'; plPanel.className = 'tax-panel';
+  const currentYr = new Date().getFullYear();
+  plPanel.innerHTML = `
+    <div class="form8949-controls">
+      <div><label for="pl-year-select">Tax Year</label>
+        <select id="pl-year-select">
+          <option value="${currentYr}">${currentYr}</option>
+          <option value="${currentYr-1}">${currentYr-1}</option>
+          <option value="${currentYr-2}">${currentYr-2}</option>
+        </select></div>
+      <div><label for="pl-method-select">Method</label>
+        <select id="pl-method-select">
+          <option value="FIFO">FIFO (IRS Default)</option>
+          <option value="HIFO">HIFO (Min. Tax)</option>
+          <option value="LIFO">LIFO</option>
+        </select></div>
+    </div>
+    <button class="btn-download-8949" id="btn-export-pl" style="margin-bottom:12px;">⬇ Export P&amp;L CSV</button>
+    <div id="pl-report-content">
+      <div class="shimmer-line" style="width:100%"></div>
+      <div class="shimmer-line" style="width:80%"></div>
+    </div>`;
+  taxSection.appendChild(plPanel);
+
   // Wrap existing TLH content
   const tlhPanel = document.createElement('div');
   tlhPanel.id = 'tax-panel-tlh'; tlhPanel.className = 'tax-panel active';
   const existing = [...taxSection.children].filter(el =>
-    !['tax-tab-bar-container','tax-panel-form8949','tax-panel-summary'].includes(el.id)
+    !['tax-tab-bar-container','tax-panel-form8949','tax-panel-summary','tax-panel-pl'].includes(el.id)
   );
   existing.forEach(node => tlhPanel.appendChild(node));
   taxSection.appendChild(tlhPanel);
@@ -2250,6 +2504,9 @@ function buildTaxTabBar() {
   $('f49-method-select')?.addEventListener('change',   loadForm8949Preview);
   $('sum-year-select')?.addEventListener('change',     loadTaxSummary);
   $('sum-method-select')?.addEventListener('change',   loadTaxSummary);
+  $('pl-year-select')?.addEventListener('change',      loadPLReport);
+  $('pl-method-select')?.addEventListener('change',    loadPLReport);
+  $('btn-export-pl')?.addEventListener('click',        exportPLCSV);
 }
 
 function switchTaxTab(tab) {
@@ -2265,6 +2522,83 @@ function switchTaxTab(tab) {
     panel.classList.add('active');
     if (tab === 'form8949' && !$('form8949-preview')?.hasChildNodes()) loadForm8949Preview();
     if (tab === 'summary') loadTaxSummary();
+    if (tab === 'pl') loadPLReport();
+  }
+}
+
+// ── P&L Report ────────────────────────────────────────────────────
+async function loadPLReport() {
+  const year   = $('pl-year-select')?.value   || new Date().getFullYear();
+  const method = $('pl-method-select')?.value || 'FIFO';
+  const el     = $('pl-report-content'); if (!el) return;
+
+  el.innerHTML = '<div class="shimmer-line" style="width:100%"></div><div class="shimmer-line" style="width:80%"></div>';
+
+  const res = await apiFetch(`/tax/pl-report?year=${year}&method=${method}`, { headers: authHeaders() });
+  if (!res || !res.ok) { el.innerHTML = '<p class="panel-sub">Could not load P&amp;L report.</p>'; return; }
+  const data = await res.json();
+
+  const quarters = data.quarters || {};
+  const summary  = data.summary  || {};
+
+  const sign = v => v >= 0 ? `<span class="gain">+${formatUSD(v)}</span>` : `<span class="loss">${formatUSD(v)}</span>`;
+
+  let rows = '';
+  for (const [qk, qv] of Object.entries(quarters)) {
+    rows += `<tr>
+      <td><strong>${qk}</strong> <span style="color:var(--text3);font-size:11px;">${qv.label}</span></td>
+      <td class="sensitive-value">${formatUSD(qv.proceeds)}</td>
+      <td class="sensitive-value">${formatUSD(qv.cost_basis)}</td>
+      <td class="sensitive-value">${sign(qv.gain_loss)}</td>
+      <td>${qv.trades}</td>
+    </tr>`;
+  }
+
+  el.innerHTML = `
+    <table class="pl-table">
+      <thead>
+        <tr>
+          <th>Quarter</th><th>Proceeds</th><th>Cost Basis</th><th>Gain / Loss</th><th>Trades</th>
+        </tr>
+      </thead>
+      <tbody>${rows}</tbody>
+      <tfoot>
+        <tr class="total">
+          <td><strong>Total ${year}</strong></td>
+          <td class="sensitive-value">${formatUSD(summary.total_proceeds || 0)}</td>
+          <td class="sensitive-value">${formatUSD(summary.total_cost_basis || 0)}</td>
+          <td class="sensitive-value">${sign(summary.total_net_gain_loss || 0)}</td>
+          <td></td>
+        </tr>
+      </tfoot>
+    </table>
+    <p class="panel-sub" style="margin-top:8px;font-size:11px;">
+      Short-term: <span class="sensitive-value">${formatUSD(summary.net_short_term || 0)}</span> &nbsp;·&nbsp;
+      Long-term: <span class="sensitive-value">${formatUSD(summary.net_long_term || 0)}</span>
+      &nbsp;·&nbsp; Method: ${data.method}
+    </p>`;
+
+  applyVisibilityMask();
+}
+
+async function exportPLCSV() {
+  const year   = $('pl-year-select')?.value   || new Date().getFullYear();
+  const method = $('pl-method-select')?.value || 'FIFO';
+  const btn    = $('btn-export-pl');
+  if (btn) { btn.disabled = true; btn.textContent = 'Generating…'; }
+
+  try {
+    const res = await apiFetch(`/tax/pl-report?year=${year}&method=${method}&fmt=csv`, { headers: authHeaders() });
+    if (!res || !res.ok) { toast('Could not export P&L report.', 'error'); return; }
+    const blob = await res.blob();
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href     = url;
+    a.download = `purp-pl-${year}.csv`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 30_000);
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '⬇ Export P&L CSV'; }
   }
 }
 
@@ -2872,12 +3206,73 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Add asset
   $('btn-save-asset')?.addEventListener('click', handleAddAsset);
+
+  // ── Inline real-time validation ──────────────────────────────────
+  const SYMBOL_RE = /^[A-Z0-9.\-\^]{1,20}$/;
+
+  function _fieldError(id) {
+    let span = document.getElementById(`${id}-error`);
+    if (!span) {
+      const input = document.getElementById(id);
+      if (!input) return null;
+      span = document.createElement('span');
+      span.id = `${id}-error`;
+      span.className = 'field-error';
+      span.setAttribute('aria-live', 'polite');
+      input.parentNode.insertBefore(span, input.nextSibling);
+    }
+    return span;
+  }
+
+  function _setFieldError(id, msg) {
+    const span = _fieldError(id);
+    const input = document.getElementById(id);
+    if (span) span.textContent = msg;
+    if (input) input.classList.toggle('input-error', !!msg);
+  }
+
   $('symbol-input')?.addEventListener('input', e => {
     clearTimeout(searchTimer);
-    const v = e.target.value.trim();
+    const v = e.target.value.trim().toUpperCase();
     selectedAddAssetType = null; setAddAmountInputMode(null);
+    if (v && !SYMBOL_RE.test(v)) {
+      _setFieldError('symbol-input', 'Invalid symbol — use uppercase letters, numbers, ., - or ^');
+    } else {
+      _setFieldError('symbol-input', '');
+    }
     if (v.length < 2) { if ($('search-dropdown')) $('search-dropdown').style.display = 'none'; return; }
     searchTimer = setTimeout(() => performSearch(v), 380);
+  });
+
+  $('amount-input')?.addEventListener('blur', () => {
+    const val = parseFloat($('amount-input')?.value);
+    const isStock = selectedAddAssetType === 'stock';
+    if ($('amount-input')?.value && (isNaN(val) || val <= 0)) {
+      _setFieldError('amount-input', 'Amount must be a positive number');
+    } else if (isStock && !Number.isInteger(val)) {
+      _setFieldError('amount-input', 'Stock quantity must be a whole number');
+    } else {
+      _setFieldError('amount-input', '');
+    }
+  });
+
+  $('amount-input')?.addEventListener('input', () => {
+    const val = parseFloat($('amount-input')?.value);
+    if (!isNaN(val) && val > 0) _setFieldError('amount-input', '');
+  });
+
+  $('price-input')?.addEventListener('blur', () => {
+    const val = parseFloat($('price-input')?.value);
+    if ($('price-input')?.value && (isNaN(val) || val <= 0)) {
+      _setFieldError('price-input', 'Price must be a positive number');
+    } else {
+      _setFieldError('price-input', '');
+    }
+  });
+
+  $('price-input')?.addEventListener('input', () => {
+    const val = parseFloat($('price-input')?.value);
+    if (!isNaN(val) && val > 0) _setFieldError('price-input', '');
   });
   document.addEventListener('click', e => {
     if (!e.target.closest('.input-wrap') && !e.target.closest('#search-dropdown'))
