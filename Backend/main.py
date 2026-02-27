@@ -768,9 +768,19 @@ class RebalanceInput(BaseModel):
 
 
 class BrokerFetchInput(BaseModel):
-    broker: str  # coinbase | kraken | robinhood | fidelity
+    broker: str  # coinbase | binance | kraken | robinhood | fidelity
     api_key: str = ""
     api_secret: str = ""
+
+
+class BrokerHoldingItem(BaseModel):
+    symbol: str
+    amount: float
+    type: str = "crypto"
+
+
+class BrokerApplyInput(BaseModel):
+    holdings: list[BrokerHoldingItem]
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -1397,15 +1407,69 @@ def broker_fetch(
     user_id: int = Depends(get_current_user),
     session: Session = Depends(get_session),
 ):
-    """Fetch holdings from a connected broker (Coinbase/Kraken API; Robinhood/Fidelity CSV only)."""
+    """Fetch holdings from a connected broker (Coinbase/Binance/Kraken API; Robinhood/Fidelity CSV only)."""
     user = session.get(User, user_id)
     if not user:
         raise HTTPException(404, "User not found")
     broker = (data.broker or "").strip().lower()
-    if broker not in ("coinbase", "kraken", "robinhood", "fidelity"):
-        raise HTTPException(400, "Broker must be one of: coinbase, kraken, robinhood, fidelity")
+    if broker not in ("coinbase", "binance", "kraken", "robinhood", "fidelity"):
+        raise HTTPException(400, "Broker must be one of: coinbase, binance, kraken, robinhood, fidelity")
     result = fetch_broker_data(broker, data.api_key or "", data.api_secret or "")
     return result
+
+
+@app.post("/broker/apply")
+def broker_apply(
+    data: BrokerApplyInput,
+    user_id: int = Depends(get_current_user),
+    session: Session = Depends(get_session),
+):
+    """Apply broker holdings to portfolio: create missing assets with current price as cost basis."""
+    user = session.get(User, user_id)
+    if not user or not user.is_verified:
+        raise HTTPException(403, "Account not verified")
+    require_investor(user)
+    created = 0
+    skipped = 0
+    errors = []
+    today_str = str(date.today())
+    for h in data.holdings or []:
+        sym = sanitize_symbol(h.symbol)
+        if not sym or h.amount <= 0:
+            skipped += 1
+            continue
+        m = get_asset_data(sym)
+        if not m:
+            errors.append(f"{h.symbol}: symbol not found")
+            skipped += 1
+            continue
+        real_sym = m["real_symbol"]
+        existing = session.exec(select(Asset).where(Asset.symbol == real_sym, Asset.user_id == user_id)).first()
+        if existing:
+            skipped += 1
+            continue
+        price = m.get("current_price") or 0
+        if price <= 0:
+            errors.append(f"{real_sym}: no price")
+            skipped += 1
+            continue
+        count = len(session.exec(select(Asset).where(Asset.user_id == user_id)).all())
+        if not has_plan(user, "investor", "tax_pro") and count >= FREE_ASSET_LIMIT:
+            errors.append("Free plan asset limit reached")
+            break
+        asset = Asset(
+            symbol=real_sym, amount=h.amount, type=m.get("type") or "crypto",
+            purchase_price=price, purchase_date=today_str, user_id=user_id,
+        )
+        session.add(asset)
+        session.add(Transaction(
+            user_id=user_id, symbol=real_sym, type="buy",
+            amount=h.amount, price=price, total_usd=h.amount * price,
+            date=today_str, created_at=today_str,
+        ))
+        created += 1
+    session.commit()
+    return {"ok": True, "created": created, "skipped": skipped, "errors": errors}
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

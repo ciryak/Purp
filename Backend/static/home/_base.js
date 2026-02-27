@@ -29,6 +29,10 @@ let searchTimer           = null;
 let portfolioCount        = 0;
 let portfolioSymbols      = new Set();
 let rebalanceSymbols      = [];
+let watchlistSymbols      = new Set();
+let watchlistIdBySymbol    = {};
+let lastMarketStocks      = [];
+let lastMarketCryptos     = [];
 let hideSensitiveValues   = true;
 let selectedAddAssetType  = null;
 let activeTaxTab          = 'tlh';
@@ -199,8 +203,9 @@ function startRefresh() {
       if (typeof loadDividendCard === 'function') loadDividendCard();
     } else if (path === '/home/market' && $('market-stocks-list')) {
       loadMarketWatch();
+    } else if (path === '/home/alerts' && $('alerts-list')) {
+      loadAlerts();
     }
-  }, REFRESH_MS);
 }
 function stopRefresh() {
   if (refreshTimer) { clearInterval(refreshTimer); refreshTimer = null; }
@@ -980,6 +985,11 @@ async function fetchPortfolio() {
     balanceEl.textContent = formatUSD(data.total_balance_usd);
     balanceEl.classList.add('sensitive-value');
   }
+  const summaryEl = $('portfolio-summary');
+  if (summaryEl) {
+    const n = (data.assets || []).length;
+    summaryEl.textContent = n === 0 ? 'Nenhum ativo' : `${n} ativo${n !== 1 ? 's' : ''}`;
+  }
 
   portfolioCount   = (data.assets || []).length;
   portfolioSymbols = new Set((data.assets || []).map(a => (a.real_symbol || a.symbol || '').toUpperCase()));
@@ -1328,23 +1338,27 @@ function renderMarketRows(containerId, rows) {
     root.innerHTML = '<div class="empty-sub">Não foi possível carregar cotações agora.</div>';
     return;
   }
+  const isStocks = containerId.includes('stocks');
   rows.forEach(item => {
     const isUp = (item.pct || 0) >= 0;
+    const inWatchlist = watchlistSymbols.has((item.symbol || '').toUpperCase());
     const row  = document.createElement('div');
     row.className = 'market-row';
     row.setAttribute('role', 'button');
     row.tabIndex = 0;
+    row.dataset.symbol = (item.symbol || '').toUpperCase();
     row.innerHTML = `
       <div class="market-left">
         <div class="market-avatar">${item.symbol[0] || '?'}</div>
         <div class="market-symbol-block">
           <span class="market-symbol">${item.symbol}</span>
-          <span class="market-tag">${containerId.includes('stocks') ? 'Stock' : 'Crypto'}</span>
+          <span class="market-tag">${isStocks ? 'Stock' : 'Crypto'}</span>
         </div>
       </div>
       <div class="market-right">
         <span class="market-price sensitive-value">${formatUSD(item.price)}</span>
         <span class="market-change ${isUp ? 'text-green' : 'text-red'}">${formatPct(item.pct)}</span>
+        <button type="button" class="btn-watchlist-add ${inWatchlist ? 'in-watchlist' : ''}" data-symbol="${item.symbol}" data-type="${isStocks ? 'stock' : 'crypto'}" aria-label="${inWatchlist ? 'Remove from watchlist' : 'Add to watchlist'}">${inWatchlist ? '✓ In Watchlist' : '+ Watchlist'}</button>
       </div>`;
     const assetPayload = {
       symbol: item.symbol,
@@ -1352,13 +1366,128 @@ function renderMarketRows(containerId, rows) {
       current_price: item.price,
       percent_change: item.pct,
       days_held: 0,
-      type: containerId.includes('stocks') ? 'stock' : 'crypto',
+      type: isStocks ? 'stock' : 'crypto',
     };
-    row.addEventListener('click', () => openDetail(assetPayload));
-    row.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openDetail(assetPayload); } });
+    row.addEventListener('click', (e) => {
+      if (e.target.closest('.btn-watchlist-add')) return;
+      openDetail(assetPayload);
+    });
+    row.addEventListener('keydown', e => {
+      if (e.target.closest('.btn-watchlist-add')) return;
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openDetail(assetPayload); }
+    });
+    const btn = row.querySelector('.btn-watchlist-add');
+    if (btn) btn.addEventListener('click', (e) => { e.stopPropagation(); e.preventDefault(); toggleWatchlistFromMarket(btn.dataset.symbol, btn.dataset.type, btn); });
     root.appendChild(row);
   });
   applyVisibilityMask();
+}
+
+async function loadWatchlist() {
+  const listEl = $('watchlist-list');
+  const sectionEl = $('watchlist-section');
+  if (!authToken) {
+    if (listEl) listEl.innerHTML = '<div class="empty-sub">Faça login para usar a watchlist.</div>';
+    watchlistSymbols.clear();
+    watchlistIdBySymbol = {};
+    return;
+  }
+  const res = await apiFetch('/watchlist', { headers: authHeaders() });
+  if (!res || !res.ok) {
+    if (listEl) listEl.innerHTML = '<div class="empty-sub">Não foi possível carregar a watchlist.</div>';
+    watchlistSymbols.clear();
+    watchlistIdBySymbol = {};
+    return;
+  }
+  const items = (await res.json()).items || [];
+  watchlistSymbols = new Set(items.map(i => (i.symbol || '').toUpperCase()));
+  watchlistIdBySymbol = {};
+  items.forEach(i => { watchlistIdBySymbol[(i.symbol || '').toUpperCase()] = i.id; });
+
+  if (listEl) {
+    if (!items.length) {
+      listEl.innerHTML = '<div class="empty-sub">Nenhum ativo na watchlist. Use "+ Watchlist" nos ativos abaixo.</div>';
+    } else {
+      listEl.innerHTML = items.map((w) => {
+        const price = w.current_price ?? 0;
+        const pct = w.percent_change ?? 0;
+        const isUp = pct >= 0;
+        return `
+          <div class="market-row" data-id="${w.id}" data-symbol="${w.symbol}">
+            <div class="market-left">
+              <div class="market-avatar">${(w.symbol || '?')[0]}</div>
+              <div class="market-symbol-block">
+                <span class="market-symbol">${w.symbol}</span>
+                <span class="market-tag">${(w.type || 'crypto') === 'stock' ? 'Stock' : 'Crypto'}</span>
+              </div>
+            </div>
+            <div class="market-right">
+              <span class="market-price sensitive-value">${formatUSD(price)}</span>
+              <span class="market-change ${isUp ? 'text-green' : 'text-red'}">${formatPct(pct)}</span>
+              <button type="button" class="btn-watchlist-add in-watchlist btn-watchlist-remove" data-id="${w.id}" data-symbol="${w.symbol}" aria-label="Remove from watchlist">✕ Remover</button>
+            </div>
+          </div>`;
+      }).join('');
+      listEl.querySelectorAll('.market-row').forEach(row => {
+        const symbol = row.dataset.symbol;
+        const tag = row.querySelector('.market-tag')?.textContent;
+        row.addEventListener('click', (e) => {
+          if (e.target.closest('.btn-watchlist-remove')) return;
+          openDetail({ symbol, real_symbol: symbol, current_price: 0, percent_change: 0, days_held: 0, type: tag === 'Stock' ? 'stock' : 'crypto' });
+        });
+      });
+      listEl.querySelectorAll('.btn-watchlist-remove').forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+          e.stopPropagation();
+          await removeFromWatchlist(parseInt(btn.dataset.id, 10));
+        });
+      });
+    }
+  }
+  applyVisibilityMask();
+}
+
+async function addToWatchlist(symbol, type) {
+  if (!authToken) return;
+  const res = await apiFetch('/watchlist', {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify({ symbol: (symbol || '').toUpperCase(), type: type || 'crypto' }),
+  });
+  if (res && res.ok) {
+    watchlistSymbols.add((symbol || '').toUpperCase());
+    await loadWatchlist();
+    if (lastMarketStocks.length) renderMarketRows('market-stocks-list', lastMarketStocks);
+    if (lastMarketCryptos.length) renderMarketRows('market-cryptos-list', lastMarketCryptos);
+    toast('Adicionado à watchlist.', 'success');
+  } else {
+    const err = await res?.json().catch(() => ({}));
+    if (res?.status === 402) showUpgradeModal(apiErrorDetail(err.detail, 'Limite da watchlist no plano Free.'));
+    else toast(apiErrorDetail(err.detail, 'Não foi possível adicionar à watchlist.'), 'error');
+  }
+}
+
+async function removeFromWatchlist(itemId) {
+  if (!authToken) return;
+  const res = await apiFetch(`/watchlist/${itemId}`, { method: 'DELETE', headers: authHeaders() });
+  if (res && res.ok) {
+    await loadWatchlist();
+    if (lastMarketStocks.length) renderMarketRows('market-stocks-list', lastMarketStocks);
+    if (lastMarketCryptos.length) renderMarketRows('market-cryptos-list', lastMarketCryptos);
+    toast('Removido da watchlist.', 'success');
+  } else {
+    toast('Não foi possível remover.', 'error');
+  }
+}
+
+async function toggleWatchlistFromMarket(symbol, type, btnEl) {
+  const sym = (symbol || '').toUpperCase();
+  if (watchlistSymbols.has(sym)) {
+    const id = watchlistIdBySymbol[sym];
+    if (id != null) await removeFromWatchlist(id);
+  } else {
+    await addToWatchlist(symbol, type);
+  }
 }
 
 async function loadMarketWatch() {
@@ -1366,8 +1495,13 @@ async function loadMarketWatch() {
     Promise.all(FEATURED_STOCKS.map(s => fetchQuoteForSymbol(s))),
     Promise.all(FEATURED_CRYPTOS.map(s => fetchQuoteForSymbol(s))),
   ]);
-  renderMarketRows('market-stocks-list',  stocks.filter(Boolean));
-  renderMarketRows('market-cryptos-list', cryptos.filter(Boolean));
+  const stockList = stocks.filter(Boolean);
+  const cryptoList = cryptos.filter(Boolean);
+  lastMarketStocks = stockList;
+  lastMarketCryptos = cryptoList;
+  await loadWatchlist();
+  renderMarketRows('market-stocks-list',  stockList);
+  renderMarketRows('market-cryptos-list', cryptoList);
 }
 
 // ════════════════════════════════════════════════════════════════
@@ -1863,16 +1997,24 @@ function updateAlertFormFields() {
 
 function renderAlertsList(alerts = []) {
   const root = $('alerts-list'); if (!root) return;
-  if (!alerts.length) { root.innerHTML = '<div class="empty-sub">Nenhum alerta ainda.</div>'; return; }
+  const typeLabels = {
+    price_above: 'Preço acima', price_below: 'Preço abaixo',
+    percent_change_up: '% subida', percent_change_down: '% queda',
+    rsi_oversold: 'RSI oversold', rsi_overbought: 'RSI overbought',
+    rebalance_drift: 'Deriva rebalance', volume_spike: 'Pico volume',
+    portfolio_down: 'Portfólio queda',
+  };
+  if (!alerts.length) { root.innerHTML = '<div class="empty-sub">Nenhum alerta ainda. Crie um acima.</div>'; return; }
   root.innerHTML = alerts.map(a => {
     const sym    = a.symbol || 'PORTFOLIO';
     const active = a.active !== false;
     const statusLabel = active ? 'Ativo' : 'Inativo';
     const statusColor = active ? 'var(--green)' : 'var(--text3)';
+    const typeLabel = typeLabels[a.alert_type] || a.alert_type;
     return `
       <div class="market-row alert-row" data-id="${a.id}">
         <span class="market-symbol">${sym}</span>
-        <span class="market-price" style="font-size:10px;">${a.alert_type}</span>
+        <span class="market-price" style="font-size:11px;color:var(--text2);">${typeLabel}</span>
         <span class="market-change" style="font-family:var(--mono);font-size:11px;">${a.target_value}</span>
         <span style="font-size:10px;color:${statusColor};min-width:46px;text-align:right;">${statusLabel}</span>
         <div style="display:flex;gap:4px;margin-left:8px;">

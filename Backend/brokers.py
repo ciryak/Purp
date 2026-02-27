@@ -1,6 +1,6 @@
 """
 Purp — Broker API integrations.
-Fetch portfolio and transactions from Coinbase and Kraken via API.
+Fetch portfolio and transactions from Coinbase, Binance and Kraken via API.
 Robinhood and Fidelity: CSV import only (no public API).
 """
 import os
@@ -8,6 +8,7 @@ import time
 import hmac
 import hashlib
 import base64
+import urllib.parse
 import requests
 from typing import Any
 
@@ -144,16 +145,64 @@ def fetch_kraken_holdings(api_key: str, api_secret: str) -> dict[str, Any]:
         return {"ok": False, "error": str(e), "holdings": [], "transactions": []}
 
 
+# ── Binance Spot API ────────────────────────────────────────────────────────
+# https://developers.binance.com/docs/binance-spot-api-docs/rest-api/account-endpoints
+
+BINANCE_BASE = "https://api.binance.com"
+
+
+def fetch_binance_holdings(api_key: str, api_secret: str) -> dict[str, Any]:
+    """Fetch account balances from Binance Spot API (GET /api/v3/account)."""
+    timestamp = int(time.time() * 1000)
+    params = {"timestamp": timestamp, "omitZeroBalances": "true"}
+    query = urllib.parse.urlencode(params)
+    signature = hmac.new(
+        api_secret.encode("utf-8"),
+        query.encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()
+    url = f"{BINANCE_BASE}/api/v3/account?{query}&signature={signature}"
+    headers = {"X-MBX-APIKEY": api_key}
+    try:
+        r = requests.get(url, headers=headers, timeout=15)
+        r.raise_for_status()
+        data = r.json()
+        balances = data.get("balances") or []
+        holdings = []
+        fiat = {"USD", "EUR", "BUSD", "USDT", "USDC", "TUSD", "FDUSD", "DAI"}
+        for b in balances:
+            asset = (b.get("asset") or "").strip()
+            free = float(b.get("free") or 0)
+            locked = float(b.get("locked") or 0)
+            total = free + locked
+            if not asset or total <= 0:
+                continue
+            if asset in fiat:
+                continue
+            holdings.append({
+                "symbol": asset,
+                "amount": total,
+                "type": "crypto",
+                "source": "binance",
+            })
+        return {"ok": True, "holdings": holdings, "transactions": []}
+    except requests.exceptions.HTTPError as e:
+        body = e.response.text if e.response else ""
+        return {"ok": False, "error": f"Binance API: {e.response.status_code if e.response else 'error'} — {body[:200]}", "holdings": [], "transactions": []}
+    except Exception as e:
+        return {"ok": False, "error": str(e), "holdings": [], "transactions": []}
+
+
 # ── Dispatcher ──────────────────────────────────────────────────────────────
 
-BROKERS_WITH_API = ("coinbase", "kraken")
+BROKERS_WITH_API = ("coinbase", "binance", "kraken")
 BROKERS_CSV_ONLY = ("robinhood", "fidelity")
 
 
 def fetch_broker_data(broker: str, api_key: str = "", api_secret: str = "") -> dict[str, Any]:
     """
     Fetch holdings (and optionally transactions) from broker.
-    - coinbase, kraken: require api_key and api_secret; return holdings.
+    - coinbase, binance, kraken: require api_key and api_secret; return holdings.
     - robinhood, fidelity: return use_csv=True (no API).
     """
     broker = (broker or "").strip().lower()
@@ -163,6 +212,10 @@ def fetch_broker_data(broker: str, api_key: str = "", api_secret: str = "") -> d
         if not api_key or not api_secret:
             return {"ok": False, "error": "Coinbase requires API key and secret.", "holdings": [], "transactions": []}
         return fetch_coinbase_holdings(api_key, api_secret)
+    if broker == "binance":
+        if not api_key or not api_secret:
+            return {"ok": False, "error": "Binance requires API key and secret.", "holdings": [], "transactions": []}
+        return fetch_binance_holdings(api_key, api_secret)
     if broker == "kraken":
         if not api_key or not api_secret:
             return {"ok": False, "error": "Kraken requires API key and secret.", "holdings": [], "transactions": []}

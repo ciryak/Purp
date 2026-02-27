@@ -87,6 +87,12 @@
               <span class="broker-name">Coinbase</span>
               <span class="broker-action" data-action="api">Conectar API</span>
             </div>
+            <div class="broker-chip-connect" data-broker="binance">
+              <img src="https://logo.clearbit.com/binance.com" alt="Binance" class="broker-logo" onerror="this.style.display='none';this.nextElementSibling?.classList.remove('hidden');">
+              <span class="broker-fb hidden">B</span>
+              <span class="broker-name">Binance</span>
+              <span class="broker-action" data-action="api">Conectar API</span>
+            </div>
             <div class="broker-chip-connect" data-broker="robinhood">
               <img src="https://logo.clearbit.com/robinhood.com" alt="Robinhood" class="broker-logo" onerror="this.style.display='none';this.nextElementSibling?.classList.remove('hidden');">
               <span class="broker-fb hidden">R</span>
@@ -154,6 +160,7 @@
       <select id="import-broker-select" class="select-ctrl" style="width:100%;padding:9px 12px;font-size:12px;">
         <option value="">— Select broker —</option>
         <option value="coinbase">Coinbase</option>
+        <option value="binance">Binance</option>
         <option value="robinhood">Robinhood</option>
         <option value="fidelity">Fidelity</option>
         <option value="kraken">Kraken</option>

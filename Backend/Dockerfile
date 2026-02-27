@@ -22,6 +22,7 @@ RUN pip install --no-cache-dir --upgrade pip && \
 COPY main.py .
 COPY models.py .
 COPY services.py .
+COPY brokers.py .
 COPY static/ static/
 
 

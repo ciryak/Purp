@@ -2453,7 +2453,32 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
     const count = (data.holdings || []).length;
-    resultEl.innerHTML = `<span style="color:var(--green);">${count} ativo(s) encontrado(s).</span>${count ? '<br><small>Em breve: adicionar ao portfólio em um clique.</small>' : ''}`;
+    window._lastBrokerHoldings = (data.holdings || []).map(h => ({ symbol: h.symbol, amount: h.amount, type: h.type || 'crypto' }));
+    resultEl.innerHTML = count
+      ? `<span style="color:var(--green);">${count} ativo(s) encontrado(s).</span><br><button type="button" id="btn-broker-apply" class="btn-primary" style="margin-top:8px;">Adicionar ao portfólio</button>`
+      : `<span style="color:var(--text2);">Nenhum saldo encontrado.</span>`;
+  });
+  document.getElementById('modal-broker-api')?.addEventListener('click', async (e) => {
+    if (e.target?.id !== 'btn-broker-apply' || !window._lastBrokerHoldings?.length) return;
+    const resultEl = $('broker-api-result');
+    const btn = e.target;
+    btn.disabled = true;
+    btn.textContent = 'Adicionando…';
+    const res = await apiFetch('/broker/apply', {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify({ holdings: window._lastBrokerHoldings }),
+    });
+    const data = await res?.json().catch(() => ({}));
+    if (res?.ok && data?.ok) {
+      resultEl.innerHTML = `<span style="color:var(--green);">${data.created ?? 0} ativo(s) adicionado(s).</span>`;
+      if (typeof fetchPortfolio === 'function') fetchPortfolio();
+    } else {
+      resultEl.innerHTML = `<span style="color:var(--red);">${data?.errors?.join(' ') || 'Erro ao adicionar.'}</span><br><button type="button" id="btn-broker-apply" class="btn-primary" style="margin-top:8px;">Tentar novamente</button>`;
+      window._lastBrokerHoldings = window._lastBrokerHoldings || [];
+    }
+    btn.disabled = false;
+    btn.textContent = 'Adicionar ao portfólio';
   });
 
   // Tax Pro

@@ -459,14 +459,16 @@ html, body {
   letter-spacing: 0.3px;
 }
 .plan-badge.premium, .plan-badge.investor {
-  background: rgba(245,158,11,0.15);
-  color: var(--gold-l);
-  border-color: rgba(245,158,11,0.3);
-}
-.plan-badge.tax-pro {
-  background: rgba(245,158,11,0.2);
+  background: linear-gradient(135deg, rgba(245,158,11,0.2), rgba(251,191,36,0.15));
   color: var(--gold-l);
   border-color: rgba(245,158,11,0.45);
+  box-shadow: 0 0 12px rgba(245,158,11,0.2);
+}
+.plan-badge.tax-pro {
+  background: linear-gradient(135deg, rgba(245,158,11,0.25), rgba(251,191,36,0.2));
+  color: #fff;
+  border-color: rgba(251,191,36,0.5);
+  box-shadow: 0 0 14px rgba(245,158,11,0.3);
 }
 .asset-count {
   font-size: 10px;
@@ -556,6 +558,12 @@ html, body {
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   line-height: 1.1;
+}
+.balance-summary {
+  font-size: 12px;
+  color: var(--text2);
+  margin-top: 4px;
+  margin-bottom: 0;
 }
 
 .balance-performance {
@@ -1128,6 +1136,34 @@ html, body {
   background: var(--card-hover);
   transform: translateY(-1px);
   box-shadow: var(--shadow-sm);
+}
+.section-sub {
+  font-size: 12px;
+  color: var(--text2);
+  margin-top: 2px;
+  margin-bottom: 10px;
+}
+.watchlist-list .market-row { margin-bottom: 6px; }
+.btn-watchlist-add {
+  flex-shrink: 0;
+  padding: 5px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  border-radius: var(--r-xs);
+  border: 1px solid rgba(124,58,237,0.4);
+  background: rgba(124,58,237,0.15);
+  color: var(--accent-l);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.btn-watchlist-add:hover {
+  background: rgba(124,58,237,0.25);
+  border-color: var(--accent);
+}
+.btn-watchlist-add.in-watchlist {
+  background: rgba(16,185,129,0.15);
+  border-color: rgba(16,185,129,0.4);
+  color: var(--green-l);
 }
 .market-left {
   display: flex;
