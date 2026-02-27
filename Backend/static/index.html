@@ -69,21 +69,15 @@
       -webkit-font-smoothing: antialiased;
     }
 
-    /* ── Scrollbar ── */
     ::-webkit-scrollbar { width: 4px; }
     ::-webkit-scrollbar-track { background: var(--ink); }
     ::-webkit-scrollbar-thumb { background: var(--violet); border-radius: 4px; }
 
-    /* ── Selection ── */
     ::selection { background: rgba(109,40,217,0.35); color: var(--txt); }
 
-    /* ── Utils ── */
     .sr-only { position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);border:0; }
     .hidden { display: none !important; }
 
-    /* ══════════════════════════════════════════
-       NOISE TEXTURE OVERLAY
-    ══════════════════════════════════════════ */
     body::before {
       content: '';
       position: fixed;
@@ -94,9 +88,6 @@
       opacity: 0.4;
     }
 
-    /* ══════════════════════════════════════════
-       NAVIGATION
-    ══════════════════════════════════════════ */
     #nav {
       position: fixed;
       top: 0; left: 0; right: 0;
@@ -168,7 +159,6 @@
     .btn-cta:hover { filter: brightness(1.08); transform: translateY(-1px); box-shadow: 0 8px 24px var(--amber-glow); }
     .btn-cta:active { transform: translateY(0); }
 
-    /* User avatar button (when logged in) */
     #nav-user-btn {
       display: flex; align-items: center; gap: 8px;
       background: var(--card-h); border: 1px solid var(--border-h);
@@ -184,7 +174,6 @@
       font-size: 12px; font-weight: 800; color: #fff;
     }
 
-    /* Hamburger */
     #hamburger {
       display: none;
       flex-direction: column; gap: 5px;
@@ -200,7 +189,6 @@
     #hamburger.open span:nth-child(2) { opacity: 0; transform: scaleX(0); }
     #hamburger.open span:nth-child(3) { transform: translateY(-6.5px) rotate(-45deg); }
 
-    /* Mobile Nav Drawer */
     #mobile-drawer {
       position: fixed;
       top: 68px; right: 0;
@@ -230,9 +218,6 @@
     }
     #drawer-overlay.active { display: block; }
 
-    /* ══════════════════════════════════════════
-       HERO
-    ══════════════════════════════════════════ */
     #hero {
       min-height: 100svh;
       display: flex; flex-direction: column;
@@ -242,7 +227,6 @@
       overflow: hidden;
     }
 
-    /* Radial gradient orbs */
     .hero-orb {
       position: absolute; border-radius: 50%;
       filter: blur(80px); pointer-events: none;
@@ -350,13 +334,8 @@
     .hero-trust-item { display: flex; align-items: center; gap: 6px; }
     .hero-trust-item svg { flex-shrink: 0; }
 
-    /* Hero visual — mock extension popup */
-    .hero-visual {
-      position: relative;
-    }
-    .hero-float {
-      animation: floatY 7s ease-in-out infinite;
-    }
+    .hero-visual { position: relative; }
+    .hero-float { animation: floatY 7s ease-in-out infinite; }
     @keyframes floatY {
       0%, 100% { transform: translateY(0); }
       50% { transform: translateY(-16px); }
@@ -391,10 +370,7 @@
       flex-shrink: 0;
     }
 
-    .mock-popup {
-      padding: 16px;
-      background: var(--ink);
-    }
+    .mock-popup { padding: 16px; background: var(--ink); }
 
     .popup-header {
       display: flex; align-items: center; justify-content: space-between;
@@ -427,11 +403,7 @@
     }
     .balance-change { font-size: 11px; color: var(--green-l); margin-top: 4px; font-family: var(--font-mono); }
 
-    /* Sparkline SVG */
-    .spark-wrap {
-      height: 40px; width: 100%; margin: 8px 0;
-      position: relative;
-    }
+    .spark-wrap { height: 40px; width: 100%; margin: 8px 0; position: relative; }
 
     .popup-assets { display: flex; flex-direction: column; gap: 6px; }
     .popup-asset {
@@ -468,7 +440,6 @@
     }
     .ai-insight { font-size: 10px; color: var(--txt2); line-height: 1.5; }
 
-    /* Floating badge */
     .hero-badge {
       position: absolute; bottom: -20px; left: -30px;
       background: var(--ink2); border: 1px solid rgba(109,40,217,0.3);
@@ -490,9 +461,6 @@
       animation: floatY 11s ease-in-out infinite;
     }
 
-    /* ══════════════════════════════════════════
-       STATS BAR
-    ══════════════════════════════════════════ */
     #stats {
       padding: 60px max(20px, calc((100% - 1200px)/2));
       border-top: 1px solid var(--border);
@@ -515,9 +483,6 @@
     }
     .stat-lbl { font-size: 13px; color: var(--txt2); }
 
-    /* ══════════════════════════════════════════
-       SECTION COMMONS
-    ══════════════════════════════════════════ */
     section { position: relative; z-index: 1; }
 
     .section-tag {
@@ -541,12 +506,7 @@
     }
     .section-sub { font-size: 16px; color: var(--txt2); line-height: 1.75; max-width: 560px; margin: 0 auto; }
 
-    /* ══════════════════════════════════════════
-       FEATURES
-    ══════════════════════════════════════════ */
-    #features {
-      padding: 100px max(20px, calc((100% - 1200px)/2));
-    }
+    #features { padding: 100px max(20px, calc((100% - 1200px)/2)); }
     .features-head { text-align: center; margin-bottom: 64px; }
 
     .features-grid {
@@ -585,9 +545,6 @@
     .feat-h { font-family: var(--font-head); font-size: 17px; font-weight: 700; margin-bottom: 8px; }
     .feat-p { font-size: 13px; color: var(--txt2); line-height: 1.7; }
 
-    /* ══════════════════════════════════════════
-       HOW IT WORKS
-    ══════════════════════════════════════════ */
     #how {
       padding: 100px max(20px, calc((100% - 1200px)/2));
       background: rgba(14,12,28,0.35);
@@ -620,16 +577,8 @@
       font-family: var(--font-head); font-size: 32px; font-weight: 800;
       margin: 0 auto 20px; position: relative; z-index: 1;
     }
-    .step-num-v {
-      background: linear-gradient(135deg, var(--violet), var(--violet-l));
-      box-shadow: 0 0 30px var(--glow);
-      color: #fff;
-    }
-    .step-num-a {
-      background: linear-gradient(135deg, var(--amber), var(--amber-l));
-      box-shadow: 0 0 30px var(--amber-glow);
-      color: #1a0e00;
-    }
+    .step-num-v { background: linear-gradient(135deg, var(--violet), var(--violet-l)); box-shadow: 0 0 30px var(--glow); color: #fff; }
+    .step-num-a { background: linear-gradient(135deg, var(--amber), var(--amber-l)); box-shadow: 0 0 30px var(--amber-glow); color: #1a0e00; }
 
     .step-inner {
       background: var(--card); border: 1px solid var(--border);
@@ -638,12 +587,7 @@
     .step-h { font-family: var(--font-head); font-size: 17px; font-weight: 700; margin-bottom: 8px; }
     .step-p { font-size: 13px; color: var(--txt2); line-height: 1.7; }
 
-    /* ══════════════════════════════════════════
-       REVIEWS
-    ══════════════════════════════════════════ */
-    #reviews {
-      padding: 100px max(20px, calc((100% - 1200px)/2));
-    }
+    #reviews { padding: 100px max(20px, calc((100% - 1200px)/2)); }
     .reviews-head { text-align: center; margin-bottom: 64px; }
     .reviews-grid {
       display: grid; grid-template-columns: repeat(3, 1fr);
@@ -679,9 +623,6 @@
       border-radius: 999px; border: 1px solid var(--border);
     }
 
-    /* ══════════════════════════════════════════
-       PRICING
-    ══════════════════════════════════════════ */
     #pricing {
       padding: 100px max(20px, calc((100% - 1200px)/2));
       background: rgba(14,12,28,0.35);
@@ -721,29 +662,19 @@
     .plan-desc { font-size: 13px; color: var(--txt2); margin-bottom: 20px; }
     .plan-price { margin-bottom: 22px; display: flex; align-items: baseline; gap: 1px; }
     .plan-price-num {
-      font-family: var(--font-mono);
-      font-size: 42px;
-      font-weight: 600;
+      font-family: var(--font-mono); font-size: 42px; font-weight: 600;
       letter-spacing: -2px;
       background: linear-gradient(135deg, var(--amber-ll), var(--amber-l));
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-      background-clip: text;
-      line-height: 1;
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+      background-clip: text; line-height: 1;
     }
     .plan-price-cents {
-      font-family: var(--font-mono);
-      font-size: 20px;
-      font-weight: 500;
+      font-family: var(--font-mono); font-size: 20px; font-weight: 500;
       letter-spacing: -0.5px;
       background: linear-gradient(135deg, var(--amber-ll), var(--amber-l));
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-      background-clip: text;
-      opacity: 0.65;
-      line-height: 1;
-      align-self: flex-start;
-      margin-top: 4px;
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+      background-clip: text; opacity: 0.65; line-height: 1;
+      align-self: flex-start; margin-top: 4px;
     }
     .plan-price-per { font-size: 13px; color: var(--txt3); margin-left: 4px; align-self: flex-end; padding-bottom: 3px; }
 
@@ -758,26 +689,19 @@
       font-family: var(--font-body); font-size: 14px; font-weight: 700;
       cursor: pointer; transition: all 0.2s;
     }
-    .btn-plan-ghost {
-      background: none; border: 1px solid var(--border-h); color: var(--txt2);
-    }
+    .btn-plan-ghost { background: none; border: 1px solid var(--border-h); color: var(--txt2); }
     .btn-plan-ghost:hover { color: var(--txt); border-color: rgba(109,40,217,0.4); background: var(--card-h); }
     .btn-plan-primary {
       background: linear-gradient(135deg, var(--violet), var(--violet-l));
-      border: none; color: #fff;
-      box-shadow: 0 6px 20px var(--glow);
+      border: none; color: #fff; box-shadow: 0 6px 20px var(--glow);
     }
     .btn-plan-primary:hover { filter: brightness(1.1); transform: translateY(-1px); }
     .btn-plan-gold {
       background: linear-gradient(135deg, var(--amber), var(--amber-l));
-      border: none; color: #1a0e00;
-      box-shadow: 0 6px 20px var(--amber-glow);
+      border: none; color: #1a0e00; box-shadow: 0 6px 20px var(--amber-glow);
     }
     .btn-plan-gold:hover { filter: brightness(1.08); transform: translateY(-1px); }
 
-    /* ══════════════════════════════════════════
-       CTA SECTION
-    ══════════════════════════════════════════ */
     #cta {
       padding: 120px max(20px, calc((100% - 1200px)/2));
       text-align: center; position: relative; overflow: hidden;
@@ -793,9 +717,6 @@
     .cta-p { font-size: 17px; color: var(--txt2); max-width: 520px; margin: 0 auto 40px; position: relative; z-index: 1; }
     .cta-btns { display: flex; justify-content: center; gap: 12px; flex-wrap: wrap; position: relative; z-index: 1; }
 
-    /* ══════════════════════════════════════════
-       FOOTER
-    ══════════════════════════════════════════ */
     footer {
       padding: 60px max(20px, calc((100% - 1200px)/2)) 32px;
       border-top: 1px solid var(--border);
@@ -829,9 +750,6 @@
     }
     .footer-copy { font-size: 12px; color: var(--txt3); }
 
-    /* ══════════════════════════════════════════
-       MODAL — AUTH
-    ══════════════════════════════════════════ */
     .modal-bg {
       position: fixed; inset: 0; z-index: 500;
       background: rgba(5,4,12,0.85);
@@ -903,7 +821,7 @@
     .modal-link { color: var(--violet-ll); font-weight: 600; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; background: none; border: none; font-family: var(--font-body); font-size: 13px; }
 
     .error-msg {
-      display: none; padding: 10px 13px;
+      padding: 10px 13px;
       background: rgba(220,38,38,0.1); border: 1px solid rgba(220,38,38,0.28);
       border-radius: var(--r-xs); font-size: 12px; color: #fca5a5;
       display: flex; align-items: center; gap: 7px;
@@ -916,9 +834,28 @@
       display: flex; align-items: center; gap: 7px;
     }
 
-    /* ══════════════════════════════════════════
-       TOAST
-    ══════════════════════════════════════════ */
+    /* ── Unverified banner inside signin form ── */
+    #unverified-banner {
+      display: none;
+      padding: 12px 14px;
+      background: rgba(245,158,11,0.1); border: 1px solid rgba(245,158,11,0.3);
+      border-radius: var(--r-xs); font-size: 12px; color: var(--amber-ll);
+      align-items: flex-start; gap: 8px; flex-direction: column;
+      margin-top: 4px;
+    }
+    #unverified-banner.show { display: flex; }
+    .unverified-banner-top { display: flex; align-items: center; gap: 8px; }
+    #btn-unverified-resend {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 7px 14px; border-radius: 999px;
+      background: rgba(245,158,11,0.15); border: 1px solid rgba(245,158,11,0.35);
+      color: var(--amber-ll); font-size: 12px; font-weight: 700;
+      cursor: pointer; transition: all 0.15s; font-family: var(--font-body);
+      margin-top: 2px;
+    }
+    #btn-unverified-resend:hover { background: rgba(245,158,11,0.25); }
+    #btn-unverified-resend:disabled { opacity: 0.5; cursor: not-allowed; }
+
     #toast-root {
       position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
       z-index: 9999; display: flex; flex-direction: column; gap: 8px;
@@ -940,17 +877,9 @@
     @keyframes toastIn { from { opacity:0; transform:translateY(10px) scale(0.96); } to { opacity:1; transform:none; } }
     @keyframes toastOut { to { opacity:0; transform:translateY(8px) scale(0.96); } }
 
-    /* ══════════════════════════════════════════
-       SCROLL ANIMATIONS
-    ══════════════════════════════════════════ */
     .reveal { opacity: 0; transform: translateY(24px); transition: opacity 0.6s ease, transform 0.6s ease; }
     .reveal.visible { opacity: 1; transform: translateY(0); }
 
-
-
-    /* ══════════════════════════════════════════
-       BROKERS + TAX CALCULATOR + FAQ
-    ══════════════════════════════════════════ */
     #brokers {
       padding: 84px max(20px, calc((100% - 1200px)/2));
       border-top: 1px solid var(--border);
@@ -964,21 +893,15 @@
       margin-top: 18px;
     }
     .broker-chip {
-      background: var(--card);
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      padding: 12px;
-      display:flex;
-      align-items:center;
-      gap: 10px;
-      min-height: 54px;
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: 12px; padding: 12px;
+      display:flex; align-items:center; gap: 10px; min-height: 54px;
     }
     .broker-mark {
       width: 30px; height: 30px; border-radius: 9px;
       display:flex; align-items:center; justify-content:center;
       font-weight: 800; font-size: 12px; color: #fff;
-      font-family: var(--font-head);
-      flex-shrink: 0;
+      font-family: var(--font-head); flex-shrink: 0;
     }
     .bm-coinbase { background: linear-gradient(135deg,#2563eb,#3b82f6); }
     .bm-robinhood { background: linear-gradient(135deg,#16a34a,#22c55e); color:#04210f; }
@@ -986,66 +909,24 @@
     .bm-kraken { background: linear-gradient(135deg,#6d28d9,#8b5cf6); }
     .broker-name { font-size: 14px; font-weight: 700; }
 
-    #tax-calc {
-      padding: 84px max(20px, calc((100% - 1200px)/2));
-    }
+    #tax-calc { padding: 84px max(20px, calc((100% - 1200px)/2)); }
     .tax-calc-wrap {
-      display: grid;
-      grid-template-columns: 1fr;
-      gap: 18px;
-      max-width: 940px;
-      margin: 0 auto;
+      display: grid; grid-template-columns: 1fr; gap: 18px;
+      max-width: 940px; margin: 0 auto;
     }
     .tax-panel {
-      background: var(--card);
-      border: 1px solid var(--border);
-      border-radius: var(--r);
-      padding: 20px;
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: var(--r); padding: 20px;
     }
-    .tax-panel h3 {
-      font-family: var(--font-head);
-      font-size: clamp(24px, 5vw, 36px);
-      line-height: 1.1;
-      margin-bottom: 14px;
-    }
+    .tax-panel h3 { font-family: var(--font-head); font-size: clamp(24px, 5vw, 36px); line-height: 1.1; margin-bottom: 14px; }
     .tax-input { margin-bottom: 14px; }
-    .tax-input label {
-      display:flex; justify-content:space-between; align-items:center;
-      font-size: 13px; color: var(--txt2); margin-bottom: 8px;
-    }
+    .tax-input label { display:flex; justify-content:space-between; align-items:center; font-size: 13px; color: var(--txt2); margin-bottom: 8px; }
     .tax-input output { color: var(--txt); font-weight: 700; font-family: var(--font-mono); }
-    .tax-range {
-      width: 100%; appearance: none; height: 6px; border-radius: 999px;
-      background: rgba(255,255,255,0.14); outline: none;
-    }
-    .tax-range::-webkit-slider-thumb {
-      appearance: none; width: 18px; height: 18px; border-radius: 50%;
-      background: linear-gradient(135deg, var(--violet), var(--violet-l));
-      border: 2px solid #fff; box-shadow: 0 0 0 6px rgba(109,40,217,.2);
-      cursor: pointer;
-    }
-    .tax-select {
-      width: 100%;
-      background: rgba(5,4,12,.7);
-      border: 1px solid var(--border-h);
-      color: var(--txt);
-      border-radius: 10px;
-      padding: 10px 12px;
-      font-size: 14px;
-    }
-    .tax-output-card {
-      background: linear-gradient(145deg, rgba(109,40,217,.18), rgba(14,12,28,.8));
-      border: 1px solid rgba(109,40,217,.35);
-      border-radius: 14px;
-      padding: 16px;
-    }
-    .tax-big {
-      font-family: var(--font-head);
-      font-size: clamp(26px, 7vw, 40px);
-      color: var(--amber-ll);
-      line-height: 1.1;
-      margin-bottom: 8px;
-    }
+    .tax-range { width: 100%; appearance: none; height: 6px; border-radius: 999px; background: rgba(255,255,255,0.14); outline: none; }
+    .tax-range::-webkit-slider-thumb { appearance: none; width: 18px; height: 18px; border-radius: 50%; background: linear-gradient(135deg, var(--violet), var(--violet-l)); border: 2px solid #fff; box-shadow: 0 0 0 6px rgba(109,40,217,.2); cursor: pointer; }
+    .tax-select { width: 100%; background: rgba(5,4,12,.7); border: 1px solid var(--border-h); color: var(--txt); border-radius: 10px; padding: 10px 12px; font-size: 14px; }
+    .tax-output-card { background: linear-gradient(145deg, rgba(109,40,217,.18), rgba(14,12,28,.8)); border: 1px solid rgba(109,40,217,.35); border-radius: 14px; padding: 16px; }
+    .tax-big { font-family: var(--font-head); font-size: clamp(26px, 7vw, 40px); color: var(--amber-ll); line-height: 1.1; margin-bottom: 8px; }
     .tax-sub { color: var(--txt2); font-size: 14px; }
 
     #faq {
@@ -1055,42 +936,17 @@
     }
     .faq-head { text-align:center; margin-bottom: 22px; }
     .faq-wrap { max-width: 940px; margin: 0 auto; }
-    .faq-item {
-      background: var(--card);
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      margin-bottom: 10px;
-      overflow: hidden;
-    }
-    .faq-q {
-      width:100%;
-      border:0; background:none; color:var(--txt);
-      padding: 14px 16px;
-      display:flex; align-items:center; justify-content:space-between;
-      text-align:left; font-size:14px; font-weight:700;
-      cursor:pointer;
-    }
+    .faq-item { background: var(--card); border: 1px solid var(--border); border-radius: 12px; margin-bottom: 10px; overflow: hidden; }
+    .faq-q { width:100%; border:0; background:none; color:var(--txt); padding: 14px 16px; display:flex; align-items:center; justify-content:space-between; text-align:left; font-size:14px; font-weight:700; cursor:pointer; }
     .faq-q span:last-child { color: var(--txt2); transition: transform .2s ease; }
     .faq-item.open .faq-q span:last-child { transform: rotate(45deg); }
-    .faq-a {
-      max-height: 0;
-      overflow: hidden;
-      transition: max-height .25s ease;
-      color: var(--txt2);
-      font-size: 13px;
-      line-height: 1.7;
-      padding: 0 16px;
-    }
+    .faq-a { max-height: 0; overflow: hidden; transition: max-height .25s ease; color: var(--txt2); font-size: 13px; line-height: 1.7; padding: 0 16px; }
     .faq-item.open .faq-a { padding: 0 16px 14px; max-height: 220px; }
 
     @media (min-width: 900px) {
       .tax-calc-wrap { grid-template-columns: 1.1fr .9fr; }
     }
 
-
-    /* ══════════════════════════════════════════
-       RESPONSIVE
-    ══════════════════════════════════════════ */
     @media (max-width: 1024px) {
       .hero-inner { grid-template-columns: 1fr; gap: 48px; }
       .hero-visual { display: none; }
@@ -1119,156 +975,43 @@
       .modal-box { padding: 24px 20px; }
     }
 
-    /* ── SVG icon helper ── */
     svg { display: inline-block; vertical-align: middle; }
 
-    /* ══════════════════════════════════════════
-       TICKER TAPE
-    ══════════════════════════════════════════ */
     #ticker-wrap {
-      position: fixed;
-      top: 68px;
-      left: 0; right: 0;
-      z-index: 90;
-      background: rgba(7,5,16,0.96);
-      backdrop-filter: blur(16px);
-      -webkit-backdrop-filter: blur(16px);
-      border-bottom: 1px solid rgba(217,119,6,0.18);
-      overflow: hidden;
-      height: 40px;
-      display: flex;
-      align-items: center;
+      position: fixed; top: 68px; left: 0; right: 0; z-index: 90;
+      background: rgba(7,5,16,0.96); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+      border-bottom: 1px solid rgba(217,119,6,0.18); overflow: hidden; height: 40px;
+      display: flex; align-items: center;
     }
-
     .ticker-label {
-      flex-shrink: 0;
-      display: flex;
-      align-items: center;
-      gap: 7px;
-      padding: 0 16px;
-      border-right: 1px solid rgba(217,119,6,0.2);
-      height: 100%;
-      background: rgba(217,119,6,0.07);
-      font-size: 9.5px;
-      font-weight: 600;
-      letter-spacing: 0.16em;
-      color: var(--amber-l);
-      text-transform: uppercase;
-      font-family: 'IBM Plex Mono', var(--font-mono);
-      z-index: 2;
+      flex-shrink: 0; display: flex; align-items: center; gap: 7px; padding: 0 16px;
+      border-right: 1px solid rgba(217,119,6,0.2); height: 100%;
+      background: rgba(217,119,6,0.07); font-size: 9.5px; font-weight: 600;
+      letter-spacing: 0.16em; color: var(--amber-l); text-transform: uppercase;
+      font-family: 'IBM Plex Mono', var(--font-mono); z-index: 2;
     }
-
-    .ticker-live-dot {
-      width: 5px; height: 5px;
-      border-radius: 50%;
-      background: var(--amber-l);
-      animation: livePulse 1.8s ease-in-out infinite;
-      flex-shrink: 0;
-    }
-
+    .ticker-live-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--amber-l); animation: livePulse 1.8s ease-in-out infinite; flex-shrink: 0; }
     @keyframes livePulse {
       0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(245,158,11,0.5); }
       60%       { opacity: 0.6; box-shadow: 0 0 0 5px rgba(245,158,11,0); }
     }
-
-    .ticker-track-outer {
-      flex: 1;
-      overflow: hidden;
-      position: relative;
-      cursor: grab;
-    }
+    .ticker-track-outer { flex: 1; overflow: hidden; position: relative; cursor: grab; }
     .ticker-track-outer:active { cursor: grabbing; }
-
-    .ticker-track-outer::before,
-    .ticker-track-outer::after {
-      content: '';
-      position: absolute;
-      top: 0; bottom: 0;
-      width: 56px;
-      z-index: 2;
-      pointer-events: none;
-    }
-    .ticker-track-outer::before { left:0;  background: linear-gradient(to right, rgba(7,5,16,0.95), transparent); }
-    .ticker-track-outer::after  { right:0; background: linear-gradient(to left,  rgba(7,5,16,0.95), transparent); }
-
-    .ticker-track {
-      display: flex;
-      align-items: center;
-      white-space: nowrap;
-      will-change: transform;
-      user-select: none;
-      -webkit-user-select: none;
-    }
-
-    @keyframes tickerScroll {
-      0%   { transform: translateX(0); }
-      100% { transform: translateX(-50%); }
-    }
-
-    .ticker-item {
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
-      padding: 0 22px;
-      white-space: nowrap;
-      border-right: 1px solid rgba(255,255,255,0.05);
-      height: 40px;
-      transition: background 0.15s;
-    }
-
+    .ticker-track-outer::before, .ticker-track-outer::after { content: ''; position: absolute; top: 0; bottom: 0; width: 56px; z-index: 2; pointer-events: none; }
+    .ticker-track-outer::before { left:0; background: linear-gradient(to right, rgba(7,5,16,0.95), transparent); }
+    .ticker-track-outer::after  { right:0; background: linear-gradient(to left, rgba(7,5,16,0.95), transparent); }
+    .ticker-track { display: flex; align-items: center; white-space: nowrap; will-change: transform; user-select: none; -webkit-user-select: none; }
+    .ticker-item { display: inline-flex; align-items: center; gap: 8px; padding: 0 22px; white-space: nowrap; border-right: 1px solid rgba(255,255,255,0.05); height: 40px; transition: background 0.15s; }
     .ticker-item:hover { background: rgba(217,119,6,0.05); }
-
-    .ticker-icon {
-      width: 17px; height: 17px;
-      border-radius: 50%;
-      display: flex; align-items: center; justify-content: center;
-      font-size: 8.5px;
-      font-weight: 700;
-      flex-shrink: 0;
-      font-family: 'IBM Plex Mono', var(--font-mono);
-    }
-
-    .ticker-symbol {
-      font-family: 'IBM Plex Mono', var(--font-mono);
-      font-weight: 600;
-      font-size: 11px;
-      letter-spacing: 0.06em;
-      color: var(--amber-ll);
-    }
-
-    .ticker-price {
-      font-family: 'IBM Plex Mono', var(--font-mono);
-      font-weight: 400;
-      font-size: 11.5px;
-      color: rgba(245,244,255,0.75);
-      letter-spacing: 0.01em;
-    }
-
-    .ticker-change {
-      font-family: 'IBM Plex Mono', var(--font-mono);
-      font-size: 10px;
-      font-weight: 500;
-      padding: 2px 6px;
-      border-radius: 3px;
-      letter-spacing: 0.02em;
-    }
-
+    .ticker-icon { width: 17px; height: 17px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 8.5px; font-weight: 700; flex-shrink: 0; font-family: 'IBM Plex Mono', var(--font-mono); }
+    .ticker-symbol { font-family: 'IBM Plex Mono', var(--font-mono); font-weight: 600; font-size: 11px; letter-spacing: 0.06em; color: var(--amber-ll); }
+    .ticker-price { font-family: 'IBM Plex Mono', var(--font-mono); font-weight: 400; font-size: 11.5px; color: rgba(245,244,255,0.75); letter-spacing: 0.01em; }
+    .ticker-change { font-family: 'IBM Plex Mono', var(--font-mono); font-size: 10px; font-weight: 500; padding: 2px 6px; border-radius: 3px; letter-spacing: 0.02em; }
     .ticker-change.up   { color: #6ee7b7; background: rgba(16,185,129,0.1);  border: 1px solid rgba(16,185,129,0.15); }
     .ticker-change.down { color: #fca5a5; background: rgba(220,38,38,0.1);   border: 1px solid rgba(220,38,38,0.15); }
     .ticker-change.flat { color: rgba(245,244,255,0.3); background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06); }
-
-    /* Ticker skeleton shimmer while loading */
-    .ticker-shimmer {
-      display: flex; align-items: center; gap: 20px;
-      padding: 0 24px;
-    }
-    .shimmer-block {
-      width: 120px; height: 13px;
-      border-radius: 3px;
-      background: linear-gradient(90deg, rgba(217,119,6,0.07) 25%, rgba(217,119,6,0.12) 50%, rgba(217,119,6,0.07) 75%);
-      background-size: 200% 100%;
-      animation: shimmerSlide 1.8s infinite;
-    }
+    .ticker-shimmer { display: flex; align-items: center; gap: 20px; padding: 0 24px; }
+    .shimmer-block { width: 120px; height: 13px; border-radius: 3px; background: linear-gradient(90deg, rgba(217,119,6,0.07) 25%, rgba(217,119,6,0.12) 50%, rgba(217,119,6,0.07) 75%); background-size: 200% 100%; animation: shimmerSlide 1.8s infinite; }
     @keyframes shimmerSlide { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
   </style>
 </head>
@@ -1310,7 +1053,6 @@
   </button>
 </nav>
 
-<!-- Mobile drawer -->
 <div id="drawer-overlay" role="button" tabindex="-1" aria-label="Close menu"></div>
 <div id="mobile-drawer" role="dialog" aria-label="Navigation">
   <a href="#features" class="mobile-nav-link">Features</a>
@@ -1467,7 +1209,6 @@
             </div>
           </div>
         </div>
-
         <div class="hero-badge">
           <div class="badge-icon">&#128176;</div>
           <div>
@@ -1475,7 +1216,6 @@
             <div class="badge-sub">$1,240 opportunity in TSLA</div>
           </div>
         </div>
-
         <div class="hero-badge-right">
           <div class="badge-icon">&#128276;</div>
           <div>
@@ -1517,7 +1257,6 @@
     <h2 class="section-h">Everything to invest <span class="grad">smarter</span></h2>
     <p class="section-sub">One extension. Every market. Powered by Gemini AI to surface insights you'd otherwise miss.</p>
   </div>
-
   <div class="features-grid">
     <div class="feature-card">
       <div class="feat-icon feat-icon-v">&#129513;</div>
@@ -1600,17 +1339,13 @@
     <div style="width:1px;height:24px;background:var(--border);"></div>
     <span style="color:var(--txt2);font-size:13px;">Based on <strong style="color:var(--txt);">2,341 reviews</strong> across Chrome Web Store &amp; Product Hunt</span>
   </div>
-
   <div class="reviews-grid">
     <div class="review-card">
       <div class="stars">&#9733;&#9733;&#9733;&#9733;&#9733;</div>
       <p class="review-text">Skeptical at first — I've tried Kubera, Sharesight, all of them. But Purp's tax-loss harvesting found $3,100 in write-offs I completely missed. The subscription paid for itself in the first week.</p>
       <div class="reviewer">
         <div class="reviewer-av" style="background:linear-gradient(135deg,#7c3aed,#a78bfa)">RH</div>
-        <div>
-          <div class="reviewer-name">Ryan Harris</div>
-          <div class="reviewer-role">Software engineer, Austin TX · BTC, ETH, AAPL</div>
-        </div>
+        <div><div class="reviewer-name">Ryan Harris</div><div class="reviewer-role">Software engineer, Austin TX · BTC, ETH, AAPL</div></div>
         <span class="reviewer-platform">Chrome Web Store</span>
       </div>
     </div>
@@ -1619,10 +1354,7 @@
       <p class="review-text">When SOL dropped 14% last month the AI didn't just say "it's down." It explained the Binance outflow data, linked it to the macro move, and told me my position size was still within my own risk tolerance. Genuinely useful.</p>
       <div class="reviewer">
         <div class="reviewer-av" style="background:linear-gradient(135deg,#d97706,#fbbf24)">JW</div>
-        <div>
-          <div class="reviewer-name">Jake Williams</div>
-          <div class="reviewer-role">Day trader, Chicago IL · 18 assets tracked</div>
-        </div>
+        <div><div class="reviewer-name">Jake Williams</div><div class="reviewer-role">Day trader, Chicago IL · 18 assets tracked</div></div>
         <span class="reviewer-platform">Product Hunt</span>
       </div>
     </div>
@@ -1631,10 +1363,7 @@
       <p class="review-text">Imported 3 years of Robinhood and Fidelity history in under a minute. Every other app I tried either choked on the CSV or mangled my cost basis. This just worked, first try.</p>
       <div class="reviewer">
         <div class="reviewer-av" style="background:linear-gradient(135deg,#059669,#34d399)">AJ</div>
-        <div>
-          <div class="reviewer-name">Ashley Johnson</div>
-          <div class="reviewer-role">Financial analyst, Seattle WA · Fidelity + Robinhood</div>
-        </div>
+        <div><div class="reviewer-name">Ashley Johnson</div><div class="reviewer-role">Financial analyst, Seattle WA · Fidelity + Robinhood</div></div>
         <span class="reviewer-platform">Twitter / X</span>
       </div>
     </div>
@@ -1643,10 +1372,7 @@
       <p class="review-text">Really solid product. The HIFO cost basis method alone saves me hours every April. Only reason it's not 5 stars is I'd love a native iOS app — the mobile web version works but a dedicated app would be perfect.</p>
       <div class="reviewer">
         <div class="reviewer-av" style="background:linear-gradient(135deg,#dc2626,#f87171)">BM</div>
-        <div>
-          <div class="reviewer-name">Brian Miller</div>
-          <div class="reviewer-role">Small business owner, Denver CO · Tax Pro plan</div>
-        </div>
+        <div><div class="reviewer-name">Brian Miller</div><div class="reviewer-role">Small business owner, Denver CO · Tax Pro plan</div></div>
         <span class="reviewer-platform">Chrome Web Store</span>
       </div>
     </div>
@@ -1655,10 +1381,7 @@
       <p class="review-text">Been using it for four months. The AI knows I hold a lot of NVDA and gave me a rebalancing suggestion specific to my portfolio — not generic "diversify" advice. That kind of context is what I was paying a financial advisor for.</p>
       <div class="reviewer">
         <div class="reviewer-av" style="background:linear-gradient(135deg,#7c3aed,#ec4899)">ST</div>
-        <div>
-          <div class="reviewer-name">Sarah Thompson</div>
-          <div class="reviewer-role">Marketing manager, Nashville TN · crypto &amp; stocks</div>
-        </div>
+        <div><div class="reviewer-name">Sarah Thompson</div><div class="reviewer-role">Marketing manager, Nashville TN · crypto &amp; stocks</div></div>
         <span class="reviewer-platform">Product Hunt</span>
       </div>
     </div>
@@ -1667,10 +1390,7 @@
       <p class="review-text">Set a BTC price alert at $95k on a Friday night. Got the push notification at 11:42pm, literally seconds after it crossed. I've had alerts on Coinbase and Binance both fail to fire — this one was instant, every single time.</p>
       <div class="reviewer">
         <div class="reviewer-av" style="background:linear-gradient(135deg,#0284c7,#38bdf8)">KC</div>
-        <div>
-          <div class="reviewer-name">Kevin Clark</div>
-          <div class="reviewer-role">Investor, Phoenix AZ · 9 assets, 15 active alerts</div>
-        </div>
+        <div><div class="reviewer-name">Kevin Clark</div><div class="reviewer-role">Investor, Phoenix AZ · 9 assets, 15 active alerts</div></div>
         <span class="reviewer-platform">Chrome Web Store</span>
       </div>
     </div>
@@ -1733,8 +1453,6 @@
     <p class="section-sub">Start free and upgrade when you're ready. No hidden fees, no annual commitment.</p>
   </div>
   <div class="pricing-grid">
-
-    <!-- Free -->
     <div class="plan-card">
       <div class="plan-name">Free</div>
       <div class="plan-desc">Track your first positions, no card needed</div>
@@ -1754,8 +1472,6 @@
       </ul>
       <button class="btn-plan btn-plan-ghost" data-plan="free" onclick="openAuthModal('register')">Get started free</button>
     </div>
-
-    <!-- Investor -->
     <div class="plan-card featured">
       <div class="plan-badge-top">Most popular</div>
       <div class="plan-name">Investor</div>
@@ -1773,8 +1489,6 @@
       </ul>
       <button class="btn-plan btn-plan-primary" data-plan="investor" id="btn-plan-investor">Upgrade to Investor</button>
     </div>
-
-    <!-- Tax Pro -->
     <div class="plan-card">
       <div class="plan-badge-top" style="background:linear-gradient(135deg,var(--violet),var(--violet-l));color:#fff;box-shadow:0 4px 12px var(--glow);">Max savings</div>
       <div class="plan-name">Tax Pro</div>
@@ -1796,7 +1510,6 @@
   </div>
 </section>
 
-<!-- ════════ FAQ (after Pricing) ════════ -->
 <section id="faq">
   <div class="faq-head reveal">
     <span class="section-tag">FAQ</span>
@@ -1826,7 +1539,6 @@
   </div>
 </section>
 
-<!-- ════════ CTA ════════ -->
 <section id="cta">
   <div class="cta-orb"></div>
   <h2 class="cta-h">Ready to invest smarter?</h2>
@@ -1840,7 +1552,6 @@
   </div>
 </section>
 
-<!-- ════════ FOOTER ════════ -->
 <footer>
   <div class="footer-top">
     <div class="footer-brand">
@@ -1903,9 +1614,19 @@
         <div id="signin-error" class="error-msg hidden">
           <span>&#9888;</span><span id="signin-error-msg">Error</span>
         </div>
+        <!-- ✦ Unverified email banner — shown when user tries to login without verifying -->
+        <div id="unverified-banner">
+          <div class="unverified-banner-top">
+            <span>📧</span>
+            <span id="unverified-banner-msg">Your email is not yet verified. Check your inbox or resend the code.</span>
+          </div>
+          <button id="btn-unverified-resend" type="button">
+            ↻ Resend verification email
+          </button>
+        </div>
         <div class="form-field">
-          <label class="form-label" for="signin-username">Username</label>
-          <input class="form-input" type="text" id="signin-username" placeholder="your username" autocomplete="username" />
+          <label class="form-label" for="signin-email">Email</label>
+          <input class="form-input" type="email" id="signin-email" placeholder="you@email.com" autocomplete="email" />
         </div>
         <div class="form-field">
           <label class="form-label" for="signin-password">Password</label>
@@ -1927,8 +1648,8 @@
           <span>&#9888;</span><span id="register-error-msg">Error</span>
         </div>
         <div class="form-field">
-          <label class="form-label" for="reg-username">Username</label>
-          <input class="form-input" type="text" id="reg-username" placeholder="choose a username" autocomplete="username" />
+          <label class="form-label" for="reg-full-name">Full name</label>
+          <input class="form-input" type="text" id="reg-full-name" placeholder="your full name" autocomplete="name" />
         </div>
         <div class="form-field">
           <label class="form-label" for="reg-email">Email</label>
@@ -1945,7 +1666,6 @@
   </div>
 </div>
 
-<!-- ════════ TOAST ROOT ════════ -->
 <div id="toast-root" aria-live="polite"></div>
 
 <!-- ════════ JAVASCRIPT ════════ -->
@@ -1964,20 +1684,20 @@
   ];
 
   const STOCK_LIST = [
-    { sym:'AAPL',  name:'Apple',     icon:'',  color:'#a8b0be', bg:'rgba(168,176,190,0.15)' },
-    { sym:'TSLA',  name:'Tesla',     icon:'',  color:'#e31937', bg:'rgba(227,25,55,0.15)'   },
-    { sym:'NVDA',  name:'Nvidia',    icon:'',  color:'#76b900', bg:'rgba(118,185,0,0.15)'   },
-    { sym:'MSFT',  name:'Microsoft', icon:'',  color:'#00a4ef', bg:'rgba(0,164,239,0.15)'   },
-    { sym:'AMZN',  name:'Amazon',    icon:'',  color:'#ff9900', bg:'rgba(255,153,0,0.15)'   },
-    { sym:'GOOGL', name:'Alphabet',  icon:'',  color:'#4285f4', bg:'rgba(66,133,244,0.15)'  },
-    { sym:'META',  name:'Meta',      icon:'',  color:'#0082fb', bg:'rgba(0,130,251,0.15)'   },
-    { sym:'JPM',   name:'JPMorgan',  icon:'',  color:'#005eb8', bg:'rgba(0,94,184,0.18)'    },
-    { sym:'V',     name:'Visa',      icon:'',  color:'#7673c0', bg:'rgba(118,115,192,0.18)' },
+    { sym:'AAPL',  name:'Apple',     color:'#a8b0be', bg:'rgba(168,176,190,0.15)' },
+    { sym:'TSLA',  name:'Tesla',     color:'#e31937', bg:'rgba(227,25,55,0.15)'   },
+    { sym:'NVDA',  name:'Nvidia',    color:'#76b900', bg:'rgba(118,185,0,0.15)'   },
+    { sym:'MSFT',  name:'Microsoft', color:'#00a4ef', bg:'rgba(0,164,239,0.15)'   },
+    { sym:'AMZN',  name:'Amazon',    color:'#ff9900', bg:'rgba(255,153,0,0.15)'   },
+    { sym:'GOOGL', name:'Alphabet',  color:'#4285f4', bg:'rgba(66,133,244,0.15)'  },
+    { sym:'META',  name:'Meta',      color:'#0082fb', bg:'rgba(0,130,251,0.15)'   },
+    { sym:'JPM',   name:'JPMorgan',  color:'#005eb8', bg:'rgba(0,94,184,0.18)'    },
+    { sym:'V',     name:'Visa',      color:'#7673c0', bg:'rgba(118,115,192,0.18)' },
   ].filter((s, i, a) => a.findIndex(x => x.sym === s.sym) === i);
 
   const FALLBACK = {
     BTC:96400, ETH:2650, SOL:178, BNB:605, XRP:2.58, ADA:0.82, DOGE:0.21, AVAX:29, LINK:16, DOT:7.2,
-    AAPL:228,  TSLA:365, NVDA:131, MSFT:420, AMZN:225, GOOGL:182, META:710, JPM:280, V:362,
+    AAPL:228, TSLA:365, NVDA:131, MSFT:420, AMZN:225, GOOGL:182, META:710, JPM:280, V:362,
   };
 
   const SESSION_SEEDS = {};
@@ -1986,9 +1706,7 @@
     return SESSION_SEEDS[sym];
   }
 
-  let tickerData  = {};
-  let tickerReady = false;
-  let tickerDur   = 26;
+  let tickerData = {}, tickerReady = false, tickerDur = 26;
 
   function fmtPrice(p) {
     if (!p || isNaN(p)) return '—';
@@ -1997,18 +1715,15 @@
     if (p >= 1)     return '$' + p.toFixed(3);
     return '$' + p.toFixed(5);
   }
-
   function fmtPct(pct) {
     if (isNaN(pct)) return '0.00%';
-    const sign = pct >= 0 ? '+' : '';
-    return sign + pct.toFixed(2) + '%';
+    return (pct >= 0 ? '+' : '') + pct.toFixed(2) + '%';
   }
 
   function buildTickerItems(items) {
     return items.map(item => {
-      const d = tickerData[item.sym];
-      if (!d) return '';
-      const dir   = d.changePercent > 0.04 ? 'up' : d.changePercent < -0.04 ? 'down' : 'flat';
+      const d = tickerData[item.sym]; if (!d) return '';
+      const dir = d.changePercent > 0.04 ? 'up' : d.changePercent < -0.04 ? 'down' : 'flat';
       const arrow = dir === 'up' ? '▲' : dir === 'down' ? '▼' : '—';
       const label = item.icon || item.sym.slice(0, 3);
       return `<div class="ticker-item" data-sym="${item.sym}">` +
@@ -2023,72 +1738,46 @@
   function renderTicker() {
     const allItems = [...CRYPTO_LIST, ...STOCK_LIST].filter(item => tickerData[item.sym]);
     if (!allItems.length) return;
-    const track   = document.getElementById('ticker-track');
+    const track = document.getElementById('ticker-track');
     const loading = document.getElementById('ticker-loading');
-    const html    = buildTickerItems(allItems);
+    const html = buildTickerItems(allItems);
     track.innerHTML = html + html;
-    const halfPx  = allItems.length * 180;
-    tickerDur = Math.max(32, Math.round(halfPx / 55));
+    tickerDur = Math.max(32, Math.round(allItems.length * 180 / 55));
     if (!tickerReady) {
-      loading.style.display = 'none';
-      track.style.display   = 'flex';
-      tickerReady = true;
-      initTickerDrag(track);
+      loading.style.display = 'none'; track.style.display = 'flex';
+      tickerReady = true; initTickerDrag(track);
     }
   }
 
   function patchTickerDOM() {
     document.querySelectorAll('#ticker-track .ticker-item').forEach(el => {
-      const d = tickerData[el.dataset.sym];
-      if (!d) return;
-      const dir   = d.changePercent > 0.04 ? 'up' : d.changePercent < -0.04 ? 'down' : 'flat';
+      const d = tickerData[el.dataset.sym]; if (!d) return;
+      const dir = d.changePercent > 0.04 ? 'up' : d.changePercent < -0.04 ? 'down' : 'flat';
       const arrow = dir === 'up' ? '▲' : dir === 'down' ? '▼' : '—';
-      const pEl   = el.querySelector('.ticker-price');
-      const cEl   = el.querySelector('.ticker-change');
+      const pEl = el.querySelector('.ticker-price'), cEl = el.querySelector('.ticker-change');
       if (pEl) pEl.textContent = fmtPrice(d.price);
       if (cEl) { cEl.textContent = `${arrow} ${fmtPct(d.changePercent)}`; cEl.className = `ticker-change ${dir}`; }
     });
   }
 
   function initTickerDrag(track) {
-    const outer     = track.parentElement;
+    const outer = track.parentElement;
     const AUTO_SPEED = -(track.scrollWidth / 2) / (tickerDur * 60);
-    const FRICTION  = 0.88;
-    const BLEND     = 0.045;
-    let pos = 0, vel = AUTO_SPEED, dragging = false;
-    let startX = 0, lastX = 0, lastT = 0;
-
+    const FRICTION = 0.88, BLEND = 0.045;
+    let pos = 0, vel = AUTO_SPEED, dragging = false, startX = 0, lastX = 0, lastT = 0;
     function halfW() { return track.scrollWidth / 2; }
-    function wrap(x) {
-      const h = halfW();
-      if (x > 0)  return x - h;
-      if (x < -h) return x + h;
-      return x;
-    }
+    function wrap(x) { const h = halfW(); if (x > 0) return x - h; if (x < -h) return x + h; return x; }
     function loop() {
-      if (!dragging) {
-        vel += (AUTO_SPEED - vel) * BLEND;
-        if (vel > 0) vel *= FRICTION;
-      }
-      pos = wrap(pos + vel);
-      track.style.transform = `translateX(${pos}px)`;
+      if (!dragging) { vel += (AUTO_SPEED - vel) * BLEND; if (vel > 0) vel *= FRICTION; }
+      pos = wrap(pos + vel); track.style.transform = `translateX(${pos}px)`;
       requestAnimationFrame(loop);
     }
-    track.style.animation = 'none';
-    loop();
-
+    track.style.animation = 'none'; loop();
     function onStart(x) { dragging = true; startX = lastX = x; lastT = Date.now(); vel = 0; outer.style.cursor = 'grabbing'; }
-    function onMove(x) {
-      if (!dragging) return;
-      const now = Date.now(), dt = Math.max(1, now - lastT);
-      vel  = (x - lastX) / dt * (1000 / 60);
-      pos  = wrap(pos + (x - lastX));
-      lastX = x; lastT = now;
-    }
+    function onMove(x) { if (!dragging) return; const now = Date.now(), dt = Math.max(1, now - lastT); vel = (x - lastX) / dt * (1000/60); pos = wrap(pos + (x-lastX)); lastX = x; lastT = now; }
     function onEnd() { if (!dragging) return; dragging = false; outer.style.cursor = 'grab'; }
-
     outer.addEventListener('mousedown', e => { onStart(e.clientX); e.preventDefault(); });
-    window.addEventListener('mousemove', e => { onMove(e.clientX); });
+    window.addEventListener('mousemove', e => onMove(e.clientX));
     window.addEventListener('mouseup', onEnd);
     outer.addEventListener('touchstart', e => { if (e.touches.length === 1) onStart(e.touches[0].clientX); }, { passive: true });
     outer.addEventListener('touchmove', e => { if (!dragging) return; onMove(e.touches[0].clientX); e.preventDefault(); }, { passive: false });
@@ -2099,45 +1788,29 @@
   async function fetchCrypto() {
     const ids = CRYPTO_LIST.map(c => c.id).join(',');
     try {
-      const res  = await fetch(`https://api.coingecko.com/api/v3/simple/price?ids=${ids}&vs_currencies=usd&include_24hr_change=true`, { signal: AbortSignal.timeout(9000) });
+      const res = await fetch(`https://api.coingecko.com/api/v3/simple/price?ids=${ids}&vs_currencies=usd&include_24hr_change=true`, { signal: AbortSignal.timeout(9000) });
       if (!res.ok) throw new Error();
       const json = await res.json();
-      CRYPTO_LIST.forEach(c => {
-        const row = json[c.id];
-        if (row?.usd) tickerData[c.sym] = { price: row.usd, changePercent: row.usd_24h_change ?? 0 };
-      });
+      CRYPTO_LIST.forEach(c => { const row = json[c.id]; if (row?.usd) tickerData[c.sym] = { price: row.usd, changePercent: row.usd_24h_change ?? 0 }; });
     } catch {
-      CRYPTO_LIST.forEach(c => {
-        if (!tickerData[c.sym] && FALLBACK[c.sym]) {
-          const s = getSessionSeed(c.sym);
-          tickerData[c.sym] = { price: FALLBACK[c.sym] * (1 + s / 100), changePercent: s };
-        }
-      });
+      CRYPTO_LIST.forEach(c => { if (!tickerData[c.sym] && FALLBACK[c.sym]) { const s = getSessionSeed(c.sym); tickerData[c.sym] = { price: FALLBACK[c.sym] * (1 + s/100), changePercent: s }; } });
     }
   }
 
   async function fetchStocks() {
-    const syms  = STOCK_LIST.map(s => s.sym).join(',');
+    const syms = STOCK_LIST.map(s => s.sym).join(',');
     const proxy = `https://corsproxy.io/?url=${encodeURIComponent(`https://query1.finance.yahoo.com/v8/finance/spark?symbols=${syms}&range=1d&interval=1d`)}`;
     try {
-      const res  = await fetch(proxy, { signal: AbortSignal.timeout(10000) });
+      const res = await fetch(proxy, { signal: AbortSignal.timeout(10000) });
       if (!res.ok) throw new Error();
       const json = await res.json();
       STOCK_LIST.forEach(s => {
-        const row = json[s.sym];
-        if (!row) return;
-        const closes = row.close || [];
-        const price  = closes[closes.length - 1];
-        const prev   = row.previousClose || closes[0] || price;
-        if (price) tickerData[s.sym] = { price, changePercent: prev ? ((price - prev) / prev) * 100 : 0 };
+        const row = json[s.sym]; if (!row) return;
+        const closes = row.close || [], price = closes[closes.length-1], prev = row.previousClose || closes[0] || price;
+        if (price) tickerData[s.sym] = { price, changePercent: prev ? ((price-prev)/prev)*100 : 0 };
       });
     } catch {
-      STOCK_LIST.forEach(s => {
-        if (!tickerData[s.sym] && FALLBACK[s.sym]) {
-          const seed = getSessionSeed(s.sym);
-          tickerData[s.sym] = { price: FALLBACK[s.sym] * (1 + seed / 100), changePercent: seed };
-        }
-      });
+      STOCK_LIST.forEach(s => { if (!tickerData[s.sym] && FALLBACK[s.sym]) { const seed = getSessionSeed(s.sym); tickerData[s.sym] = { price: FALLBACK[s.sym] * (1 + seed/100), changePercent: seed }; } });
     }
   }
 
@@ -2148,25 +1821,33 @@
   }
   initTicker();
 
-  /* ── CONFIG ── */
+  /* ════════════════════════════════════
+     CONFIG — ✦ FIX: STORAGE_TOKEN alinhado com _base.js
+  ════════════════════════════════════ */
   const CONFIG = {
     API_BASE:      'https://purp-production.up.railway.app',
-    ENDPOINTS: { register: '/auth/register', login: '/auth/login', me: '/auth/me', checkout: '/stripe/create-checkout' },
+    ENDPOINTS: { register: '/auth/register', login: '/auth/login', me: '/auth/me', checkout: '/stripe/create-checkout', resend: '/auth/resend-verification' },
     TOKEN_KEY:     'token',
     AUTH_HEADER:   'X-Auth-Token',
     AUTH_PREFIX:   '',
-    STORAGE_TOKEN: 'purp_token',
+    /* ✦ CORRIGIDO: era 'purp_token', agora alinhado com _base.js */
+    STORAGE_TOKEN: 'auth_token',
     STORAGE_USER:  'purp_user',
-    MIN_USERNAME:  3,
+    MIN_FULL_NAME: 3,
     MIN_PASSWORD:  6,
   };
 
   function apiUrl(key) { return CONFIG.API_BASE + CONFIG.ENDPOINTS[key]; }
-  function authHeaders(token) { return { 'Content-Type': 'application/json', [CONFIG.AUTH_HEADER]: CONFIG.AUTH_PREFIX + token }; }
+  function hdrs(token) { return { 'Content-Type': 'application/json', [CONFIG.AUTH_HEADER]: CONFIG.AUTH_PREFIX + (token||'') }; }
 
   let authToken = localStorage.getItem(CONFIG.STORAGE_TOKEN) || null;
   let currentUser = null;
   try { currentUser = JSON.parse(localStorage.getItem(CONFIG.STORAGE_USER) || 'null'); } catch(_) {}
+
+  /* pending_token: guardado temporariamente quando login retorna não-verificado sem token */
+  let _pendingVerifyToken = null;
+  let _pendingVerifyEmail = null;
+  let _unverifiedResendTimer = null;
 
   function toast(msg, type = 'info', ms = 3800) {
     const icons = { success:'✓', error:'✕', info:'ℹ' };
@@ -2181,7 +1862,7 @@
   window.addEventListener('scroll', () => { nav.classList.toggle('scrolled', window.scrollY > 10); }, { passive: true });
 
   const hamburger = document.getElementById('hamburger');
-  const drawer = document.getElementById('mobile-drawer');
+  const drawer    = document.getElementById('mobile-drawer');
   const drawerOverlay = document.getElementById('drawer-overlay');
 
   function toggleDrawer(force) {
@@ -2199,8 +1880,7 @@
 
   document.querySelectorAll('a[href^="#"]').forEach(a => {
     a.addEventListener('click', e => {
-      const id = a.getAttribute('href');
-      if (id === '#') return;
+      const id = a.getAttribute('href'); if (id === '#') return;
       const el = document.querySelector(id);
       if (el) { e.preventDefault(); el.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
     });
@@ -2216,10 +1896,7 @@
 
   const revealObs = new IntersectionObserver((entries) => {
     entries.forEach(e => {
-      if (e.isIntersecting) {
-        setTimeout(() => e.target.classList.add('visible'), +(e.target.dataset.delay || 0));
-        revealObs.unobserve(e.target);
-      }
+      if (e.isIntersecting) { setTimeout(() => e.target.classList.add('visible'), +(e.target.dataset.delay || 0)); revealObs.unobserve(e.target); }
     });
   }, { threshold: 0.1, rootMargin: '0px 0px -40px 0px' });
 
@@ -2232,16 +1909,12 @@
   document.querySelectorAll('.stat-num[data-target]').forEach(el => counterObs.observe(el));
 
   function animateCounter(el) {
-    const target = parseFloat(el.dataset.target);
-    const suffix = el.dataset.suffix || '';
-    const duration = 1800;
-    const start = performance.now();
+    const target = parseFloat(el.dataset.target), suffix = el.dataset.suffix || '';
+    const duration = 1800, start = performance.now();
     function step(now) {
-      const p = Math.min((now - start) / duration, 1);
-      const eased = 1 - Math.pow(1 - p, 3);
-      const val = target * eased;
+      const p = Math.min((now - start) / duration, 1), eased = 1 - Math.pow(1-p, 3), val = target * eased;
       let display;
-      if (target >= 1000000) display = '$' + (val / 1000000).toFixed(1) + 'M+';
+      if (target >= 1000000) display = '$' + (val/1000000).toFixed(1) + 'M+';
       else if (target >= 1000) display = Math.round(val).toLocaleString() + suffix;
       else if (Number.isInteger(target)) display = Math.round(val) + suffix;
       else display = val.toFixed(1) + suffix;
@@ -2256,15 +1929,25 @@
     const userBtn  = document.getElementById('nav-user-btn');
     if (currentUser && authToken) {
       authBtns.classList.add('hidden'); userBtn.classList.remove('hidden');
-      document.getElementById('nav-username').textContent = currentUser.username;
-      document.getElementById('nav-avatar-letter').textContent = currentUser.username.charAt(0).toUpperCase();
+      document.getElementById('nav-username').textContent = currentUser.full_name || currentUser.username || 'User';
+      document.getElementById('nav-avatar-letter').textContent = (currentUser.full_name || currentUser.username || 'U').charAt(0).toUpperCase();
     } else {
       authBtns.classList.remove('hidden'); userBtn.classList.add('hidden');
     }
   }
 
-  function saveSession(token, user) { authToken = token; currentUser = user; localStorage.setItem(CONFIG.STORAGE_TOKEN, token); localStorage.setItem(CONFIG.STORAGE_USER, JSON.stringify(user)); updateAuthUI(); }
-  function clearSession() { authToken = null; currentUser = null; localStorage.removeItem(CONFIG.STORAGE_TOKEN); localStorage.removeItem(CONFIG.STORAGE_USER); updateAuthUI(); }
+  function saveSession(token, user) {
+    authToken = token; currentUser = user;
+    localStorage.setItem(CONFIG.STORAGE_TOKEN, token);
+    localStorage.setItem(CONFIG.STORAGE_USER, JSON.stringify(user));
+    updateAuthUI();
+  }
+  function clearSession() {
+    authToken = null; currentUser = null;
+    localStorage.removeItem(CONFIG.STORAGE_TOKEN);
+    localStorage.removeItem(CONFIG.STORAGE_USER);
+    updateAuthUI();
+  }
 
   if (authToken) {
     fetch(apiUrl('me'), { headers: { [CONFIG.AUTH_HEADER]: CONFIG.AUTH_PREFIX + authToken } })
@@ -2278,88 +1961,235 @@
     if (!currentUser) return;
     if (!window.__logoutPending) {
       window.__logoutPending = true;
-      toast(`Tap again to sign out of <b>${currentUser.username}</b>`, 'info', 2800);
+      toast(`Tap again to sign out of ${currentUser.full_name || currentUser.username}`, 'info', 2800);
       setTimeout(() => { window.__logoutPending = false; }, 2800);
     } else {
       window.__logoutPending = false; clearSession(); toast('Signed out successfully', 'info');
     }
   });
 
+  /* ════ AUTH MODAL ════ */
   const authModal = document.getElementById('auth-modal');
+
   function openAuthModal(mode = 'signin') {
     authModal.classList.add('open'); switchForm(mode); document.body.style.overflow = 'hidden';
+    hideUnverifiedBanner();
     setTimeout(() => { const first = authModal.querySelector(`#form-${mode} input`); if (first) first.focus(); }, 260);
   }
   function closeAuthModal() {
     authModal.classList.remove('open'); document.body.style.overflow = '';
     ['signin-error','register-error'].forEach(id => document.getElementById(id).classList.add('hidden'));
+    hideUnverifiedBanner();
   }
   function switchForm(mode) {
     document.getElementById('form-signin').classList.toggle('hidden', mode !== 'signin');
     document.getElementById('form-register').classList.toggle('hidden', mode !== 'register');
+    hideUnverifiedBanner();
   }
 
   authModal.addEventListener('click', e => { if (e.target === authModal) closeAuthModal(); });
   document.getElementById('modal-close-btn').addEventListener('click', closeAuthModal);
   document.addEventListener('keydown', e => { if (e.key === 'Escape') closeAuthModal(); });
 
-  ['btn-signin','mobile-signin'].forEach(id => { const el = document.getElementById(id); if (el) el.addEventListener('click', () => { toggleDrawer(false); openAuthModal('signin'); }); });
+  ['btn-signin','mobile-signin'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener('click', () => { toggleDrawer(false); openAuthModal('signin'); });
+  });
   ['btn-nav-start','btn-hero-start','btn-cta-start','mobile-start'].forEach(id => {
     const el = document.getElementById(id);
-    if (el) el.addEventListener('click', () => { toggleDrawer(false); if (currentUser) { toast("You're already signed in! 🎉", 'success'); return; } openAuthModal('register'); });
+    if (el) el.addEventListener('click', () => {
+      toggleDrawer(false);
+      if (currentUser) { toast("You're already signed in! 🎉", 'success'); return; }
+      openAuthModal('register');
+    });
   });
 
-  function showFieldError(containerId, msgId, msg) { document.getElementById(containerId).classList.remove('hidden'); document.getElementById(msgId).textContent = msg; }
+  /* ════ UNVERIFIED BANNER ════ */
+  function showUnverifiedBanner(email, token) {
+    _pendingVerifyToken = token || null;
+    _pendingVerifyEmail = email || null;
+    const banner = document.getElementById('unverified-banner');
+    const signinErr = document.getElementById('signin-error');
+    if (signinErr) signinErr.classList.add('hidden');
+    if (banner) banner.classList.add('show');
+  }
+  function hideUnverifiedBanner() {
+    const banner = document.getElementById('unverified-banner');
+    if (banner) banner.classList.remove('show');
+    if (_unverifiedResendTimer) { clearInterval(_unverifiedResendTimer); _unverifiedResendTimer = null; }
+  }
+
+  document.getElementById('btn-unverified-resend')?.addEventListener('click', async () => {
+    const btn = document.getElementById('btn-unverified-resend');
+    const email = _pendingVerifyEmail || document.getElementById('signin-email').value.trim().toLowerCase();
+    if (!email) { toast('Enter your email first and try again.', 'info'); return; }
+
+    btn.disabled = true; btn.textContent = '↻ Sending…';
+
+    try {
+      // Try to resend via token if available, else via email param
+      const headers = _pendingVerifyToken
+        ? { [CONFIG.AUTH_HEADER]: CONFIG.AUTH_PREFIX + _pendingVerifyToken }
+        : { 'Content-Type': 'application/json' };
+      const body = !_pendingVerifyToken ? JSON.stringify({ email }) : undefined;
+      const res = await fetch(apiUrl('resend'), { method: 'POST', headers, body });
+      const data = await res.json().catch(() => ({}));
+
+      if (res.ok) {
+        toast('Verification email sent! Check your inbox.', 'success', 4500);
+        // If we have a token, open the verify modal directly
+        if (_pendingVerifyToken) {
+          closeAuthModal();
+          openVerifyModal(_pendingVerifyToken, email, (verifiedUser) => {
+            saveSession(authToken || _pendingVerifyToken, { ...currentUser, ...verifiedUser, is_verified: true });
+            toast(`Welcome to Purp! 🎉`, 'success');
+            goToHomeDashboard();
+          });
+          return;
+        }
+        // Start cooldown
+        let secs = 60;
+        btn.textContent = `Resend in ${secs}s`;
+        if (_unverifiedResendTimer) clearInterval(_unverifiedResendTimer);
+        _unverifiedResendTimer = setInterval(() => {
+          secs--;
+          btn.textContent = `Resend in ${secs}s`;
+          if (secs <= 0) {
+            clearInterval(_unverifiedResendTimer);
+            btn.disabled = false;
+            btn.textContent = '↻ Resend verification email';
+          }
+        }, 1000);
+      } else {
+        toast(data.detail || 'Could not send email. Try again.', 'error');
+        btn.disabled = false;
+        btn.textContent = '↻ Resend verification email';
+      }
+    } catch {
+      toast('Connection error. Please try again.', 'error');
+      btn.disabled = false;
+      btn.textContent = '↻ Resend verification email';
+    }
+  });
+
+  function showFieldError(containerId, msgId, msg) {
+    document.getElementById(containerId).classList.remove('hidden');
+    document.getElementById(msgId).textContent = msg;
+  }
   function isValidEmail(v) { return /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(v); }
 
+  function goToHomeDashboard() { window.location.href = '/home'; }
+
+  /* ════ SIGN IN ════ */
   async function handleSignIn() {
-    const username = document.getElementById('signin-username').value.trim();
+    const email    = document.getElementById('signin-email').value.trim().toLowerCase();
     const password = document.getElementById('signin-password').value;
     const btn      = document.getElementById('btn-do-signin');
     document.getElementById('signin-error').classList.add('hidden');
-    if (!username) { showFieldError('signin-error','signin-error-msg','Username is required'); return; }
+    hideUnverifiedBanner();
+
+    if (!email) { showFieldError('signin-error','signin-error-msg','Email is required'); return; }
     if (!password) { showFieldError('signin-error','signin-error-msg','Password is required'); return; }
+
     btn.disabled = true; btn.textContent = 'Signing in…';
+
     try {
-      const res  = await fetch(apiUrl('login'), { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ username, password }) });
+      const res  = await fetch(apiUrl('login'), { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ email, password }) });
       const data = await res.json().catch(() => ({}));
+
       if (res.ok) {
         const token = data[CONFIG.TOKEN_KEY] || data.token || data.access_token;
-        const user  = data.user || { username };
+        const user  = data.user || { email };
         if (!token) throw new Error('No token');
         saveSession(token, user);
-        if (data.requires_verification) { closeAuthModal(); document.getElementById('signin-password').value = ''; openVerifyModal(token, user.email || '', (v) => { saveSession(authToken, {...currentUser,...v,is_verified:true}); toast(`Welcome back, ${currentUser.username}! 👋`, 'success'); }); return; }
-        closeAuthModal(); document.getElementById('signin-password').value = ''; toast(`Welcome back, ${user.username}! 👋`, 'success');
-      } else { showFieldError('signin-error','signin-error-msg', data.detail || data.message || 'Incorrect username or password'); }
-    } catch { showFieldError('signin-error','signin-error-msg','Connection error. Please try again.'); }
-    finally { btn.disabled = false; btn.textContent = 'Sign in to Purp'; }
+
+        // ✦ Requires email verification → open verify modal
+        if (data.requires_verification) {
+          closeAuthModal();
+          document.getElementById('signin-password').value = '';
+          openVerifyModal(token, user.email || email, (v) => {
+            saveSession(authToken, { ...currentUser, ...v, is_verified: true });
+            toast(`Welcome back, ${currentUser.full_name || currentUser.username}! 👋`, 'success');
+            goToHomeDashboard();
+          });
+          return;
+        }
+
+        closeAuthModal();
+        document.getElementById('signin-password').value = '';
+        toast(`Welcome back, ${user.full_name || user.username}! 👋`, 'success');
+        goToHomeDashboard();
+
+      } else {
+        // ✦ FIX: Detect unverified email response (403 or message containing "verif")
+        const errMsg    = data.detail || data.message || '';
+        const errToken  = data.token  || data.access_token || null;
+        const isUnverif = res.status === 403 ||
+                          errMsg.toLowerCase().includes('verif') ||
+                          errMsg.toLowerCase().includes('confirm') ||
+                          data.requires_verification === true;
+
+        if (isUnverif) {
+          // If backend provides token even on 403 (some implementations do), store it
+          if (errToken) { saveSession(errToken, data.user || { email }); }
+          showUnverifiedBanner(email, errToken);
+          return;
+        }
+
+        showFieldError('signin-error','signin-error-msg', errMsg || 'Incorrect email or password');
+      }
+    } catch {
+      showFieldError('signin-error','signin-error-msg','Connection error. Please try again.');
+    } finally {
+      btn.disabled = false; btn.textContent = 'Sign in to Purp';
+    }
   }
 
+  /* ════ REGISTER ════ */
   async function handleRegister() {
-    const username = document.getElementById('reg-username').value.trim();
+    const fullName = document.getElementById('reg-full-name').value.trim();
     const email    = document.getElementById('reg-email').value.trim();
     const password = document.getElementById('reg-password').value;
     const btn      = document.getElementById('btn-do-register');
     document.getElementById('register-error').classList.add('hidden');
-    if (!username) { showFieldError('register-error','register-error-msg','Username is required'); return; }
-    if (username.length < CONFIG.MIN_USERNAME) { showFieldError('register-error','register-error-msg',`Username must be at least ${CONFIG.MIN_USERNAME} characters`); return; }
+
+    if (!fullName) { showFieldError('register-error','register-error-msg','Full name is required'); return; }
+    if (fullName.length < CONFIG.MIN_FULL_NAME) { showFieldError('register-error','register-error-msg',`Full name must be at least ${CONFIG.MIN_FULL_NAME} characters`); return; }
     if (!email || !isValidEmail(email)) { showFieldError('register-error','register-error-msg','Please enter a valid email address'); return; }
     if (!password || password.length < CONFIG.MIN_PASSWORD) { showFieldError('register-error','register-error-msg',`Password must be at least ${CONFIG.MIN_PASSWORD} characters`); return; }
+
     btn.disabled = true; btn.textContent = 'Creating account…';
+
     try {
-      const res  = await fetch(apiUrl('register'), { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ username, email, password }) });
+      const res  = await fetch(apiUrl('register'), { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ full_name: fullName, email, password }) });
       const data = await res.json().catch(() => ({}));
+
       if (res.ok) {
         const token = data[CONFIG.TOKEN_KEY] || data.token || data.access_token;
-        const user  = data.user || { username, email };
+        const user  = data.user || { full_name: fullName, email };
         if (!token) throw new Error('No token');
-        saveSession(token, user); closeAuthModal();
-        ['reg-username','reg-email','reg-password'].forEach(id => { document.getElementById(id).value = ''; });
-        if (data.requires_verification) { openVerifyModal(token, email, (v) => { saveSession(authToken, {...currentUser,...v,is_verified:true}); toast(`Account verified! Welcome to Purp, ${currentUser.username} 🎉`, 'success', 5000); }); return; }
-        toast(`Account created! Welcome to Purp, ${user.username} 🎉`, 'success', 5000);
-      } else { showFieldError('register-error','register-error-msg', data.detail || data.message || 'Registration failed. Please try again.'); }
-    } catch { showFieldError('register-error','register-error-msg','Connection error. Check your internet and try again.'); }
-    finally { btn.disabled = false; btn.textContent = 'Create free account'; }
+        saveSession(token, user);
+        closeAuthModal();
+        ['reg-full-name','reg-email','reg-password'].forEach(id => { document.getElementById(id).value = ''; });
+
+        if (data.requires_verification) {
+          openVerifyModal(token, email, (v) => {
+            saveSession(authToken, { ...currentUser, ...v, is_verified: true });
+            toast(`Account verified! Welcome to Purp, ${currentUser.full_name || currentUser.username} 🎉`, 'success', 5000);
+            goToHomeDashboard();
+          });
+          return;
+        }
+        toast(`Account created! Welcome to Purp, ${user.full_name || user.username} 🎉`, 'success', 5000);
+        goToHomeDashboard();
+      } else {
+        showFieldError('register-error','register-error-msg', data.detail || data.message || 'Registration failed. Please try again.');
+      }
+    } catch {
+      showFieldError('register-error','register-error-msg','Connection error. Check your internet and try again.');
+    } finally {
+      btn.disabled = false; btn.textContent = 'Create free account';
+    }
   }
 
   document.getElementById('btn-do-signin').addEventListener('click', handleSignIn);
@@ -2367,6 +2197,7 @@
   document.getElementById('signin-password').addEventListener('keydown', e => { if (e.key === 'Enter') handleSignIn(); });
   document.getElementById('reg-password').addEventListener('keydown', e => { if (e.key === 'Enter') handleRegister(); });
 
+  /* ════ PLAN UPGRADE ════ */
   async function handlePlanUpgrade(plan) {
     if (!authToken || !currentUser) { openAuthModal('register'); toast('Create an account first to upgrade 👆', 'info'); return; }
     const alreadyOn = (plan === 'investor' && ['investor','tax_pro'].includes(currentUser.plan)) || (plan === 'tax_pro' && currentUser.plan === 'tax_pro');
@@ -2390,13 +2221,14 @@
     b.addEventListener('click', () => { if (currentUser) { toast('You already have a Purp account!', 'info'); return; } openAuthModal('register'); });
   });
 
+  /* ════ MOCK BALANCE ANIMATION ════ */
   function animateMockBalance() {
-    const el = document.querySelector('.balance-num');
-    if (!el) return;
+    const el = document.querySelector('.balance-num'); if (!el) return;
     let base = 61284.40;
     setInterval(() => { base += (Math.random() - 0.48) * 60; el.textContent = '$' + base.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2}); }, 3500);
   }
 
+  /* ════ TAX CALCULATOR ════ */
   function formatUSDShort(v) { return '$' + Number(v || 0).toLocaleString('en-US', { maximumFractionDigits: 0 }); }
   function updateTaxCalculator() {
     const portfolio = Number(document.getElementById('tax-portfolio')?.value || 0);
@@ -2409,13 +2241,16 @@
     document.getElementById('tax-savings-output').textContent = `${formatUSDShort(savings)}/year`;
     document.getElementById('tax-payback-output').textContent = `Purp Tax Pro pays for itself in ${months} month${months > 1 ? 's' : ''}`;
   }
-  ['tax-portfolio','tax-gains','tax-bracket'].forEach(id => { const el = document.getElementById(id); if (el) { el.addEventListener('input', updateTaxCalculator); el.addEventListener('change', updateTaxCalculator); } });
+  ['tax-portfolio','tax-gains','tax-bracket'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) { el.addEventListener('input', updateTaxCalculator); el.addEventListener('change', updateTaxCalculator); }
+  });
   updateTaxCalculator();
 
+  /* ════ FAQ ════ */
   document.querySelectorAll('.faq-q').forEach(btn => {
     btn.addEventListener('click', () => {
-      const item = btn.closest('.faq-item');
-      const open = item.classList.contains('open');
+      const item = btn.closest('.faq-item'), open = item.classList.contains('open');
       document.querySelectorAll('.faq-item.open').forEach(i => i.classList.remove('open'));
       if (!open) item.classList.add('open');
     });
@@ -2486,14 +2321,9 @@
     width:46px; height:54px;
     background: rgba(109,40,217,.08);
     border: 2px solid rgba(109,40,217,.28);
-    border-radius: 11px;
-    color: #fff;
-    font-size: 24px;
-    font-weight: 900;
-    text-align: center;
-    outline: none;
-    font-family: 'DM Mono', monospace;
-    caret-color: transparent;
+    border-radius: 11px; color: #fff;
+    font-size: 24px; font-weight: 900; text-align: center; outline: none;
+    font-family: 'DM Mono', monospace; caret-color: transparent;
     transition: border-color .15s, background .15s;
   }
   .vmi:focus { border-color: var(--violet-l); background: rgba(109,40,217,.16); box-shadow: 0 0 0 3px rgba(109,40,217,.12); }
@@ -2510,8 +2340,7 @@
     _vmToken = token; _vmOnSuccess = onSuccess || (() => {});
     const masked = (() => {
       if (!email) return '—';
-      const [local, domain] = email.split('@');
-      if (!domain) return email;
+      const [local, domain] = email.split('@'); if (!domain) return email;
       const vis = local.length <= 2 ? local[0] : local.slice(0, 2);
       return `${vis}${'●'.repeat(Math.min(local.length - 2, 4))}@${domain}`;
     })();
@@ -2536,7 +2365,12 @@
     setTimeout(() => document.querySelector('.vmi')?.focus(), 80);
   }
 
-  function hideVerifyModal() { document.getElementById('verify-modal').classList.remove('vm-open'); document.body.style.overflow = ''; if (_vmTimer) { clearInterval(_vmTimer); _vmTimer = null; } }
+  function hideVerifyModal() {
+    document.getElementById('verify-modal').classList.remove('vm-open');
+    document.body.style.overflow = '';
+    if (_vmTimer) { clearInterval(_vmTimer); _vmTimer = null; }
+  }
+
   function vmGetCode() { return [...document.querySelectorAll('.vmi')].map(el => el.value).join(''); }
 
   function vmInput(e) {
@@ -2549,7 +2383,10 @@
   }
   function vmKeydown(e) {
     const idx = parseInt(e.target.dataset.idx);
-    if (e.key === 'Backspace' && !e.target.value && idx > 0) { const prev = document.querySelector(`.vmi[data-idx="${idx-1}"]`); if (prev) { prev.value=''; prev.focus(); } }
+    if (e.key === 'Backspace' && !e.target.value && idx > 0) {
+      const prev = document.querySelector(`.vmi[data-idx="${idx-1}"]`);
+      if (prev) { prev.value=''; prev.focus(); }
+    }
     if (e.key === 'Enter') vmSubmit();
   }
   function vmPaste(e) {
@@ -2567,13 +2404,19 @@
     const btn = document.getElementById('vm-submit-btn');
     if (btn) { btn.disabled=true; btn.textContent='Verifying…'; }
     try {
-      const res  = await fetch(`${CONFIG.API_BASE}/auth/verify-email`, { method:'POST', headers:{'Content-Type':'application/json',[CONFIG.AUTH_HEADER]:CONFIG.AUTH_PREFIX+_vmToken}, body:JSON.stringify({code}) });
+      const res  = await fetch(`${CONFIG.API_BASE}/auth/verify-email`, {
+        method:'POST',
+        headers:{'Content-Type':'application/json',[CONFIG.AUTH_HEADER]:CONFIG.AUTH_PREFIX+_vmToken},
+        body:JSON.stringify({code})
+      });
       const data = await res.json().catch(()=>({}));
       if (res.ok) {
         document.querySelectorAll('.vmi').forEach(el => { el.style.borderColor='#4ade80'; el.style.background='rgba(74,222,128,.1)'; });
         if (btn) { btn.textContent='✓ Verified!'; btn.style.background='linear-gradient(135deg,#16a34a,#4ade80)'; }
         setTimeout(() => { hideVerifyModal(); if (_vmOnSuccess) _vmOnSuccess(data.user||{}); }, 650);
-      } else { vmShowError(data.detail||'Invalid code. Please try again.'); vmResetBtn(); vmShake(); }
+      } else {
+        vmShowError(data.detail||'Invalid code. Please try again.'); vmResetBtn(); vmShake();
+      }
     } catch { vmShowError('Network error. Please try again.'); vmResetBtn(); }
   }
 
@@ -2583,17 +2426,31 @@
     if (resendBtn) resendBtn.style.display = 'none';
     if (cdEl) { cdEl.style.display='inline'; cdEl.textContent='Sending…'; }
     try {
-      const res  = await fetch(`${CONFIG.API_BASE}/auth/resend-verification`, { method:'POST', headers:{[CONFIG.AUTH_HEADER]:CONFIG.AUTH_PREFIX+_vmToken} });
+      const res  = await fetch(`${CONFIG.API_BASE}/auth/resend-verification`, {
+        method:'POST',
+        headers:{[CONFIG.AUTH_HEADER]:CONFIG.AUTH_PREFIX+_vmToken}
+      });
       const data = await res.json().catch(()=>({}));
-      if (!res.ok) { if (cdEl) cdEl.textContent = data.detail||'Please wait.'; setTimeout(()=>{ if (resendBtn) resendBtn.style.display='inline'; if (cdEl) cdEl.style.display='none'; }, 3000); return; }
+      if (!res.ok) {
+        if (cdEl) cdEl.textContent = data.detail||'Please wait.';
+        setTimeout(()=>{ if (resendBtn) resendBtn.style.display='inline'; if (cdEl) cdEl.style.display='none'; }, 3000);
+        return;
+      }
       let secs = 60;
       if (_vmTimer) clearInterval(_vmTimer);
       _vmTimer = setInterval(() => {
         secs--;
         if (cdEl) cdEl.textContent = `Resend in ${secs}s`;
-        if (secs <= 0) { clearInterval(_vmTimer); if (resendBtn) { resendBtn.style.display='inline'; resendBtn.textContent='Resend code'; } if (cdEl) cdEl.style.display='none'; }
+        if (secs <= 0) {
+          clearInterval(_vmTimer);
+          if (resendBtn) { resendBtn.style.display='inline'; resendBtn.textContent='Resend code'; }
+          if (cdEl) cdEl.style.display='none';
+        }
       }, 1000);
-    } catch { if (resendBtn) resendBtn.style.display='inline'; if (cdEl) cdEl.style.display='none'; }
+    } catch {
+      if (resendBtn) resendBtn.style.display='inline';
+      if (cdEl) cdEl.style.display='none';
+    }
   }
 
   function vmShowError(msg) { const el=document.getElementById('vm-error'); if (el) { el.textContent=msg; el.style.display='block'; } }

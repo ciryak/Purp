@@ -185,6 +185,8 @@
   border-color: rgba(124,58,237,0.4);
   color: var(--accent-l);
 }
+#privacy-icon { display:inline-flex; align-items:center; justify-content:center; }
+#privacy-icon svg { width:16px; height:16px; }
 .header-spacer { flex: 1; }
    
    /* ═══ NAV MENU ════════════════════════════════════ */
@@ -866,7 +868,7 @@
    /* ═══ LOGIN SCREEN ════════════════════════════════ */
    .screen {
      position:fixed; inset:0; width:400px; max-height:760px;
-     background:var(--bg);
+     background:radial-gradient(circle at top, rgba(124,58,237,0.16), transparent 40%), var(--bg);
      display:flex; flex-direction:column;
      align-items:center; justify-content:center;
      padding:24px; box-sizing:border-box;
@@ -882,8 +884,9 @@
      pointer-events:none;
    }
    .login-box {
-     background:var(--card); border:1px solid var(--border);
-     border-radius:18px; padding:28px;
+     background:linear-gradient(180deg, rgba(255,255,255,0.055), rgba(255,255,255,0.03)); border:1px solid var(--border);
+     border-radius:20px; padding:28px;
+     box-shadow:0 20px 45px rgba(0,0,0,0.45), inset 0 1px 0 rgba(255,255,255,0.08);
      width:100%; max-width:360px;
      display:flex; flex-direction:column; gap:14px;
      position:relative; z-index:1;

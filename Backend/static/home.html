@@ -1,0 +1,676 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/home/home-style.css">
+  <script src="/extension-assets/chart.js"></script>
+  <title>Purp — Portfolio</title>
+
+  <style>
+    html, body { width: 100%; min-height: 100%; }
+    body.home-dashboard-view {
+      width: 100%;
+      min-width: 100%;
+      max-width: none;
+      margin: 0;
+      padding: 0 24px 24px;
+      overflow-y: auto;
+    }
+
+    @media (max-width: 768px) {
+      body.home-dashboard-view { padding: 0 10px 16px; }
+      .app-header { position: sticky; top: 0; z-index: 20; }
+      .top-tabs { position: sticky; top: 54px; z-index: 19; overflow-x: auto; }
+      .top-tab { white-space: nowrap; min-width: 140px; text-align: center; }
+      .nav-menu { max-height: 70vh; overflow-y: auto; }
+      .nav-item { text-decoration: none; }
+    }
+    @media (min-width: 769px) {
+      body.home-dashboard-view { padding: 0 28px 24px; }
+      .top-tabs { max-width: 1180px; margin: 0 auto 10px; }
+      #dashboard, #market-watch { max-width: 1180px; margin: 0 auto; }
+    }
+  </style>
+</head>
+<body class="home-dashboard-view">
+
+<!-- ═══ TOAST CONTAINER ═══ -->
+<div id="toast-container" aria-live="polite"></div>
+
+<!-- ═══ LOGIN SCREEN ═══ -->
+<div id="login-screen" class="screen hidden">
+  <div class="login-glow"></div>
+  <div class="login-box">
+    <div class="login-logo">
+      <div class="login-logo-icon">P</div>
+      <span class="login-logo-name">Purp</span>
+    </div>
+    <p class="login-tagline">AI-powered portfolio tracker</p>
+
+    <div id="login-form">
+      <div class="field-group">
+        <label class="field-label">Email</label>
+        <input type="email" id="login-email" placeholder="you@email.com" autocomplete="email">
+      </div>
+      <div class="field-group">
+        <label class="field-label">Password</label>
+        <input type="password" id="login-password" placeholder="••••••••" autocomplete="current-password">
+      </div>
+      <button type="button" id="btn-login" class="btn-primary">Sign In</button>
+      <div class="auth-switch">
+        No account?
+        <button type="button" id="btn-show-register" class="btn-link">Create one</button>
+      </div>
+      <div id="login-error" class="error-pill hidden"></div>
+    </div>
+
+    <div id="register-form" style="display:none;">
+      <div class="field-group">
+        <label class="field-label">Full name</label>
+        <input type="text" id="reg-full-name" placeholder="your full name" autocomplete="name">
+      </div>
+      <div class="field-group">
+        <label class="field-label">Email</label>
+        <input type="email" id="reg-email" placeholder="you@email.com" autocomplete="email">
+      </div>
+      <div class="field-group">
+        <label class="field-label">Password</label>
+        <input type="password" id="reg-password" placeholder="at least 4 characters" autocomplete="new-password">
+      </div>
+      <button type="button" id="btn-register" class="btn-primary">Create Account</button>
+      <div class="auth-switch">
+        Already have an account?
+        <button type="button" id="btn-show-login" class="btn-link">Sign in</button>
+      </div>
+      <div id="register-error" class="error-pill hidden"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ HEADER ═══ -->
+<header class="app-header">
+  <button type="button" id="btn-hamburger" class="hamburger-btn" aria-label="Menu">
+    <span></span><span></span><span></span>
+  </button>
+  <span class="app-title">Purp</span>
+  <button type="button" id="btn-privacy-toggle" class="privacy-btn" aria-label="Toggle value visibility" title="Hide or show values">
+    <span id="privacy-icon" aria-hidden="true"></span>
+  </button>
+  <div class="header-spacer"></div>
+
+  <nav id="nav-menu" class="nav-menu hidden" role="navigation">
+    <button type="button" id="nav-portfolio" class="nav-item active">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+      Portfolio
+    </button>
+    <a href="/home/market" id="nav-market" class="nav-item">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 17l6-6 4 4 7-7"/><path d="M14 8h6v6"/></svg>
+      Market Watch
+    </a>
+    <a href="/home/add-asset" id="nav-add" class="nav-item">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 8v8M8 12h8"/></svg>
+      Add Asset
+    </a>
+    <a href="/home/alerts" id="nav-alerts" class="nav-item">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 17h5l-1.4-1.4A2 2 0 0 1 18 14.2V11a6 6 0 1 0-12 0v3.2a2 2 0 0 1-.6 1.4L4 17h5"/><path d="M10 20a2 2 0 0 0 4 0"/></svg>
+      Alerts
+    </a>
+    <a href="/home/import" id="nav-import" class="nav-item">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>
+      Import CSV
+    </a>
+    <a href="/home/transactions" id="nav-transactions" class="nav-item">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 6h11M9 12h11M9 18h11"/><path d="M4 6h.01M4 12h.01M4 18h.01"/></svg>
+      Transactions
+    </a>
+    <button type="button" id="nav-logout" class="nav-item nav-danger">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9"/></svg>
+      Sign Out
+    </button>
+    <a class="nav-footer-link" href="https://getpurpai.com" target="_blank" rel="noopener noreferrer">getpurpai.com</a>
+  </nav>
+</header>
+
+<div class="top-tabs">
+  <a href="/home" id="top-tab-dashboard" class="top-tab active">Dashboard</a>
+  <a href="/home/market" id="top-tab-market" class="top-tab">Market Watch</a>
+</div>
+
+<!-- ═══ DASHBOARD ═══ -->
+<div id="dashboard" class="page active">
+
+  <div class="profile-bar">
+    <div class="profile-left">
+      <div class="profile-avatar" id="profile-avatar">U</div>
+      <div>
+        <div class="profile-name" id="profile-full-name">—</div>
+        <div class="profile-meta">
+          <span id="profile-plan" class="plan-badge">Free</span>
+          <span id="profile-count" class="asset-count">0/4 assets</span>
+        </div>
+      </div>
+    </div>
+    <button type="button" id="btn-upgrade" class="btn-upgrade">⭐ Premium</button>
+  </div>
+
+  <section class="card" style="margin:12px 0 10px;border:1px solid rgba(124,58,237,.35);background:linear-gradient(135deg,rgba(124,58,237,.16),rgba(30,16,53,.9));">
+    <div style="display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap;">
+      <div>
+        <div style="font-size:12px;font-weight:800;color:#c4b5fd;letter-spacing:.4px;">EXTENSÃO PURP</div>
+        <div style="font-size:13px;color:var(--text2);margin-top:2px;">Tenha alertas e insights direto no navegador.</div>
+      </div>
+      <a href="https://getpurpai.extensão.link" target="_blank" rel="noopener noreferrer" class="btn-primary" style="text-decoration:none;padding:8px 12px;font-size:12px;">Instalar extensão</a>
+    </div>
+  </section>
+
+  <section class="card" style="margin:0 0 12px;">
+    <div class="section-title">Choose your plan</div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:8px;">
+      <div class="mini-card" style="padding:10px;border:1px solid rgba(255,255,255,.08);border-radius:10px;">
+        <div style="font-size:11px;color:var(--text3);">Free</div>
+        <div style="font-size:16px;font-weight:800;">$0</div>
+        <div style="font-size:11px;color:var(--text2);margin:4px 0 8px;">Comece com os recursos essenciais.</div>
+        <button type="button" class="btn-ghost" style="width:100%;" disabled>Plano atual</button>
+      </div>
+      <div class="mini-card" style="padding:10px;border:1px solid rgba(124,58,237,.35);border-radius:10px;">
+        <div style="font-size:11px;color:#a78bfa;">Investor</div>
+        <div style="font-size:16px;font-weight:800;">$19/mo</div>
+        <div style="font-size:11px;color:var(--text2);margin:4px 0 8px;">AI insights, import CSV e mais.</div>
+        <button type="button" class="btn-primary" style="width:100%;" data-checkout-plan="investor">Assinar Investor</button>
+      </div>
+      <div class="mini-card" style="padding:10px;border:1px solid rgba(245,158,11,.35);border-radius:10px;">
+        <div style="font-size:11px;color:#fbbf24;">Tax Pro</div>
+        <div style="font-size:16px;font-weight:800;">$29/mo</div>
+        <div style="font-size:11px;color:var(--text2);margin:4px 0 8px;">Tudo do Investor + otimização fiscal.</div>
+        <button type="button" class="btn-primary btn-gold" style="width:100%;" data-checkout-plan="tax_pro">Assinar Tax Pro</button>
+      </div>
+    </div>
+  </section>
+
+  <div class="quick-actions">
+    <button type="button" id="btn-quick-add" class="quick-btn">+ Add Asset</button>
+    <button type="button" id="btn-quick-transactions" class="quick-btn">Transactions</button>
+  </div>
+
+  <!-- Balance Card -->
+  <div class="balance-card">
+    <div class="balance-label">TOTAL BALANCE</div>
+    <div id="total-balance" class="balance-value sensitive-value">$0.00</div>
+    <div id="balance-performance" class="balance-performance">
+      <span class="perf-pill" data-period="1mo">1M: —</span>
+      <span class="perf-pill" data-period="6mo">6M: —</span>
+      <span class="perf-pill" data-period="1y">12M: —</span>
+    </div>
+
+    <div class="chart-controls">
+      <select id="benchmark-select" class="select-ctrl">
+        <option value="^GSPC">S&amp;P 500</option>
+        <option value="^IXIC">Nasdaq</option>
+        <option value="^BVSP">Ibovespa</option>
+        <option value="BTC-USD">Bitcoin</option>
+      </select>
+      <div class="time-pills">
+        <button class="pill" data-p="1d">24H</button>
+        <button class="pill active" data-p="1mo">1M</button>
+        <button class="pill" data-p="6mo">6M</button>
+        <button class="pill" data-p="1y">1Y</button>
+      </div>
+      <span id="benchmark-change" class="benchmark-badge">Benchmark: —</span>
+    </div>
+
+    <div class="main-chart-wrap"><canvas id="mainChart"></canvas></div>
+
+    <div class="chart-legend">
+      <span class="dot purple"></span><span>Portfolio</span>
+      <span class="dot gray"></span><span>Benchmark</span>
+    </div>
+  </div>
+
+  <!-- AI Card -->
+  <div class="ai-card">
+    <div class="ai-card-header">
+      <div class="ai-icon">✨</div>
+      <div>
+        <div class="ai-title">AI Analysis</div>
+        <div class="ai-sub">Consolidated 24h performance</div>
+      </div>
+      <span id="ai-change-badge" class="change-badge">—</span>
+    </div>
+    <div id="ai-portfolio-text" class="ai-text">
+      Get intelligent analysis of your portfolio and allocation insights. Available on Premium.
+    </div>
+    <button type="button" id="btn-portfolio-ai" class="btn-ai">✨ Analyze Portfolio</button>
+  </div>
+
+
+  <!-- Portfolio Score Card -->
+  <div class="score-card" id="portfolio-score-card">
+    <div class="score-header-row">
+      <div>
+        <div class="score-title">Portfolio Score</div>
+        <div class="score-sub">Health score from diversification, risk, tax and consistency</div>
+      </div>
+      <div id="score-grade" class="score-grade">—</div>
+    </div>
+
+    <div class="score-gauge-wrap">
+      <svg class="score-gauge" viewBox="0 0 220 120" aria-hidden="true">
+        <path d="M20 110 A90 90 0 0 1 200 110" class="gauge-track" />
+        <path d="M20 110 A90 90 0 0 1 200 110" class="gauge-value" id="score-gauge-value" />
+      </svg>
+      <div id="score-overall" class="score-overall">0</div>
+    </div>
+
+    <div class="score-dimensions">
+      <div class="score-row"><span>Diversification</span><span id="score-diversification">0</span></div>
+      <div class="score-bar"><div id="bar-diversification"></div></div>
+
+      <div class="score-row"><span>Risk-Adjusted</span><span id="score-risk">0</span></div>
+      <div class="score-bar"><div id="bar-risk"></div></div>
+
+      <div class="score-row"><span>Tax Efficiency</span><span id="score-tax">—</span></div>
+      <div class="score-bar"><div id="bar-tax"></div></div>
+
+      <div class="score-row"><span>Consistency</span><span id="score-consistency">0</span></div>
+      <div class="score-bar"><div id="bar-consistency"></div></div>
+    </div>
+
+    <ul id="score-insights" class="score-insights"></ul>
+
+    <button type="button" id="btn-share-performance" class="btn-ai" style="margin-top:10px;">Share Performance</button>
+    <div class="score-share-copy">Share your results — no dollar amounts shown</div>
+  </div>
+
+  <!-- Tax Tools (tax_pro only) -->
+  <div id="tax-tools-section" style="display:none;">
+    <div class="section-heading-row" style="margin-top:4px;">
+      <div class="section-heading" style="color:#fbbf24;">💼 Tax Tools</div>
+      <select id="cost-basis-method" class="select-ctrl" title="Cost basis method">
+        <option value="FIFO">FIFO</option>
+        <option value="LIFO">LIFO</option>
+        <option value="HIFO">HIFO</option>
+      </select>
+    </div>
+
+    <div class="tax-card">
+      <div class="tax-card-header">
+        <div>
+          <div class="tax-card-title">Tax Loss Harvesting</div>
+          <div class="tax-card-sub">Positions with harvestable losses this year</div>
+        </div>
+        <div id="tlh-total-badge" class="tlh-total-badge">Loading…</div>
+      </div>
+      <div id="tlh-bracket-row" style="margin-bottom:10px;display:flex;align-items:center;gap:8px;">
+        <span style="font-size:10px;color:var(--text2);">Tax bracket:</span>
+        <select id="tlh-bracket-select" class="select-ctrl">
+          <option value="0.10">10%</option>
+          <option value="0.12">12%</option>
+          <option value="0.22" selected>22%</option>
+          <option value="0.24">24%</option>
+          <option value="0.32">32%</option>
+          <option value="0.35">35%</option>
+          <option value="0.37">37%</option>
+        </select>
+        <button type="button" id="btn-refresh-tlh" class="btn-tlh-refresh" title="Refresh">↻</button>
+      </div>
+      <div id="tlh-list"></div>
+    </div>
+  </div>
+
+  <!-- Tax Pro CTA (non-tax_pro) -->
+  <div id="tax-pro-cta" style="display:none;">
+    <div class="tax-cta-card">
+      <div style="font-size:24px;margin-bottom:6px;">💼</div>
+      <div class="tax-cta-title">Tax Pro Features</div>
+      <div class="tax-cta-sub">Tax Loss Harvesting, cost-basis methods (FIFO/LIFO/HIFO), and Form 8949 export — exclusive to Tax Pro.</div>
+      <button type="button" id="btn-upgrade-tax-pro" class="btn-primary btn-gold" data-checkout-plan="tax_pro" style="margin-top:12px;font-size:12px;padding:10px;">
+        Upgrade to Tax Pro — $29/mo
+      </button>
+    </div>
+  </div>
+
+
+
+  <!-- Net Worth -->
+  <div class="score-card" id="net-worth-card">
+    <div class="score-header-row">
+      <div>
+        <div class="score-title">Net Worth</div>
+        <div class="score-sub">Manual tracker + portfolio investments</div>
+      </div>
+      <button type="button" id="btn-net-worth-add" class="btn-export-csv">+ Add Asset/Debt</button>
+    </div>
+
+    <div id="net-worth-total" class="balance-value sensitive-value" style="font-size:28px;margin-top:2px;">$0.00</div>
+
+    <div class="score-dimensions" style="margin-top:8px;">
+      <div class="score-row"><span>Investments</span><span id="nw-investments" class="sensitive-value">$0.00</span></div>
+      <div class="score-row"><span>Cash</span><span id="nw-cash" class="sensitive-value">$0.00</span></div>
+      <div class="score-row"><span>Real Estate</span><span id="nw-real-estate" class="sensitive-value">$0.00</span></div>
+      <div class="score-row"><span>Other</span><span id="nw-other" class="sensitive-value">$0.00</span></div>
+      <div class="score-row"><span>Debts</span><span id="nw-debts" class="sensitive-value">$0.00</span></div>
+    </div>
+  </div>
+
+  <!-- Rebalance -->
+  <div class="score-card" id="rebalance-card">
+    <div class="score-header-row">
+      <div>
+        <div class="score-title">Rebalance</div>
+        <div class="score-sub">Define target allocations (sum must be 100%)</div>
+      </div>
+    </div>
+    <div id="rebalance-targets"></div>
+    <button type="button" id="btn-rebalance-calc" class="btn-ai" style="margin-top:10px;">Calculate</button>
+    <div id="rebalance-sum-warning" class="score-sub" style="margin-top:6px;color:#fca5a5;"></div>
+    <div id="rebalance-tax-badge" class="tlh-total-badge" style="margin-top:10px;display:none;">Tax Impact: $0.00</div>
+    <div id="rebalance-actions" class="score-insights" style="margin-top:8px;"></div>
+  </div>
+
+  <!-- Assets -->
+  <div class="section-heading-row">
+    <div class="section-heading">Your Assets</div>
+    <button type="button" id="btn-export-csv" class="btn-export-csv">Export CSV</button>
+  </div>
+  <div id="assets-list"></div>
+
+</div>
+
+<!-- ═══ MARKET WATCH ═══ -->
+<div id="market-watch" class="page">
+  <div class="page-header">
+    <div class="page-title">Market Watch</div>
+    <div class="page-sub">5 stocks and 5 cryptos in real time</div>
+  </div>
+
+  <div class="section-heading">Top Stocks</div>
+  <div id="market-stocks-list"></div>
+
+  <div class="section-heading" style="margin-top:12px;">Top Cryptos</div>
+  <div id="market-cryptos-list"></div>
+</div>
+
+<!-- ═══ TRANSACTIONS ═══ -->
+<div id="transactions-page" class="page">
+  <div class="page-header">
+    <div class="page-title">Transaction History</div>
+    <div class="page-sub">Latest buys and sells in your portfolio</div>
+  </div>
+  <div id="transactions-list"></div>
+</div>
+
+<!-- ═══ ADD ASSET ═══ -->
+<div id="add-asset" class="page">
+  <div class="page-header">
+    <div class="page-title">Add Asset</div>
+    <div class="page-sub">Search and add to your portfolio</div>
+  </div>
+
+  <div class="form-card">
+    <div class="field-group">
+      <label class="field-label">Search asset</label>
+      <div class="input-wrap">
+        <input type="text" id="symbol-input" placeholder="BTC, AAPL, ETH, TSLA…" autocomplete="off">
+        <div id="search-dropdown" class="search-dropdown" style="display:none;"></div>
+      </div>
+    </div>
+
+    <div class="form-row">
+      <div class="field-group">
+        <label class="field-label">Quantity</label>
+        <input type="number" id="amount-input" placeholder="0.5" step="any" min="0">
+      </div>
+      <div class="field-group">
+        <label class="field-label">Price per unit (USD)</label>
+        <input type="number" id="price-input" placeholder="45000.00" step="any" min="0">
+      </div>
+    </div>
+
+    <div class="field-group">
+      <label class="field-label">Purchase date (optional)</label>
+      <input type="date" id="date-input">
+    </div>
+
+    <button type="button" id="btn-save-asset" class="btn-primary" style="margin-top:4px;">
+      Save Asset
+    </button>
+  </div>
+
+</div>
+
+<!-- ═══ ALERTS ═══ -->
+<div id="alerts-page" class="page">
+  <div class="page-header">
+    <div class="page-title">Alerts</div>
+    <div class="page-sub">Create and manage your smart alerts</div>
+  </div>
+
+  <div class="form-card" id="alerts-card">
+    <div class="section-heading" style="margin-bottom:10px;">Advanced Alerts</div>
+    <div class="field-group">
+      <label class="field-label">Alert type</label>
+      <select id="alert-type-input" title="Choose a basic or advanced alert condition.">
+        <option value="price_above">Price Above</option>
+        <option value="price_below">Price Below</option>
+        <option value="percent_change_up">Percent Change Up</option>
+        <option value="percent_change_down">Percent Change Down</option>
+        <option value="rsi_oversold">RSI Oversold</option>
+        <option value="rsi_overbought">RSI Overbought</option>
+        <option value="rebalance_drift">Rebalance Drift</option>
+        <option value="volume_spike">Volume Spike</option>
+        <option value="portfolio_down">Portfolio Down (24h)</option>
+      </select>
+      <div id="alert-type-tooltip" class="alert-tooltip" style="display:none;"></div>
+    </div>
+
+    <div class="field-group" id="alert-symbol-group">
+      <label class="field-label">Symbol</label>
+      <input type="text" id="alert-symbol-input" placeholder="BTC, AAPL..." title="Asset symbol for this alert.">
+    </div>
+
+    <div class="field-group" id="alert-target-group">
+      <label class="field-label" id="alert-target-label">Target Price ($)</label>
+      <input type="number" id="alert-target-input" step="any" min="0" placeholder="0" title="Threshold value used by this alert type.">
+    </div>
+
+    <div class="field-group" id="alert-rsi-period-group" style="display:none;">
+      <label class="field-label">RSI Period</label>
+      <input type="number" id="alert-rsi-period-input" step="1" min="2" value="14" title="Number of periods used to compute RSI.">
+    </div>
+
+    <div class="field-group" id="alert-target-allocation-group" style="display:none;">
+      <label class="field-label">Target Allocation (%)</label>
+      <input type="number" id="alert-target-allocation-input" step="any" min="0" max="100" placeholder="25" title="Desired portfolio allocation for this asset.">
+    </div>
+
+    <div class="field-group">
+      <label class="field-label"><input type="checkbox" id="alert-recurring-input"> Recurring alert</label>
+    </div>
+
+    <button type="button" id="btn-create-alert" class="btn-primary" title="Create alert based on selected rule.">Create Alert</button>
+    <div id="alerts-list" style="margin-top:10px;"></div>
+  </div>
+</div>
+
+<!-- ═══ IMPORT CSV ═══ -->
+<div id="import-page" class="page">
+  <div class="page-header">
+    <div class="page-title">Import CSV</div>
+    <div class="page-sub">Import broker files from a dedicated page</div>
+  </div>
+
+  <!-- ── Import CSV card (investor/tax_pro only) ── -->
+  <div id="import-csv-card" class="import-card" style="display:none;">
+    <div class="import-card-header">
+      <div class="import-card-icon">📥</div>
+      <div>
+        <div class="import-card-title">Import from Broker</div>
+        <div class="import-card-sub">Coinbase · Robinhood · Fidelity · Kraken · Schwab</div>
+      </div>
+    </div>
+    <button type="button" id="btn-open-import" class="btn-import-open" data-requires-plan="investor">
+      Import CSV
+    </button>
+  </div>
+</div>
+
+<!-- ═══ DETAIL VIEW ═══ -->
+<div id="detail-view" class="overlay-screen">
+  <div class="detail-nav">
+    <button class="back-btn" id="btn-back">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M19 12H5M12 5l-7 7 7 7"/></svg>
+      Back
+    </button>
+    <span id="holding-badge" class="holding-badge">0 days held</span>
+  </div>
+
+  <div class="detail-hero">
+    <div class="detail-icon-wrap">
+      <img id="detail-icon-img" src="" alt="" style="display:none;">
+      <div id="detail-icon-fb" class="asset-icon-fb"></div>
+    </div>
+    <div>
+      <div class="detail-symbol" id="detail-symbol">—</div>
+      <div class="detail-price"  id="detail-price">—</div>
+    </div>
+  </div>
+
+  <div class="time-row">
+    <button class="time-btn" data-period="1d">24H</button>
+    <button class="time-btn active" data-period="1mo">1M</button>
+    <button class="time-btn" data-period="6mo">6M</button>
+    <button class="time-btn" data-period="1y">1Y</button>
+  </div>
+
+  <div class="detail-chart-wrap"><canvas id="detailChart"></canvas></div>
+</div>
+
+<!-- ═══ SELL MODAL ═══ -->
+<div id="modal-sell" class="modal-overlay">
+  <div class="modal-box">
+    <div class="modal-title">Close Position</div>
+    <div class="field-group">
+      <label class="field-label">Amount to sell</label>
+      <div class="modal-row">
+        <input type="number" id="sell-qty" style="text-align:center;font-size:18px;font-weight:700;">
+        <button id="btn-max" class="btn-max">MAX</button>
+      </div>
+    </div>
+    <div id="sell-estimate" class="sell-estimate">—</div>
+    <div id="sell-info"     class="sell-info">—</div>
+    <div class="modal-actions">
+      <button class="btn-ghost"   id="btn-sell-cancel">Cancel</button>
+      <button class="btn-primary" id="btn-sell-confirm">Confirm Sale</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ UPGRADE MODAL ═══ -->
+<div id="modal-upgrade" class="modal-overlay">
+  <div class="modal-box">
+    <div class="upgrade-star">⭐</div>
+    <div class="modal-title">Go Premium</div>
+    <div id="upgrade-reason" class="upgrade-reason">Unlock advanced features.</div>
+    <div class="upgrade-price-card">
+      <div class="upgrade-price">$19<span class="upgrade-per">/mo</span></div>
+      <ul class="upgrade-list">
+        <li>✓ Unlimited assets, watchlist &amp; alerts</li>
+        <li>✓ AI analysis per asset &amp; portfolio</li>
+        <li>✓ CSV import from brokers</li>
+        <li>✓ 2-year price history</li>
+        <li>✓ Priority support</li>
+      </ul>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-ghost"            id="btn-upgrade-cancel">Maybe later</button>
+      <button class="btn-primary btn-gold" id="btn-upgrade-confirm">Get Premium</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ TAX PRO UPGRADE MODAL ═══ -->
+<div id="modal-upgrade-tax-pro" class="modal-overlay">
+  <div class="modal-box">
+    <div class="upgrade-star">💼</div>
+    <div class="modal-title">Tax Pro Plan</div>
+    <div class="upgrade-reason">Advanced tax tools for serious investors.</div>
+    <div class="upgrade-price-card" style="background:rgba(245,158,11,.07);border-color:rgba(245,158,11,.22);">
+      <div class="upgrade-price" style="color:var(--gold-l);">$29<span class="upgrade-per">/mo</span></div>
+      <ul class="upgrade-list">
+        <li>✓ Everything in Investor</li>
+        <li>✓ Tax Loss Harvesting engine</li>
+        <li>✓ FIFO / LIFO / HIFO cost basis</li>
+        <li>✓ Wash-sale rule guidance</li>
+        <li>✓ Form 8949 export</li>
+        <li>✓ Replacement asset suggestions</li>
+      </ul>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-ghost"            id="btn-taxpro-cancel">Maybe later</button>
+      <button class="btn-primary btn-gold" id="btn-taxpro-confirm">Upgrade to Tax Pro</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ CSV IMPORT MODAL ═══ -->
+<div id="modal-import-csv" class="modal-overlay">
+  <div class="modal-box">
+    <div class="modal-title">📥 Import Transactions</div>
+    <p style="font-size:12px;color:var(--text2);text-align:center;margin:-8px 0 16px;">
+      Import your buy &amp; sell history from a broker CSV file.
+    </p>
+
+    <!-- Broker selector -->
+    <div class="field-group" style="margin-bottom:12px;">
+      <label class="field-label">Broker / Exchange</label>
+      <select id="import-broker-select" class="select-ctrl" style="width:100%;padding:9px 12px;font-size:12px;">
+        <option value="">— Select broker —</option>
+        <option value="coinbase">Coinbase</option>
+        <option value="robinhood">Robinhood</option>
+        <option value="fidelity">Fidelity</option>
+        <option value="kraken">Kraken</option>
+        <option value="schwab">Charles Schwab</option>
+      </select>
+    </div>
+
+    <!-- File input -->
+    <div class="field-group" style="margin-bottom:14px;">
+      <label class="field-label">CSV File</label>
+      <label class="file-drop-area" id="file-drop-area">
+        <input type="file" id="import-file-input" accept=".csv" style="display:none;">
+        <span id="file-drop-label">
+          <span style="font-size:22px;">📂</span><br>
+          Click to select a .csv file
+        </span>
+      </label>
+    </div>
+
+    <!-- Help text per broker (shown dynamically) -->
+    <div id="import-help-text" class="import-help" style="display:none;"></div>
+
+    <!-- Progress / result -->
+    <div id="import-progress" class="import-progress" style="display:none;">
+      <div class="import-progress-bar"><div id="import-progress-fill" class="import-progress-fill"></div></div>
+      <div id="import-status-text" style="font-size:11px;color:var(--text2);text-align:center;margin-top:6px;">Importing…</div>
+    </div>
+
+    <div id="import-result" class="import-result" style="display:none;"></div>
+
+    <div class="modal-actions" style="margin-top:16px;">
+      <button class="btn-ghost" id="btn-import-cancel">Cancel</button>
+      <button class="btn-primary" id="btn-import-confirm" disabled>Import</button>
+    </div>
+  </div>
+</div>
+
+<script src="/extension-assets/bundle.min.js"></script>
+<script src="/extension-assets/popup.js"></script>
+<script src="/extension-assets/Verify-screen.JS"></script>
+<script src="/extension-assets/chart.js"></script>
+  <script src="/static/home/_base.js" defer></script>
+
+</body>
+</html>

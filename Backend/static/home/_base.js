@@ -1,0 +1,2638 @@
+/* ═══════════════════════════════════════════════════════════════
+   Purp — Web Dashboard _base.js  v2.0
+   Todas as funções da extensão adaptadas para contexto web.
+   Sem chrome.storage, sem chrome.runtime — 100% localStorage + fetch.
+   ════════════════════════════════════════════════════════════════ */
+
+// ── Config ───────────────────────────────────────────────────────
+const API_BASE         = 'https://purp-production.up.railway.app';
+const FREE_ASSET_LIMIT = 4;
+const REFRESH_MS       = 60_000;
+
+// ── Helpers ──────────────────────────────────────────────────────
+const $  = (id) => document.getElementById(id);
+const qs = (sel, root = document) => root.querySelector(sel);
+const qsa = (sel, root = document) => [...root.querySelectorAll(sel)];
+
+const formatUSD = (v) =>
+  new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(v ?? 0);
+const formatPct = (v) => `${v >= 0 ? '+' : ''}${(v || 0).toFixed(2)}%`;
+
+// ── State ────────────────────────────────────────────────────────
+let authToken             = null;
+let currentUser           = null;
+let assetForSale          = null;
+let mainChart             = null;
+let detailChart           = null;
+let refreshTimer          = null;
+let searchTimer           = null;
+let portfolioCount        = 0;
+let portfolioSymbols      = new Set();
+let rebalanceSymbols      = [];
+let hideSensitiveValues   = true;
+let selectedAddAssetType  = null;
+let activeTaxTab          = 'tlh';
+let importSelectedFile    = null;
+let importSelectedBroker  = '';
+let _divCardBuilt         = false;
+let _divShowAllAssets     = false;
+
+const FEATURED_STOCKS  = ['AAPL', 'MSFT', 'NVDA', 'AMZN', 'TSLA'];
+const FEATURED_CRYPTOS = ['BTC', 'ETH', 'SOL', 'BNB', 'XRP'];
+const MONTHS_SHORT     = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+// ════════════════════════════════════════════════════════════════
+// SESSION — sem chrome.storage, 100% localStorage
+// ════════════════════════════════════════════════════════════════
+
+function saveSession(token, user) {
+  authToken   = token;
+  currentUser = user;
+  localStorage.setItem('auth_token', token || '');
+  localStorage.setItem('purp_user',  JSON.stringify(user || null));
+}
+
+function loadSession(callback) {
+  const token = localStorage.getItem('auth_token');
+  const raw   = localStorage.getItem('purp_user');
+  if (token && raw) {
+    try {
+      authToken   = token;
+      currentUser = JSON.parse(raw);
+      callback(true);
+      return;
+    } catch (_) {}
+  }
+  callback(false);
+}
+
+function clearSession() {
+  authToken       = null;
+  currentUser     = null;
+  portfolioCount  = 0;
+  portfolioSymbols = new Set();
+  stopRefresh();
+  localStorage.removeItem('auth_token');
+  localStorage.removeItem('purp_user');
+  localStorage.removeItem('pending_email');
+}
+
+function ensureAuth() {
+  if (!authToken) {
+    window.location.href = '/';
+  }
+}
+
+// ── Plan helpers ─────────────────────────────────────────────────
+const isPremium = () => !!(currentUser?.is_premium) || ['investor','tax_pro'].includes(currentUser?.plan);
+const isTaxPro  = () => currentUser?.plan === 'tax_pro';
+
+// ════════════════════════════════════════════════════════════════
+// API FETCH — com tratamento de 401
+// ════════════════════════════════════════════════════════════════
+
+async function apiFetch(path, opts = {}) {
+  try {
+    const res = await fetch(`${API_BASE}${path}`, opts);
+    if (res.status === 401) {
+      clearSession();
+      toast('Sessão expirada — faça login novamente.', 'warning');
+      setTimeout(() => { window.location.href = '/'; }, 1500);
+      return null;
+    }
+    return res;
+  } catch (e) {
+    console.error('Network error:', e);
+    toast('Erro de conexão. Verifique sua internet.', 'error');
+    return null;
+  }
+}
+
+function authHeaders(extra = {}) {
+  return {
+    'Content-Type': 'application/json',
+    ...(authToken ? {
+      'X-Auth-Token':   authToken,
+      'Authorization':  `Bearer ${authToken}`,
+    } : {}),
+    ...extra,
+  };
+}
+
+// ════════════════════════════════════════════════════════════════
+// TOAST
+// ════════════════════════════════════════════════════════════════
+
+function toast(msg, type = 'info', duration = 3500) {
+  let container = $('toast-container');
+  if (!container) {
+    container = document.createElement('div');
+    container.id = 'toast-container';
+    container.style.cssText =
+      'position:fixed;bottom:20px;right:20px;z-index:9999;display:flex;flex-direction:column;gap:8px;';
+    document.body.appendChild(container);
+  }
+  const icons = { success: '✓', error: '✕', warning: '⚠', info: 'ℹ' };
+  const colors = {
+    success: 'rgba(16,185,129,.15)',
+    error:   'rgba(239,68,68,.15)',
+    warning: 'rgba(245,158,11,.15)',
+    info:    'rgba(124,58,237,.15)',
+  };
+  const borders = {
+    success: '#10b981', error: '#ef4444', warning: '#f59e0b', info: '#7c3aed',
+  };
+  const el = document.createElement('div');
+  el.style.cssText = `
+    display:flex;align-items:center;gap:10px;padding:12px 16px;
+    background:${colors[type] || colors.info};
+    border:1px solid ${borders[type] || borders.info};
+    border-radius:12px;color:#f1f0f5;font-size:13px;
+    backdrop-filter:blur(10px);max-width:320px;
+    animation:toastIn .25s ease;
+  `;
+  el.innerHTML = `<span style="font-weight:700;">${icons[type] || 'ℹ'}</span><span>${msg}</span>`;
+  container.appendChild(el);
+  setTimeout(() => {
+    el.style.opacity = '0';
+    el.style.transform = 'translateX(20px)';
+    el.style.transition = 'all .3s ease';
+    setTimeout(() => el.remove(), 300);
+  }, duration);
+}
+
+// ── Error helpers ─────────────────────────────────────────────────
+function showError(elId, msg) {
+  const el = $(elId); if (!el) return;
+  el.textContent = msg; el.classList.remove('hidden');
+}
+function clearError(elId) {
+  const el = $(elId); if (!el) return;
+  el.textContent = ''; el.classList.add('hidden');
+}
+
+// ════════════════════════════════════════════════════════════════
+// REFRESH
+// ════════════════════════════════════════════════════════════════
+
+function startRefresh() {
+  stopRefresh();
+  refreshTimer = setInterval(() => {
+    if (!authToken) return;
+    fetchPortfolio();
+    loadMainChart(true);
+    loadDividendCard();
+    if ($('market-watch')?.classList.contains('active')) loadMarketWatch();
+  }, REFRESH_MS);
+}
+function stopRefresh() {
+  if (refreshTimer) { clearInterval(refreshTimer); refreshTimer = null; }
+}
+
+// ════════════════════════════════════════════════════════════════
+// LOGIN / REGISTER  (para páginas com formulário inline)
+// ════════════════════════════════════════════════════════════════
+
+function showLoginScreen() {
+  $('login-screen')?.classList.remove('hidden');
+}
+function hideLoginScreen() {
+  $('login-screen')?.classList.add('hidden');
+}
+
+function toggleAuthMode() {
+  $('login-form')?.classList.toggle('hidden');
+  $('register-form')?.classList.toggle('hidden');
+}
+
+async function handleLogin() {
+  const email    = $('login-email')?.value.trim().toLowerCase() || '';
+  const password = $('login-password')?.value || '';
+  clearError('login-error');
+
+  if (!email || !password) {
+    showError('login-error', 'Preencha email e senha.'); return;
+  }
+
+  const btn = $('btn-login');
+  const orig = btn?.textContent;
+  if (btn) { btn.disabled = true; btn.textContent = 'Entrando…'; }
+
+  try {
+    const res = await fetch(`${API_BASE}/auth/login`, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ email, password }),
+    });
+    const data = await res.json().catch(() => ({}));
+
+    if (res.ok) {
+      saveSession(data.token, data.user);
+
+      if (data.requires_verification) {
+        const emailForVerify = data.user?.email || email;
+        localStorage.setItem('pending_email', emailForVerify);
+        showVerifyScreen(data.token, emailForVerify, (verifiedUser) => {
+          const updated = { ...data.user, ...verifiedUser, is_verified: true };
+          saveSession(data.token, updated);
+          finalizeLoginUI();
+          toast('Email verificado! Bem-vindo(a) 🎉', 'success', 5000);
+        });
+        return;
+      }
+
+      finalizeLoginUI();
+      toast('Bem-vindo(a) de volta! 🎉', 'success', 3000);
+    } else {
+      showError('login-error', data.detail || 'Email ou senha incorretos.');
+    }
+  } catch (err) {
+    showError('login-error', 'Falha na conexão com o servidor.');
+  } finally {
+    if (btn) { btn.disabled = false; if (orig) btn.textContent = orig; }
+  }
+}
+
+async function handleRegister() {
+  const fullName = $('reg-full-name')?.value.trim() || '';
+  const email    = $('reg-email')?.value.trim()     || '';
+  const password = $('reg-password')?.value         || '';
+  clearError('register-error');
+
+  if (!fullName || !email || !password) {
+    showError('register-error', 'Todos os campos são obrigatórios.'); return;
+  }
+  if (fullName.length < 3) {
+    showError('register-error', 'Nome completo deve ter pelo menos 3 caracteres.'); return;
+  }
+  if (password.length < 4) {
+    showError('register-error', 'Senha deve ter pelo menos 4 caracteres.'); return;
+  }
+  if (!email.includes('@')) {
+    showError('register-error', 'Insira um email válido.'); return;
+  }
+
+  const btn = $('btn-register');
+  const orig = btn?.textContent;
+  if (btn) { btn.disabled = true; btn.textContent = 'Criando conta…'; }
+
+  try {
+    const res = await fetch(`${API_BASE}/auth/register`, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ full_name: fullName, email, password }),
+    });
+    const data = await res.json().catch(() => ({}));
+
+    if (res.ok) {
+      saveSession(data.token, data.user);
+      localStorage.setItem('pending_email', email);
+
+      if (data.requires_verification) {
+        const emailForVerify = data.email || data.user?.email || email;
+        showVerifyScreen(data.token, emailForVerify, (verifiedUser) => {
+          const updated = { ...data.user, ...verifiedUser, is_verified: true };
+          saveSession(data.token, updated);
+          finalizeLoginUI();
+          toast('Conta criada e verificada! Bem-vindo(a) ao Purp 🎉', 'success', 5000);
+        });
+        return;
+      }
+
+      finalizeLoginUI();
+      toast('Conta criada! 🎉', 'success', 5000);
+    } else {
+      showError('register-error', data.detail || data.message || `Erro ${res.status}`);
+    }
+  } catch (err) {
+    showError('register-error', `Falha de conexão: ${err.message}`);
+  } finally {
+    if (btn) { btn.disabled = false; if (orig) btn.textContent = orig; }
+  }
+}
+
+function finalizeLoginUI() {
+  hideLoginScreen();
+  updateProfileBar();
+  fetchPortfolio();
+  loadMainChart();
+  startRefresh();
+  checkAIStatus();
+}
+
+async function handleLogout() {
+  clearSession();
+  window.location.href = '/';
+}
+
+// ════════════════════════════════════════════════════════════════
+// VERIFY SCREEN  (inline — sem dependência de Verify-screen.JS)
+// ════════════════════════════════════════════════════════════════
+
+let _vfyToken = null;
+let _vfyTimer = null;
+
+function buildVerifyScreen(email) {
+  const masked = (() => {
+    if (!email) return '—';
+    const [local, domain] = email.split('@');
+    if (!domain) return email;
+    const vis = local.length <= 2 ? local[0] : local.slice(0, 2);
+    return `${vis}${'●'.repeat(Math.max(0, Math.min(local.length - 2, 4)))}@${domain}`;
+  })();
+
+  const el = document.createElement('div');
+  el.id = 'verify-screen';
+  el.style.cssText =
+    'position:fixed;inset:0;background:#0a0914;display:flex;flex-direction:column;' +
+    'align-items:center;justify-content:center;padding:24px;z-index:9999;font-family:sans-serif;';
+  el.innerHTML = `
+    <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-60%);width:280px;height:280px;
+      background:radial-gradient(circle,rgba(124,58,237,.16) 0%,transparent 70%);pointer-events:none;"></div>
+    <div style="width:60px;height:60px;background:linear-gradient(135deg,#7c3aed,#a78bfa);border-radius:16px;
+      display:flex;align-items:center;justify-content:center;font-size:26px;margin-bottom:18px;
+      box-shadow:0 8px 28px rgba(124,58,237,.4);">🔐</div>
+    <h2 style="color:#f1f0f5;font-size:17px;font-weight:800;margin:0 0 6px;text-align:center;">Verifique seu email</h2>
+    <p style="color:rgba(241,240,245,.4);font-size:11px;margin:0 0 22px;text-align:center;line-height:1.55;">
+      Enviamos um código de 6 dígitos para<br>
+      <span style="color:#a78bfa;font-weight:700;">${masked}</span>
+    </p>
+    <div id="vfy-inputs" style="display:flex;gap:7px;margin-bottom:16px;">
+      ${[0,1,2,3,4,5].map(i =>
+        `<input id="vd${i}" type="text" inputmode="numeric" maxlength="1"
+          style="width:38px;height:46px;background:rgba(124,58,237,.1);border:2px solid rgba(124,58,237,.28);
+          border-radius:9px;color:#fff;font-size:20px;font-weight:900;text-align:center;outline:none;
+          font-family:monospace;caret-color:transparent;transition:border-color .15s,background .15s;">`
+      ).join('')}
+    </div>
+    <div id="vfy-error" style="color:#f87171;font-size:11px;min-height:15px;margin:0 0 10px;text-align:center;display:none;"></div>
+    <button id="vfy-btn" style="width:100%;max-width:232px;padding:11px;
+      background:linear-gradient(135deg,#7c3aed,#a78bfa);border:none;border-radius:11px;
+      color:#fff;font-size:13px;font-weight:700;cursor:pointer;
+      box-shadow:0 4px 18px rgba(124,58,237,.35);margin-bottom:12px;">Verificar conta</button>
+    <div style="text-align:center;">
+      <span style="color:rgba(241,240,245,.3);font-size:11px;">Não recebeu? </span>
+      <button id="vfy-resend-btn" style="background:none;border:none;color:#a78bfa;font-size:11px;font-weight:700;cursor:pointer;padding:0;">Reenviar código</button>
+      <span id="vfy-countdown" style="color:rgba(241,240,245,.25);font-size:11px;display:none;"></span>
+    </div>
+    <button id="vfy-back" style="background:none;border:none;color:rgba(241,240,245,.2);font-size:10px;cursor:pointer;margin-top:14px;padding:0;">← Usar outra conta</button>`;
+  return el;
+}
+
+function showVerifyScreen(token, email, onSuccess) {
+  _vfyToken = token;
+  document.getElementById('verify-screen')?.remove();
+
+  if (!document.getElementById('vfy-shake-style')) {
+    const s = document.createElement('style');
+    s.id = 'vfy-shake-style';
+    s.textContent = `@keyframes vfyShake{0%,100%{transform:translateX(0)}20%{transform:translateX(-6px)}40%{transform:translateX(6px)}60%{transform:translateX(-4px)}80%{transform:translateX(4px)}}`;
+    document.head.appendChild(s);
+  }
+
+  const screen = buildVerifyScreen(email);
+  document.body.appendChild(screen);
+  setTimeout(() => document.getElementById('vd0')?.focus(), 100);
+
+  const getCode = () => [0,1,2,3,4,5].map(i => document.getElementById(`vd${i}`)?.value || '').join('');
+
+  const showVfyError = (msg) => {
+    const el = $('vfy-error'); if (el) { el.textContent = msg; el.style.display = 'block'; }
+  };
+  const clearVfyError = () => {
+    const el = $('vfy-error'); if (el) el.style.display = 'none';
+  };
+  const shakeInputs = () => {
+    const c = $('vfy-inputs'); if (!c) return;
+    c.style.animation = 'vfyShake .32s ease';
+    c.addEventListener('animationend', () => { c.style.animation = ''; }, { once: true });
+    [0,1,2,3,4,5].forEach(i => {
+      const el = document.getElementById(`vd${i}`);
+      if (el) { el.style.borderColor = '#f87171'; el.style.background = 'rgba(248,113,113,.1)'; }
+    });
+    setTimeout(() => {
+      [0,1,2,3,4,5].forEach(i => {
+        const el = document.getElementById(`vd${i}`);
+        if (el) { el.style.borderColor = 'rgba(124,58,237,.28)'; el.style.background = 'rgba(124,58,237,.1)'; }
+      });
+    }, 900);
+  };
+
+  [0,1,2,3,4,5].forEach(i => {
+    const el = document.getElementById(`vd${i}`);
+    if (!el) return;
+    el.addEventListener('focus', () => {
+      el.style.borderColor = '#a78bfa'; el.style.background = 'rgba(124,58,237,.18)';
+    });
+    el.addEventListener('input', e => {
+      const val = e.target.value.replace(/\D/g, '');
+      el.value = val ? val[0] : '';
+      if (val && i < 5) document.getElementById(`vd${i+1}`)?.focus();
+      clearVfyError();
+      if (getCode().length === 6) setTimeout(submitCode, 100);
+    });
+    el.addEventListener('keydown', e => {
+      if (e.key === 'Backspace' && !el.value && i > 0)
+        document.getElementById(`vd${i-1}`)?.focus();
+      if (e.key === 'Enter') submitCode();
+    });
+    el.addEventListener('paste', e => {
+      e.preventDefault();
+      const text = (e.clipboardData || window.clipboardData)
+        .getData('text').replace(/\D/g, '').slice(0, 6);
+      text.split('').forEach((ch, idx) => {
+        const d = document.getElementById(`vd${idx}`);
+        if (d) d.value = ch;
+      });
+      if (text.length > 0) document.getElementById(`vd${Math.min(text.length, 5)}`)?.focus();
+      if (text.length === 6) setTimeout(submitCode, 100);
+    });
+  });
+
+  async function submitCode() {
+    const code = getCode();
+    if (code.length !== 6) { showVfyError('Digite todos os 6 dígitos.'); return; }
+    const btn = $('vfy-btn');
+    if (btn) { btn.disabled = true; btn.textContent = 'Verificando…'; }
+    try {
+      const res = await fetch(`${API_BASE}/auth/verify-email`, {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${_vfyToken}` },
+        body:    JSON.stringify({ email, code }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        [0,1,2,3,4,5].forEach(i => {
+          const el = document.getElementById(`vd${i}`);
+          if (el) { el.style.borderColor = '#4ade80'; el.style.background = 'rgba(74,222,128,.12)'; }
+        });
+        if (btn) { btn.textContent = '✓ Verificado!'; btn.style.background = 'linear-gradient(135deg,#16a34a,#4ade80)'; }
+        setTimeout(() => {
+          document.getElementById('verify-screen')?.remove();
+          if (_vfyTimer) clearInterval(_vfyTimer);
+          onSuccess(data.user || {});
+        }, 800);
+      } else {
+        showVfyError(data.detail || 'Código inválido. Tente novamente.');
+        shakeInputs();
+        if (btn) { btn.disabled = false; btn.textContent = 'Verificar conta'; }
+      }
+    } catch (_) {
+      showVfyError('Erro de rede. Verifique sua conexão.');
+      if (btn) { btn.disabled = false; btn.textContent = 'Verificar conta'; }
+    }
+  }
+
+  $('vfy-btn')?.addEventListener('click', submitCode);
+
+  $('vfy-resend-btn')?.addEventListener('click', async () => {
+    const resendBtn = $('vfy-resend-btn');
+    const countdown = $('vfy-countdown');
+    try {
+      if (resendBtn) resendBtn.style.display = 'none';
+      if (countdown) { countdown.style.display = 'inline'; countdown.textContent = 'Enviando…'; }
+      const res = await fetch(`${API_BASE}/auth/resend-verification`, {
+        method:  'POST',
+        headers: { 'Authorization': `Bearer ${_vfyToken}` },
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        if (countdown) countdown.textContent = err.detail || 'Aguarde um momento.';
+        setTimeout(() => {
+          if (resendBtn) resendBtn.style.display = 'inline';
+          if (countdown) countdown.style.display = 'none';
+        }, 3000);
+        return;
+      }
+      let secs = 60;
+      if (_vfyTimer) clearInterval(_vfyTimer);
+      _vfyTimer = setInterval(() => {
+        secs--;
+        if (countdown) countdown.textContent = `Reenviar em ${secs}s`;
+        if (secs <= 0) {
+          clearInterval(_vfyTimer);
+          if (resendBtn) { resendBtn.style.display = 'inline'; resendBtn.textContent = 'Reenviar código'; }
+          if (countdown) countdown.style.display = 'none';
+        }
+      }, 1000);
+    } catch (_) {
+      if (resendBtn) resendBtn.style.display = 'inline';
+      if (countdown) countdown.style.display = 'none';
+    }
+  });
+
+  $('vfy-back')?.addEventListener('click', () => {
+    document.getElementById('verify-screen')?.remove();
+    if (_vfyTimer) clearInterval(_vfyTimer);
+    clearSession();
+    showLoginScreen();
+  });
+}
+
+// ════════════════════════════════════════════════════════════════
+// PROFILE BAR
+// ════════════════════════════════════════════════════════════════
+
+function updateProfileBar() {
+  const name = currentUser?.full_name || currentUser?.username || '—';
+  const nameEl = $('profile-full-name') || $('shell-user-name');
+  if (nameEl) nameEl.textContent = name;
+  const avatarEl = $('profile-avatar') || $('shell-avatar');
+  if (avatarEl) avatarEl.textContent = name.charAt(0).toUpperCase();
+
+  const plan    = currentUser?.plan || 'free';
+  const planEl  = $('profile-plan') || $('shell-plan-badge');
+  if (planEl) {
+    if (plan === 'tax_pro') {
+      planEl.textContent = 'Tax Pro'; planEl.className = 'plan-badge tax-pro';
+    } else if (plan === 'investor') {
+      planEl.textContent = 'Investor'; planEl.className = 'plan-badge premium';
+    } else {
+      planEl.textContent = 'Free'; planEl.className = 'plan-badge';
+    }
+  }
+
+  const countEl = $('profile-count');
+  if (countEl) {
+    countEl.textContent = isPremium()
+      ? `${portfolioCount} ativos`
+      : `${portfolioCount}/${FREE_ASSET_LIMIT} ativos`;
+  }
+  const upgradeBtn = $('btn-upgrade');
+  if (upgradeBtn) upgradeBtn.style.display = isPremium() ? 'none' : '';
+
+  const importCard = $('import-csv-card');
+  if (importCard) importCard.style.display = isPremium() ? '' : 'none';
+
+  updateTaxToolsVisibility();
+}
+
+// ════════════════════════════════════════════════════════════════
+// SHELL NAVIGATION (drawer / overlay)
+// ════════════════════════════════════════════════════════════════
+
+function initShellNav() {
+  const hamburger = $('btn-hamburger-shell') || $('btn-hamburger');
+  const drawer    = $('shell-drawer') || $('nav-menu');
+  const overlay   = $('shell-overlay');
+
+  const toggleDrawer = (open) => {
+    drawer?.classList.toggle('open', open);
+    overlay?.classList.toggle('show', open);
+    // fallback para classe hidden usada no popup original
+    if (open) drawer?.classList.remove('hidden');
+    else drawer?.classList.add('hidden');
+    hamburger?.classList.toggle('open', open);
+  };
+
+  hamburger?.addEventListener('click', () => {
+    toggleDrawer(!drawer?.classList.contains('open') && drawer?.classList.contains('hidden') === true
+      ? true
+      : !drawer?.classList.contains('open'));
+  });
+  overlay?.addEventListener('click', () => toggleDrawer(false));
+}
+
+function switchTab(id) {
+  qsa('.page').forEach(p => p.classList.remove('active'));
+  $(id)?.classList.add('active');
+
+  $('top-tab-dashboard')?.classList.toggle('active', id !== 'market-watch');
+  $('top-tab-market')?.classList.toggle('active', id === 'market-watch');
+
+  const navMap = {
+    'dashboard':          'nav-portfolio',
+    'market-watch':       'nav-market',
+    'add-asset':          'nav-add',
+    'alerts-page':        'nav-alerts',
+    'import-page':        'nav-import',
+    'transactions-page':  'nav-transactions',
+  };
+  Object.entries(navMap).forEach(([tabId, navId]) => {
+    $(navId)?.classList.toggle('active', id === tabId);
+  });
+
+  if (id === 'dashboard')          loadMainChart();
+  if (id === 'transactions-page')  loadTransactions();
+  if (id === 'market-watch')       loadMarketWatch();
+  if (id === 'alerts-page')        loadAlerts();
+}
+
+function closeMenu() {
+  const drawer = $('nav-menu') || $('shell-drawer');
+  drawer?.classList.add('hidden');
+  drawer?.classList.remove('open');
+  $('btn-hamburger')?.classList.remove('open');
+  $('shell-overlay')?.classList.remove('show');
+}
+
+// ════════════════════════════════════════════════════════════════
+// UPGRADE / FEATURE GATE MODALS
+// ════════════════════════════════════════════════════════════════
+
+function mountGateModal() {
+  if ($('feature-gate-modal')) return;
+  const modal = document.createElement('div');
+  modal.id = 'feature-gate-modal';
+  modal.style.cssText =
+    'position:fixed;inset:0;background:rgba(0,0,0,.55);display:none;place-items:center;z-index:9990;padding:16px;';
+  modal.innerHTML = `
+    <div style="width:min(100%,420px);background:#110f20;border:1px solid rgba(255,255,255,.12);
+      border-radius:14px;padding:20px;color:#f5f4ff;">
+      <h3 id="gate-title" style="margin:0 0 8px;font-size:16px;">Upgrade necessário</h3>
+      <p id="gate-msg" style="font-size:13px;color:rgba(255,255,255,.6);margin:0 0 16px;"></p>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+        <button id="gate-close" type="button" style="padding:10px;border-radius:10px;
+          border:1px solid rgba(255,255,255,.18);background:transparent;color:#d9d6e8;cursor:pointer;">
+          Agora não</button>
+        <button id="gate-upgrade" type="button" style="padding:10px;border-radius:10px;border:0;
+          background:linear-gradient(135deg,#7c3aed,#6d28d9);color:#fff;font-weight:700;cursor:pointer;">
+          Fazer upgrade</button>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+  modal.addEventListener('click', e => { if (e.target === modal) closeGateModal(); });
+  $('gate-close')?.addEventListener('click', closeGateModal);
+  $('gate-upgrade')?.addEventListener('click', () => {
+    createCheckout(modal.dataset.plan || 'investor');
+    closeGateModal();
+  });
+}
+
+function showUpgradeModal(reason, plan = 'investor') {
+  mountGateModal();
+  const modal = $('feature-gate-modal');
+  modal.dataset.plan = plan;
+  const titleEl = $('gate-title');
+  const msgEl   = $('gate-msg');
+  if (titleEl) titleEl.textContent = plan === 'tax_pro' ? 'Tax Pro necessário' : 'Premium necessário';
+  if (msgEl)   msgEl.textContent   = reason || 'Esta função requer um plano pago.';
+  modal.style.display = 'grid';
+}
+
+function closeGateModal() {
+  const modal = $('feature-gate-modal');
+  if (modal) modal.style.display = 'none';
+}
+
+// Legacy compat
+function hideUpgradeModal() { closeGateModal(); }
+function showTaxProUpgradeModal() { showUpgradeModal('Esta função requer o plano Tax Pro.', 'tax_pro'); }
+function hideTaxProUpgradeModal() { closeGateModal(); }
+
+async function createCheckout(plan) {
+  if (!authToken) { window.location.href = '/'; return; }
+  const btn = $('btn-upgrade-confirm') || $('btn-taxpro-confirm');
+  if (btn) { btn.disabled = true; btn.textContent = 'Carregando…'; }
+  try {
+    const res = await apiFetch('/stripe/create-checkout', {
+      method:  'POST',
+      headers: authHeaders(),
+      body:    JSON.stringify({ plan }),
+    });
+    if (!res) return;
+    const data = await res.json().catch(() => ({}));
+    if (res.ok && (data.checkout_url || data.url)) {
+      window.open(data.checkout_url || data.url, '_blank');
+    } else {
+      toast(data.detail || 'Não foi possível abrir o checkout.', 'error');
+    }
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'Fazer upgrade'; }
+  }
+}
+
+async function handleUpgrade()       { await createCheckout('investor'); }
+async function handleTaxProUpgrade() { await createCheckout('tax_pro'); }
+
+function bindFeatureGates() {
+  mountGateModal();
+  qsa('[data-requires-plan]').forEach(el => {
+    el.addEventListener('click', e => {
+      const required = el.getAttribute('data-requires-plan');
+      const allowed  = required === 'tax_pro' ? isTaxPro() : isPremium();
+      if (allowed) return;
+      e.preventDefault();
+      showUpgradeModal(
+        required === 'tax_pro'
+          ? 'Esta função requer o plano Tax Pro.'
+          : 'Esta função requer Investor ou Tax Pro.',
+        required === 'tax_pro' ? 'tax_pro' : 'investor'
+      );
+    });
+  });
+}
+
+function bindPlanButtons() {
+  qsa('[data-checkout-plan]').forEach(btn => {
+    btn.addEventListener('click', () => createCheckout(btn.getAttribute('data-checkout-plan')));
+  });
+}
+
+// ════════════════════════════════════════════════════════════════
+// PRIVACY TOGGLE
+// ════════════════════════════════════════════════════════════════
+
+function getEyeIconSvg(hidden) {
+  return hidden
+    ? `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.94 10.94 0 0 1 12 20C7 20 2.73 16.89 1 12c.74-2.08 2.06-3.93 3.77-5.33"/><path d="M9.9 4.24A10.9 10.9 0 0 1 12 4c5 0 9.27 3.11 11 8a11.8 11.8 0 0 1-2.08 3.35"/><path d="M14.12 14.12a3 3 0 1 1-4.24-4.24"/><path d="M1 1l22 22"/></svg>`
+    : `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg>`;
+}
+
+function applyVisibilityMask() {
+  qsa('.sensitive-value').forEach(el =>
+    el.classList.toggle('is-hidden', hideSensitiveValues)
+  );
+}
+
+function updatePrivacyToggle() {
+  const icon = $('privacy-icon');
+  if (icon) icon.innerHTML = getEyeIconSvg(hideSensitiveValues);
+  applyVisibilityMask();
+}
+
+// ════════════════════════════════════════════════════════════════
+// CHARTS
+// ════════════════════════════════════════════════════════════════
+
+async function loadMainChart(skipAnim = false) {
+  if (!authToken) return;
+  const ctx = $('mainChart')?.getContext('2d');
+  if (!ctx) return;
+  if (mainChart) { mainChart.destroy(); mainChart = null; }
+
+  const period = qs('.pill.active')?.dataset.p || '1mo';
+  const bench  = $('benchmark-select')?.value || '^GSPC';
+  const res = await apiFetch(
+    `/portfolio/history?period=${period}&benchmark=${encodeURIComponent(bench)}`,
+    { headers: authHeaders() }
+  );
+  if (!res || !res.ok) return;
+  const data = await res.json();
+  if (!data.portfolio?.length) return;
+
+  const s0 = data.portfolio[0], b0 = data.benchmark?.[0] || 1;
+  const normP = data.portfolio.map(v => ((v - s0) / (s0 || 1)) * 100);
+  const normB = (data.benchmark || []).map(v => ((v - b0) / (b0 || 1)) * 100);
+  const benchChange = normB.length ? normB[normB.length - 1] : 0;
+
+  const benchEl = $('benchmark-change');
+  if (benchEl) {
+    benchEl.textContent = `Benchmark: ${formatPct(benchChange)}`;
+    benchEl.classList.toggle('pos', benchChange > 0);
+    benchEl.classList.toggle('neg', benchChange < 0);
+  }
+
+  if (typeof Chart === 'undefined') return;
+  mainChart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: data.dates,
+      datasets: [
+        { label: 'Portfólio', data: normP, borderColor: '#a78bfa', borderWidth: 2, pointRadius: 0, tension: 0.4 },
+        { label: bench, data: normB, borderColor: '#444', borderWidth: 1, borderDash: [4,4], pointRadius: 0, tension: 0.4 },
+      ],
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      animation: skipAnim ? false : { duration: 400 },
+      plugins: { legend: { display: false }, tooltip: { mode: 'index', intersect: false } },
+      scales: { x: { display: false }, y: { display: false } },
+    },
+  });
+  applyVisibilityMask();
+}
+
+async function loadDetailChart(symbol, period) {
+  const ctx = $('detailChart')?.getContext('2d');
+  if (!ctx) return;
+  if (detailChart) { detailChart.destroy(); detailChart = null; }
+
+  const res = await apiFetch(`/history/${encodeURIComponent(symbol)}?period=${period}`);
+  if (!res || !res.ok) return;
+  const data = await res.json();
+  if (!data.prices?.length) return;
+
+  const grad = ctx.createLinearGradient(0, 0, 0, 260);
+  grad.addColorStop(0, 'rgba(124,58,237,0.4)');
+  grad.addColorStop(1, 'rgba(124,58,237,0)');
+
+  if (typeof Chart === 'undefined') return;
+  detailChart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: data.dates || [],
+      datasets: [{
+        data: data.prices, borderColor: '#7c3aed', backgroundColor: grad,
+        borderWidth: 2, pointRadius: 0, pointHoverRadius: 5, fill: true, tension: 0.4,
+      }],
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false, animation: { duration: 300 },
+      interaction: { mode: 'index', intersect: false },
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { display: false },
+        y: { display: true, position: 'right', grid: { color: 'rgba(255,255,255,0.04)' },
+          ticks: { color: 'rgba(255,255,255,0.3)', font: { family: 'DM Mono', size: 9 } } },
+      },
+    },
+  });
+  applyVisibilityMask();
+}
+
+function renderSpark(canvasId, data, color) {
+  const ctx = $(canvasId)?.getContext('2d');
+  if (!ctx || !data?.length || typeof Chart === 'undefined') return;
+  new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: data.map((_, i) => i),
+      datasets: [{ data, borderColor: color, borderWidth: 1.5, pointRadius: 0, tension: 0.4, fill: false }],
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false, animation: false,
+      plugins: { legend: { display: false }, tooltip: { enabled: false } },
+      scales: { x: { display: false }, y: { display: false } },
+    },
+  });
+}
+
+// ════════════════════════════════════════════════════════════════
+// PORTFOLIO SCORE
+// ════════════════════════════════════════════════════════════════
+
+async function loadPortfolioScore() {
+  if (!authToken) return;
+  const res = await apiFetch('/portfolio/score', { headers: authHeaders() });
+  if (!res || !res.ok) return;
+  const score = await res.json();
+
+  const overall = Number(score.overall || 0);
+  const dash    = 283 - (Math.max(0, Math.min(100, overall)) / 100) * 283;
+
+  const overallEl = $('score-overall');
+  if (overallEl) overallEl.textContent = `${overall}`;
+  const gradeEl = $('score-grade');
+  if (gradeEl) gradeEl.textContent = score.grade || '—';
+  const gaugeEl = $('score-gauge-value');
+  if (gaugeEl) gaugeEl.style.strokeDashoffset = `${dash}`;
+
+  const setBar = (id, val, labelId) => {
+    const v = Number(val || 0);
+    if ($(id)) $(id).style.width = `${Math.max(0, Math.min(100, v))}%`;
+    if ($(labelId)) $(labelId).textContent = `${Math.round(v)}`;
+  };
+  setBar('bar-diversification', score.diversification, 'score-diversification');
+  setBar('bar-risk',            score.risk_adjusted,    'score-risk');
+  setBar('bar-consistency',     score.consistency,      'score-consistency');
+
+  if (score.tax_efficiency == null) {
+    if ($('bar-tax'))   $('bar-tax').style.width = '0%';
+    if ($('score-tax')) $('score-tax').textContent = '—';
+  } else {
+    setBar('bar-tax', score.tax_efficiency, 'score-tax');
+  }
+
+  const insightsEl = $('score-insights');
+  if (insightsEl) {
+    const items = Array.isArray(score.insights) ? score.insights : [];
+    insightsEl.innerHTML = items.length
+      ? items.map(txt => `<li>${txt}</li>`).join('')
+      : '<li>Seu portfólio está estável. Continue monitorando diversificação e consistência.</li>';
+  }
+}
+
+// ════════════════════════════════════════════════════════════════
+// PORTFOLIO — balance + assets list
+// ════════════════════════════════════════════════════════════════
+
+async function fetchPortfolio() {
+  if (!authToken) return;
+  const res = await apiFetch('/portfolio/balance', { headers: authHeaders() });
+  if (!res || !res.ok) return;
+  const data = await res.json();
+
+  const balanceEl = $('total-balance');
+  if (balanceEl) {
+    balanceEl.textContent = formatUSD(data.total_balance_usd);
+    balanceEl.classList.add('sensitive-value');
+  }
+
+  portfolioCount   = (data.assets || []).length;
+  portfolioSymbols = new Set((data.assets || []).map(a => (a.real_symbol || a.symbol || '').toUpperCase()));
+  updateProfileBar();
+  await loadPortfolioScore();
+  await loadNetWorth();
+
+  const list = $('assets-list');
+  if (!list) return;
+  list.innerHTML = '';
+
+  if (!data.assets?.length) {
+    list.innerHTML = `
+      <div class="empty-state">
+        <div class="empty-icon">📭</div>
+        <div class="empty-title">Portfólio vazio</div>
+        <div class="empty-sub">Adicione seu primeiro ativo para começar a acompanhar seus investimentos.</div>
+      </div>`;
+    return;
+  }
+
+  renderRebalanceTargets(data.assets || []);
+  await loadBalancePerformance();
+
+  data.assets.forEach(asset => {
+    const profit   = asset.profit ?? 0;
+    const isProfit = profit >= 0;
+    const pctTxt   = asset.percent_change != null
+      ? `${asset.percent_change >= 0 ? '+' : ''}${asset.percent_change.toFixed(2)}%` : '';
+    const sym2 = (asset.symbol || '').substring(0, 2).toUpperCase();
+    const iconHtml = asset.icon
+      ? `<img class="asset-icon-img" src="${asset.icon}" alt="${asset.symbol}"
+            onerror="this.style.display='none';this.nextElementSibling.style.display='flex';">
+         <div class="asset-icon-fb" style="display:none;">${sym2}</div>`
+      : `<div class="asset-icon-fb">${sym2}</div>`;
+
+    const wrapper = document.createElement('div');
+    wrapper.className = 'asset-wrapper';
+    wrapper.innerHTML = `
+      <div class="asset-main">
+        <div class="asset-left">
+          <div class="asset-icon-wrap">${iconHtml}</div>
+          <div>
+            <div class="asset-name">${asset.symbol}</div>
+            <div class="asset-price">
+              <span class="sensitive-value">${formatUSD(asset.current_price)}</span>
+              <span class="${isProfit ? 'text-green' : 'text-red'}">${pctTxt}</span>
+            </div>
+          </div>
+        </div>
+        <div class="asset-spark"><canvas id="spark-${asset.id}"></canvas></div>
+        <div class="asset-values">
+          <div class="asset-val sensitive-value">${formatUSD(asset.position_value)}</div>
+          <div class="asset-profit sensitive-value ${isProfit ? 'text-green' : 'text-red'}">
+            ${isProfit ? '+' : ''}${formatUSD(profit)}
+          </div>
+        </div>
+      </div>
+      <div class="action-bar">
+        <button class="action-btn ai"   data-id="${asset.id}">✨ AI Analysis</button>
+        <button class="action-btn sell" data-id="${asset.id}">📉 Vender</button>
+      </div>
+      <div class="ai-result" id="ai-res-${asset.id}"></div>`;
+
+    wrapper.querySelector('.asset-main').addEventListener('click', () => openDetail(asset));
+    wrapper.querySelector('.action-btn.sell').addEventListener('click', e => {
+      e.stopPropagation(); openSellModal(asset);
+    });
+    wrapper.querySelector('.action-btn.ai').addEventListener('click', e => {
+      e.stopPropagation(); requestAssetAI(asset);
+    });
+    list.appendChild(wrapper);
+    renderSpark(`spark-${asset.id}`, asset.history || [], isProfit ? '#10b981' : '#ef4444');
+  });
+
+  applyVisibilityMask();
+  loadDividendCard();
+  loadAlerts();
+}
+
+// ── Balance performance pills ─────────────────────────────────────
+async function loadBalancePerformance() {
+  if (!authToken) return;
+  const periods = ['1mo', '6mo', '1y'];
+  const updates = await Promise.all(periods.map(async period => {
+    const res = await apiFetch(
+      `/portfolio/history?period=${period}&benchmark=%5EGSPC`,
+      { headers: authHeaders() }
+    );
+    if (!res || !res.ok) return { period, value: null };
+    const data  = await res.json();
+    const prices = data.portfolio || [];
+    if (prices.length < 2 || !prices[0]) return { period, value: 0 };
+    return { period, value: ((prices[prices.length-1] - prices[0]) / prices[0]) * 100 };
+  }));
+
+  updates.forEach(({ period, value }) => {
+    const pill  = qs(`.perf-pill[data-period="${period}"]`); if (!pill) return;
+    const label = period === '1mo' ? '1M' : period === '6mo' ? '6M' : '12M';
+    if (value == null || Number.isNaN(value)) {
+      pill.textContent = `${label}: —`; pill.classList.remove('pos','neg'); return;
+    }
+    pill.textContent = `${label}: ${formatPct(value)}`;
+    pill.classList.toggle('pos', value > 0);
+    pill.classList.toggle('neg', value < 0);
+  });
+  applyVisibilityMask();
+}
+
+// ════════════════════════════════════════════════════════════════
+// DETAIL VIEW
+// ════════════════════════════════════════════════════════════════
+
+function openDetail(asset) {
+  const view = $('detail-view'); if (!view) return;
+  view.classList.add('active');
+
+  if ($('detail-symbol')) $('detail-symbol').textContent = asset.symbol;
+  const priceEl = $('detail-price');
+  if (priceEl) { priceEl.textContent = formatUSD(asset.current_price); priceEl.classList.add('sensitive-value'); }
+  if ($('holding-badge')) $('holding-badge').textContent = `${asset.days_held ?? 0} dias em carteira`;
+
+  const imgEl = $('detail-icon-img'), fbEl = $('detail-icon-fb');
+  if (fbEl) fbEl.textContent = (asset.symbol || '').substring(0, 2).toUpperCase();
+  if (imgEl && asset.icon) {
+    imgEl.src = asset.icon; imgEl.style.display = 'block';
+    if (fbEl) fbEl.style.display = 'none';
+    imgEl.onerror = () => { imgEl.style.display = 'none'; if (fbEl) fbEl.style.display = 'flex'; };
+  } else {
+    if (imgEl) imgEl.style.display = 'none';
+    if (fbEl) fbEl.style.display = 'flex';
+  }
+
+  qsa('.time-btn').forEach(b => b.classList.remove('active'));
+  qs('.time-btn[data-period="1mo"]')?.classList.add('active');
+  loadDetailChart(asset.real_symbol || asset.symbol, '1mo');
+}
+
+// ════════════════════════════════════════════════════════════════
+// SELL MODAL
+// ════════════════════════════════════════════════════════════════
+
+function openSellModal(asset) {
+  assetForSale = asset;
+  const qty = $('sell-qty'); if (!qty) return;
+  qty.value = asset.amount; qty.max = asset.amount;
+  qty.step  = (asset.type || '').toLowerCase() === 'stock' ? '1' : 'any';
+  if ($('sell-info'))
+    $('sell-info').textContent = `Em carteira: ${asset.amount}  •  Preço médio: ${formatUSD(asset.purchase_price)}`;
+  updateSellEstimate();
+  $('modal-sell')?.classList.add('active');
+}
+
+function closeSellModal() {
+  $('modal-sell')?.classList.remove('active');
+  assetForSale = null;
+}
+
+function updateSellEstimate() {
+  if (!assetForSale) return;
+  let qty = parseFloat($('sell-qty')?.value) || 0;
+  if (qty > assetForSale.amount) { qty = assetForSale.amount; if ($('sell-qty')) $('sell-qty').value = qty; }
+  if (qty < 0) qty = 0;
+  const total = qty * assetForSale.current_price;
+  const pnl   = (assetForSale.current_price - assetForSale.purchase_price) * qty;
+  const isWin = pnl >= 0;
+  const estEl = $('sell-estimate');
+  if (estEl) {
+    estEl.innerHTML = `
+      <span class="sensitive-value">${formatUSD(total)}</span><br>
+      <span class="${isWin ? 'text-green' : 'text-red'}" style="font-size:13px;">
+        ${isWin ? '+' : ''}${formatUSD(pnl)}
+      </span>`;
+  }
+  applyVisibilityMask();
+}
+
+async function confirmSell() {
+  if (!assetForSale || !authToken) return;
+  const qty = parseFloat($('sell-qty')?.value);
+  if (!qty || qty <= 0) { toast('Insira uma quantidade válida para vender.', 'warning'); return; }
+  if ((assetForSale.type || '').toLowerCase() === 'stock' && !Number.isInteger(qty)) {
+    toast('Para ações, a quantidade deve ser um número inteiro.', 'warning'); return;
+  }
+  const btn = $('btn-sell-confirm'); if (btn) { btn.disabled = true; btn.textContent = '…'; }
+  try {
+    const res = await apiFetch(`/assets/${assetForSale.id}/sell`, {
+      method:  'POST',
+      headers: authHeaders(),
+      body:    JSON.stringify({ amount: qty }),
+    });
+    if (!res) return;
+    if (res.ok) {
+      const data = await res.json();
+      const pnl  = data.pnl ?? 0;
+      toast(`Venda realizada! P&L: ${pnl >= 0 ? '+' : ''}${formatUSD(pnl)}`, pnl >= 0 ? 'success' : 'info');
+      closeSellModal(); fetchPortfolio(); loadMainChart();
+    } else {
+      const err = await res.json().catch(() => ({}));
+      toast(err.detail || 'Falha ao vender. Tente novamente.', 'error');
+    }
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'Confirmar venda'; }
+  }
+}
+
+// ════════════════════════════════════════════════════════════════
+// ADD ASSET
+// ════════════════════════════════════════════════════════════════
+
+async function handleAddAsset() {
+  if (!authToken) { window.location.href = '/'; return; }
+  const sym    = $('symbol-input')?.value.trim().toUpperCase() || '';
+  const amount = parseFloat($('amount-input')?.value);
+  const price  = parseFloat($('price-input')?.value);
+  const date   = $('date-input')?.value || null;
+
+  if (!sym)               { toast('Insira o símbolo do ativo.', 'warning');    return; }
+  if (!amount || amount <= 0) { toast('Insira uma quantidade válida.', 'warning'); return; }
+  if (!price  || price  <= 0) { toast('Insira um preço válido.', 'warning');    return; }
+
+  const resolvedType = selectedAddAssetType || await resolveSymbolType(sym);
+  if (resolvedType === 'stock' && !Number.isInteger(amount)) {
+    toast('Para ações, a quantidade deve ser um número inteiro.', 'warning'); return;
+  }
+
+  const isExisting = portfolioSymbols.has(sym);
+  if (!isPremium() && portfolioCount >= FREE_ASSET_LIMIT && !isExisting) {
+    showUpgradeModal(`O plano gratuito é limitado a ${FREE_ASSET_LIMIT} ativos.`); return;
+  }
+
+  const btn = $('btn-save-asset');
+  if (btn) { btn.disabled = true; btn.textContent = 'Salvando…'; }
+
+  try {
+    const res = await apiFetch('/assets/', {
+      method:  'POST',
+      headers: authHeaders(),
+      body:    JSON.stringify({ symbol: sym, amount, purchase_price: price, purchase_date: date }),
+    });
+    if (!res) return;
+    if (res.ok) {
+      if ($('symbol-input')) $('symbol-input').value = '';
+      if ($('amount-input')) $('amount-input').value = '';
+      if ($('price-input'))  $('price-input').value  = '';
+      if ($('date-input'))   $('date-input').value   = '';
+      selectedAddAssetType = null;
+      setAddAmountInputMode(null);
+      if ($('search-dropdown')) $('search-dropdown').style.display = 'none';
+      switchTab('dashboard');
+      await fetchPortfolio(); loadMainChart();
+      toast(`${sym} adicionado ao portfólio ✓`, 'success');
+    } else if (res.status === 402) {
+      const err = await res.json().catch(() => ({}));
+      showUpgradeModal(err.detail || 'Faça upgrade para adicionar mais ativos.');
+    } else if (res.status === 404) {
+      toast(`Ativo '${sym}' não encontrado.`, 'error');
+    } else {
+      const err = await res.json().catch(() => ({}));
+      toast(err.detail || 'Falha ao adicionar ativo.', 'error');
+    }
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'Salvar Ativo'; }
+  }
+}
+
+// ── Search ───────────────────────────────────────────────────────
+async function performSearch(q) {
+  const box = $('search-dropdown');
+  if (!q || q.length < 2) { if (box) box.style.display = 'none'; return; }
+  try {
+    const res = await apiFetch(`/search?q=${encodeURIComponent(q)}`);
+    if (!res || !res.ok) { if (box) box.style.display = 'none'; return; }
+    const results = await res.json();
+    if (!box) return;
+    box.innerHTML = '';
+    if (!results.length) { box.style.display = 'none'; return; }
+    results.forEach(item => {
+      const sym2 = (item.symbol || '').substring(0, 2).toUpperCase();
+      const iconHtml = item.icon
+        ? `<img class="search-item-icon" src="${item.icon}" alt="${item.symbol}"
+              onerror="this.style.display='none';this.nextElementSibling.style.display='flex';">
+           <div class="search-item-fb" style="display:none;">${sym2}</div>`
+        : `<div class="search-item-fb">${sym2}</div>`;
+      const row = document.createElement('div');
+      row.className = 'search-item';
+      row.innerHTML = `${iconHtml}
+        <span class="search-item-name">${item.symbol}</span>
+        <span class="search-item-sub">${item.name || ''}</span>
+        <span class="search-tag">${item.type || ''}</span>`;
+      row.addEventListener('click', () => {
+        if ($('symbol-input')) $('symbol-input').value = item.symbol;
+        selectedAddAssetType =
+          (item.type || '').toUpperCase().includes('CRYPTO') ? 'crypto' : 'stock';
+        setAddAmountInputMode(selectedAddAssetType);
+        box.style.display = 'none';
+      });
+      box.appendChild(row);
+    });
+    box.style.display = 'block';
+  } catch (e) { if (box) box.style.display = 'none'; }
+}
+
+function setAddAmountInputMode(type) {
+  const input = $('amount-input'); if (!input) return;
+  const isStock = (type || '').toLowerCase() === 'stock';
+  input.step = isStock ? '1' : 'any';
+  input.placeholder = isStock ? '1' : '0.5';
+}
+
+async function resolveSymbolType(symbol) {
+  const sym = (symbol || '').trim().toUpperCase();
+  if (!sym) return null;
+  const res = await apiFetch(`/search?q=${encodeURIComponent(sym)}`);
+  if (!res || !res.ok) return null;
+  const results = await res.json();
+  const exact   = results.find(r => (r.symbol || '').toUpperCase() === sym);
+  const t       = (exact?.type || '').toUpperCase();
+  if (t.includes('CRYPTO')) return 'crypto';
+  if (t.includes('STOCK') || t.includes('EQUITY') || t.includes('ETF') || t.includes('INDEX')) return 'stock';
+  return null;
+}
+
+// ════════════════════════════════════════════════════════════════
+// MARKET WATCH
+// ════════════════════════════════════════════════════════════════
+
+async function fetchQuoteForSymbol(symbol) {
+  const res = await apiFetch(`/history/${encodeURIComponent(symbol)}?period=1d`);
+  if (!res || !res.ok) return null;
+  const data   = await res.json();
+  const prices = data.prices || [];
+  if (!prices.length) return null;
+  const first = prices[0] || 0, last = prices[prices.length-1] || 0;
+  const pct   = first > 0 ? ((last - first) / first) * 100 : 0;
+  return { symbol, price: last, pct };
+}
+
+function renderMarketRows(containerId, rows) {
+  const root = $(containerId); if (!root) return;
+  root.innerHTML = '';
+  if (!rows.length) {
+    root.innerHTML = '<div class="empty-sub">Não foi possível carregar cotações agora.</div>';
+    return;
+  }
+  rows.forEach(item => {
+    const isUp = (item.pct || 0) >= 0;
+    const row  = document.createElement('div');
+    row.className = 'market-row';
+    row.innerHTML = `
+      <span class="market-symbol">${item.symbol}</span>
+      <span class="market-price sensitive-value">${formatUSD(item.price)}</span>
+      <span class="market-change ${isUp ? 'text-green' : 'text-red'}">${formatPct(item.pct)}</span>`;
+    root.appendChild(row);
+  });
+  applyVisibilityMask();
+}
+
+async function loadMarketWatch() {
+  const [stocks, cryptos] = await Promise.all([
+    Promise.all(FEATURED_STOCKS.map(s => fetchQuoteForSymbol(s))),
+    Promise.all(FEATURED_CRYPTOS.map(s => fetchQuoteForSymbol(s))),
+  ]);
+  renderMarketRows('market-stocks-list',  stocks.filter(Boolean));
+  renderMarketRows('market-cryptos-list', cryptos.filter(Boolean));
+}
+
+// ════════════════════════════════════════════════════════════════
+// TRANSACTIONS
+// ════════════════════════════════════════════════════════════════
+
+async function loadTransactions() {
+  if (!authToken) return;
+  const res = await apiFetch('/transactions', { headers: authHeaders() });
+  if (!res || !res.ok) return;
+  const txs  = await res.json();
+  const list = $('transactions-list'); if (!list) return;
+  list.innerHTML = '';
+
+  if (!txs.length) {
+    list.innerHTML = `
+      <div class="empty-state">
+        <div class="empty-icon">🧾</div>
+        <div class="empty-title">Sem transações ainda</div>
+        <div class="empty-sub">Suas operações de compra e venda aparecerão aqui.</div>
+      </div>`;
+    return;
+  }
+
+  txs.forEach(tx => {
+    const pnl      = tx.realized_pnl;
+    const pnlClass = pnl == null ? '' : pnl >= 0 ? 'text-green' : 'text-red';
+    const pnlText  = pnl == null ? '—' : `${pnl >= 0 ? '+' : ''}${formatUSD(pnl)}`;
+    const row      = document.createElement('div');
+    row.className  = 'tx-item';
+    row.innerHTML  = `
+      <div class="tx-top">
+        <span class="tx-symbol">${tx.symbol}</span>
+        <span class="tx-type ${tx.type}">${tx.type}</span>
+      </div>
+      <div class="tx-meta">
+        <span>${tx.date}</span>
+        <span>${tx.amount} @ ${formatUSD(tx.price)}</span>
+      </div>
+      <div class="tx-meta" style="margin-top:6px;">
+        <span class="sensitive-value">Total: ${formatUSD(tx.total_usd)}</span>
+        <span class="${pnlClass}">P&L: ${pnlText}</span>
+      </div>`;
+    list.appendChild(row);
+  });
+  applyVisibilityMask();
+}
+
+// ════════════════════════════════════════════════════════════════
+// AI ANALYSIS
+// ════════════════════════════════════════════════════════════════
+
+async function checkAIStatus() {
+  const res = await apiFetch('/analysis/status');
+  if (!res || !res.ok) return;
+  const info = await res.json();
+  if (!info.enabled)
+    toast('IA indisponível: configure GEMINI_API_KEY no backend.', 'warning', 5500);
+}
+
+async function requestAssetAI(asset) {
+  if (!authToken) return;
+  if (!isPremium()) { showUpgradeModal('Análise IA por ativo é um recurso Premium.'); return; }
+  const el = $(`ai-res-${asset.id}`); if (!el) return;
+  el.style.display = 'block'; el.textContent = 'Analisando com Gemini…';
+
+  const res = await apiFetch(
+    `/analysis/${encodeURIComponent(asset.symbol)}?change=${asset.percent_change ?? 0}`,
+    { headers: authHeaders() }
+  );
+  if (!res) { el.style.display = 'none'; return; }
+
+  if (res.ok) {
+    const data = await res.json();
+    el.innerHTML = `<strong style="color:var(--accent-l)">IA:</strong> ${data.analysis}`;
+  } else if (res.status === 402) {
+    el.style.display = 'none';
+    const err = await res.json().catch(() => ({}));
+    showUpgradeModal(err.detail || 'Recurso Premium.');
+  } else {
+    el.style.display = 'none';
+    toast('Análise IA temporariamente indisponível.', 'warning');
+  }
+}
+
+async function handlePortfolioAI() {
+  if (!authToken) { window.location.href = '/'; return; }
+  if (!isPremium()) { showUpgradeModal('Análise IA do portfólio é um recurso Premium.'); return; }
+
+  const textEl  = $('ai-portfolio-text');
+  const badgeEl = $('ai-change-badge');
+  const btn     = $('btn-portfolio-ai');
+  if (textEl) textEl.textContent = 'Analisando portfólio com Gemini…';
+  if (btn)    { btn.disabled = true; btn.textContent = '✨ Analisando…'; }
+
+  try {
+    const res = await apiFetch('/analysis/portfolio', { headers: authHeaders() });
+    if (!res) { if (textEl) textEl.textContent = 'Erro de conexão. Tente novamente.'; return; }
+    if (res.ok) {
+      const data = await res.json();
+      if (textEl) textEl.textContent = data.analysis || 'Análise indisponível.';
+      if (typeof data.change_pct === 'number' && badgeEl) {
+        const v = data.change_pct;
+        badgeEl.className   = `change-badge ${v > 0 ? 'pos' : v < 0 ? 'neg' : ''}`;
+        badgeEl.textContent = `${v >= 0 ? '+' : ''}${v.toFixed(2)}%`;
+      }
+    } else if (res.status === 402) {
+      const err = await res.json().catch(() => ({}));
+      showUpgradeModal(err.detail || 'Recurso Premium.');
+      if (textEl) textEl.textContent = 'Disponível no plano Premium.';
+    } else {
+      if (textEl) textEl.textContent = 'Erro na análise. Tente novamente.';
+    }
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '✨ Analisar Portfólio'; }
+  }
+}
+
+// ════════════════════════════════════════════════════════════════
+// NET WORTH
+// ════════════════════════════════════════════════════════════════
+
+function openNetWorthModal()  { $('modal-net-worth')?.classList.add('active'); }
+function closeNetWorthModal() { $('modal-net-worth')?.classList.remove('active'); }
+
+async function loadNetWorth() {
+  if (!authToken) return;
+  const res = await apiFetch('/net-worth', { headers: authHeaders() });
+  if (!res || !res.ok) return;
+  const data = await res.json();
+
+  const set = (id, val) => { const el = $(id); if (el) el.textContent = formatUSD(val || 0); };
+  set('net-worth-total', data.net_worth);
+  set('nw-investments',  data.breakdown?.investments);
+  set('nw-cash',         data.breakdown?.cash);
+  set('nw-real-estate',  data.breakdown?.real_estate);
+  set('nw-other',        data.breakdown?.other);
+  set('nw-debts',        data.breakdown?.debts);
+  applyVisibilityMask();
+}
+
+async function saveNetWorthEntry() {
+  const category = $('nw-category')?.value || 'other_assets';
+  const label    = $('nw-label')?.value?.trim() || '';
+  const value    = parseFloat($('nw-value')?.value || '0');
+
+  if (!label) { toast('Informe um rótulo.', 'warning'); return; }
+  if (!Number.isFinite(value) || value === 0) { toast('Informe um valor válido.', 'warning'); return; }
+
+  const res = await apiFetch('/net-worth/entry', {
+    method:  'POST',
+    headers: authHeaders(),
+    body:    JSON.stringify({ category, label, value }),
+  });
+  if (!res || !res.ok) { toast('Não foi possível salvar o item.', 'error'); return; }
+
+  if ($('nw-label')) $('nw-label').value = '';
+  if ($('nw-value')) $('nw-value').value = '';
+  closeNetWorthModal();
+  toast('Item de patrimônio salvo.', 'success');
+  loadNetWorth();
+}
+
+// ════════════════════════════════════════════════════════════════
+// REBALANCE
+// ════════════════════════════════════════════════════════════════
+
+function renderRebalanceTargets(assets = []) {
+  const root = $('rebalance-targets'); if (!root) return;
+  rebalanceSymbols = [...new Set((assets || []).map(a => (a.symbol || '').toUpperCase()).filter(Boolean))];
+  if (!rebalanceSymbols.length) {
+    root.innerHTML = '<div class="score-sub">Adicione ativos para calcular o rebalanceamento.</div>';
+    return;
+  }
+  const equal = (100 / rebalanceSymbols.length).toFixed(1);
+  root.innerHTML = rebalanceSymbols.map(sym => `
+    <div class="score-row" style="margin-top:6px;">
+      <span>${sym}</span>
+      <input type="number" class="select-ctrl rebalance-target" data-symbol="${sym}"
+        value="${equal}" min="0" max="100" step="0.1" style="width:86px;">
+    </div>`).join('');
+  root.querySelectorAll('.rebalance-target').forEach(el => {
+    el.addEventListener('input', updateRebalanceTargetSum);
+  });
+  updateRebalanceTargetSum();
+}
+
+function updateRebalanceTargetSum() {
+  const inputs   = qsa('.rebalance-target');
+  const sum      = inputs.reduce((acc, el) => acc + (parseFloat(el.value || '0') || 0), 0);
+  const warningEl = $('rebalance-sum-warning'); if (!warningEl) return;
+  warningEl.textContent = `Soma dos alvos: ${sum.toFixed(1)}%`;
+  warningEl.style.color = Math.abs(sum - 100) < 0.05 ? '#86efac' : '#fca5a5';
+}
+
+async function calculateRebalance() {
+  const inputs = qsa('.rebalance-target');
+  if (!inputs.length) return;
+  const targets = {};
+  inputs.forEach(el => {
+    const sym = (el.dataset.symbol || '').toUpperCase();
+    targets[sym] = parseFloat(el.value || '0') || 0;
+  });
+  const sum = Object.values(targets).reduce((a, b) => a + b, 0);
+  if (Math.abs(sum - 100) > 0.1) { toast('A alocação deve somar 100%.', 'warning'); return; }
+
+  const res = await apiFetch('/portfolio/rebalance', {
+    method:  'POST',
+    headers: authHeaders(),
+    body:    JSON.stringify({ targets }),
+  });
+  if (!res || !res.ok) { toast('Não foi possível calcular o rebalanceamento.', 'error'); return; }
+
+  const data    = await res.json();
+  const actions = data.actions || [];
+  const actionsEl = $('rebalance-actions');
+  if (actionsEl) {
+    actionsEl.innerHTML = actions.length
+      ? actions.map(a =>
+          `<li><strong>${a.symbol}</strong>: ${a.action.toUpperCase()} ${a.amount} (~${formatUSD(a.usd_value)}) — ${a.reason}</li>`
+        ).join('')
+      : '<li>Nenhum rebalanceamento necessário. Alocações dentro de ±2% de deriva.</li>';
+  }
+
+  const taxBadge = $('rebalance-tax-badge');
+  if (taxBadge) {
+    if (isTaxPro()) {
+      taxBadge.style.display = 'inline-flex';
+      taxBadge.textContent   = `Impacto fiscal estimado: ${formatUSD(data.estimated_tax_impact || 0)}`;
+      taxBadge.classList.add('sensitive-value');
+    } else {
+      taxBadge.style.display = 'none';
+    }
+  }
+  applyVisibilityMask();
+}
+
+// ════════════════════════════════════════════════════════════════
+// CSV EXPORT
+// ════════════════════════════════════════════════════════════════
+
+function csvCell(v) {
+  const val = v == null ? '' : String(v);
+  if (/[",\n]/.test(val)) return `"${val.replace(/"/g,'""')}"`;
+  return val;
+}
+
+async function exportPortfolioCsv() {
+  if (!authToken) { window.location.href = '/'; return; }
+  const [balanceRes, txRes] = await Promise.all([
+    apiFetch('/portfolio/balance', { headers: authHeaders() }),
+    apiFetch('/transactions',      { headers: authHeaders() }),
+  ]);
+  if (!balanceRes || !balanceRes.ok) { toast('Não foi possível exportar o CSV agora.', 'error'); return; }
+
+  const balance = await balanceRes.json();
+  const txs     = (txRes && txRes.ok) ? await txRes.json() : [];
+  const rows    = [];
+
+  rows.push(['Seção','Símbolo','Qtd','Preço Médio USD','Preço Atual USD','Posição USD','P&L USD','Variação %']);
+  (balance.assets || []).forEach(a =>
+    rows.push(['ativo', a.symbol, a.amount, a.purchase_price, a.current_price, a.position_value, a.profit, a.percent_change])
+  );
+  rows.push([]);
+  rows.push(['Seção','Data','Símbolo','Tipo','Qtd','Preço USD','Total USD','P&L Realizado']);
+  txs.forEach(tx =>
+    rows.push(['transação', tx.date, tx.symbol, tx.type, tx.amount, tx.price, tx.total_usd, tx.realized_pnl])
+  );
+
+  const csv  = rows.map(row => row.map(csvCell).join(',')).join('\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url  = URL.createObjectURL(blob);
+  const now  = new Date().toISOString().slice(0,19).replace(/[:T]/g,'-');
+  const a    = document.createElement('a');
+  a.href = url; a.download = `purp-portfolio-${now}.csv`;
+  document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+  toast('CSV exportado com sucesso.', 'success');
+}
+
+// ════════════════════════════════════════════════════════════════
+// CSV IMPORT
+// ════════════════════════════════════════════════════════════════
+
+const BROKER_HELP = {
+  coinbase:  `<b>Como exportar:</b> Coinbase → Taxes → Transaction history → Generate Report → Download CSV`,
+  robinhood: `<b>Como exportar:</b> App Robinhood → Account → Statements → Activity → Export to CSV`,
+  fidelity:  `<b>Como exportar:</b> Fidelity → Accounts → History → selecione período → Download (CSV)`,
+  kraken:    `<b>Como exportar:</b> Kraken → History → Export → Selecione <em>Ledgers</em> → Generate`,
+  schwab:    `<b>Como exportar:</b> Schwab → Accounts → History → Export → CSV`,
+};
+
+function openImportModal() {
+  if (!isPremium()) {
+    showUpgradeModal('Importação CSV está disponível nos planos Investor e Tax Pro.');
+    return;
+  }
+  importSelectedFile = null; importSelectedBroker = '';
+  const brokerEl = $('import-broker-select');
+  if (brokerEl) brokerEl.value = '';
+  const labelEl  = $('file-drop-label');
+  if (labelEl)   labelEl.innerHTML = '<span style="font-size:22px;">📂</span><br>Clique para selecionar um arquivo .csv';
+  const helpEl   = $('import-help-text');
+  if (helpEl)    helpEl.style.display = 'none';
+  const progEl   = $('import-progress');
+  if (progEl)    progEl.style.display = 'none';
+  const resEl    = $('import-result');
+  if (resEl)     resEl.style.display = 'none';
+  const confBtn  = $('btn-import-confirm');
+  if (confBtn)   confBtn.disabled = true;
+  $('modal-import-csv')?.classList.add('active');
+}
+
+function closeImportModal() { $('modal-import-csv')?.classList.remove('active'); }
+
+function updateImportConfirmBtn() {
+  const btn = $('btn-import-confirm');
+  if (btn) btn.disabled = !(importSelectedFile && importSelectedBroker);
+}
+
+function handleBrokerSelect() {
+  importSelectedBroker = $('import-broker-select')?.value || '';
+  const helpEl = $('import-help-text');
+  if (helpEl) {
+    if (importSelectedBroker && BROKER_HELP[importSelectedBroker]) {
+      helpEl.innerHTML = BROKER_HELP[importSelectedBroker];
+      helpEl.style.display = 'block';
+    } else {
+      helpEl.style.display = 'none';
+    }
+  }
+  updateImportConfirmBtn();
+}
+
+function handleFileSelect(e) {
+  const file = e.target?.files?.[0]; if (!file) return;
+  if (!file.name.toLowerCase().endsWith('.csv')) { toast('Selecione um arquivo .csv', 'warning'); return; }
+  if (file.size > 5 * 1024 * 1024) { toast('Arquivo muito grande. Máximo 5 MB.', 'error'); return; }
+  importSelectedFile = file;
+  const labelEl = $('file-drop-label');
+  if (labelEl) {
+    labelEl.innerHTML = `
+      <span style="font-size:20px;">✅</span><br>
+      <span style="font-weight:700;color:var(--text);">${file.name}</span><br>
+      <span style="font-size:10px;color:var(--text3);">${(file.size/1024).toFixed(1)} KB</span>`;
+  }
+  updateImportConfirmBtn();
+}
+
+async function handleImportConfirm() {
+  if (!importSelectedFile || !importSelectedBroker) return;
+  if (!authToken) { window.location.href = '/'; return; }
+
+  const btn = $('btn-import-confirm');
+  if (btn) { btn.disabled = true; btn.textContent = 'Importando…'; }
+  const resEl  = $('import-result');
+  const progEl = $('import-progress');
+  if (resEl)  resEl.style.display = 'none';
+  if (progEl) progEl.style.display = 'block';
+
+  const fill   = $('import-progress-fill');
+  const status = $('import-status-text');
+  if (fill)   fill.style.width = '15%';
+  if (status) status.textContent = 'Fazendo upload…';
+
+  try {
+    const formData = new FormData();
+    formData.append('file', importSelectedFile);
+    if (fill)   fill.style.width = '40%';
+    if (status) status.textContent = 'Processando transações…';
+
+    const res = await apiFetch(
+      `/import/csv?broker=${encodeURIComponent(importSelectedBroker)}`,
+      {
+        method:  'POST',
+        headers: authToken ? { 'X-Auth-Token': authToken, 'Authorization': `Bearer ${authToken}` } : {},
+        body:    formData,
+      }
+    );
+    if (fill) fill.style.width = '80%';
+    if (status) status.textContent = 'Finalizando…';
+
+    if (!res) { toast('Erro de rede durante a importação.', 'error'); return; }
+    const data = await res.json().catch(() => ({}));
+    if (fill) fill.style.width = '100%';
+
+    if (res.status === 402) {
+      closeImportModal();
+      showUpgradeModal(data.detail || 'Importação CSV requer plano Investor ou Tax Pro.');
+      return;
+    }
+    if (!res.ok) {
+      if (progEl) progEl.style.display = 'none';
+      showImportResult('error', data.detail || 'Importação falhou.', null);
+      return;
+    }
+    if (progEl) progEl.style.display = 'none';
+
+    const imported = data.imported ?? 0, skipped = data.skipped ?? 0, errors = data.errors ?? [];
+    showImportResult('success', null, { imported, skipped, errors });
+
+    if (imported > 0) {
+      fetchPortfolio(); loadMainChart(true);
+      toast(`${imported} transaç${imported !== 1 ? 'ões importadas' : 'ão importada'} ✓`, 'success', 5000);
+    }
+  } catch (err) {
+    if ($('import-progress')) $('import-progress').style.display = 'none';
+    showImportResult('error', `Erro inesperado: ${err.message}`, null);
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'Importar'; }
+  }
+}
+
+function showImportResult(type, errorMsg, summary) {
+  const el = $('import-result'); if (!el) return;
+  el.style.display = 'block';
+  if (type === 'error') {
+    el.innerHTML = `
+      <div style="text-align:center;">
+        <div style="font-size:20px;margin-bottom:6px;">❌</div>
+        <div style="font-size:12px;color:#ef4444;">${errorMsg}</div>
+      </div>`;
+    return;
+  }
+  const { imported, skipped, errors } = summary;
+  const errHtml = errors.length
+    ? `<details style="margin-top:10px;"><summary style="font-size:10px;color:rgba(255,255,255,.35);cursor:pointer;">
+        ${errors.length} linha${errors.length !== 1 ? 's' : ''} ignorada${errors.length !== 1 ? 's' : ''}
+       </summary>
+       <ul style="margin:6px 0 0;padding-left:16px;font-size:10px;color:rgba(255,255,255,.35);">
+         ${errors.slice(0,10).map(e => `<li>${e}</li>`).join('')}
+         ${errors.length > 10 ? `<li>…e mais ${errors.length-10}</li>` : ''}
+       </ul></details>` : '';
+  el.innerHTML = `
+    <div style="text-align:center;">
+      <div style="font-size:24px;margin-bottom:8px;">${imported > 0 ? '🎉' : '⚠️'}</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px;">
+        <div style="text-align:center;">
+          <div style="font-size:20px;font-weight:800;color:#10b981;">${imported}</div>
+          <div style="font-size:10px;color:rgba(255,255,255,.4);">Importadas</div>
+        </div>
+        <div style="text-align:center;">
+          <div style="font-size:20px;font-weight:800;color:rgba(255,255,255,.5);">${skipped}</div>
+          <div style="font-size:10px;color:rgba(255,255,255,.4);">Ignoradas</div>
+        </div>
+      </div>
+      ${imported === 0 ? `<div style="font-size:11px;color:rgba(255,255,255,.6);margin-top:8px;">
+        Nenhuma transação importada. Verifique se o broker corresponde ao arquivo.
+      </div>` : ''}
+      ${errHtml}
+    </div>`;
+}
+
+// ════════════════════════════════════════════════════════════════
+// ALERTS
+// ════════════════════════════════════════════════════════════════
+
+function updateAlertFormFields() {
+  const type = $('alert-type-input')?.value;
+  const labelMap = {
+    price_above:         'Preço Alvo ($)',
+    price_below:         'Preço Alvo ($)',
+    percent_change_up:   'Porcentagem (%)',
+    percent_change_down: 'Porcentagem (%)',
+    rsi_oversold:        'Nível RSI (0-100)',
+    rsi_overbought:      'Nível RSI (0-100)',
+    rebalance_drift:     'Limite de Deriva (%)',
+    volume_spike:        'Multiplicador de Volume',
+    portfolio_down:      'Queda do Portfólio (%)',
+  };
+  const advancedTooltips = {
+    rsi_oversold:    'RSI Oversold: alerta quando RSI fica abaixo do nível definido (ex.: 30).',
+    rsi_overbought:  'RSI Overbought: alerta quando RSI supera o nível definido (ex.: 70).',
+    rebalance_drift: 'Rebalance Drift: alerta quando a posição desvia da alocação-alvo.',
+    volume_spike:    'Volume Spike: alerta quando o volume sobe acima do multiplicador escolhido.',
+    portfolio_down:  'Portfolio Down (24h): alerta quando o portfólio cai o percentual definido.',
+  };
+
+  if ($('alert-target-label')) $('alert-target-label').textContent = labelMap[type] || 'Valor Alvo';
+  if ($('alert-rsi-period-group'))
+    $('alert-rsi-period-group').style.display = ['rsi_oversold','rsi_overbought'].includes(type) ? 'block' : 'none';
+  if ($('alert-target-allocation-group'))
+    $('alert-target-allocation-group').style.display = type === 'rebalance_drift' ? 'block' : 'none';
+  if ($('alert-symbol-group'))
+    $('alert-symbol-group').style.display = type === 'portfolio_down' ? 'none' : 'block';
+
+  const tooltipEl = $('alert-type-tooltip');
+  if (tooltipEl) {
+    const txt = advancedTooltips[type] || '';
+    if (txt) { tooltipEl.style.display = 'block'; tooltipEl.textContent = `💡 ${txt}`; }
+    else      { tooltipEl.style.display = 'none';  tooltipEl.textContent = ''; }
+  }
+}
+
+function renderAlertsList(alerts = []) {
+  const root = $('alerts-list'); if (!root) return;
+  if (!alerts.length) { root.innerHTML = '<div class="empty-sub">Nenhum alerta ainda.</div>'; return; }
+  root.innerHTML = alerts.map(a => {
+    const sym    = a.symbol || 'PORTFOLIO';
+    const status = a.active ? 'Ativo' : 'Inativo';
+    return `<div class="market-row">
+      <span class="market-symbol">${sym}</span>
+      <span class="market-price">${a.alert_type}</span>
+      <span class="market-change">${a.target_value} · ${status}</span>
+    </div>`;
+  }).join('');
+}
+
+async function loadAlerts() {
+  if (!authToken) return;
+  const res = await apiFetch('/alerts', { headers: authHeaders() });
+  if (!res || !res.ok) return;
+  const data = await res.json();
+  renderAlertsList(data.alerts || []);
+}
+
+async function handleCreateAlert() {
+  if (!authToken) return;
+  const alertType        = $('alert-type-input')?.value;
+  const symbol           = $('alert-symbol-input')?.value?.trim()?.toUpperCase() || null;
+  const targetValue      = parseFloat($('alert-target-input')?.value || '0');
+  const recurring        = !!$('alert-recurring-input')?.checked;
+  const rsiPeriod        = parseInt($('alert-rsi-period-input')?.value || '14', 10);
+  const targetAllocation = parseFloat($('alert-target-allocation-input')?.value || '0');
+
+  if (!alertType) { toast('Escolha um tipo de alerta.', 'warning'); return; }
+  if (alertType !== 'portfolio_down' && !symbol) { toast('Símbolo é obrigatório para este tipo de alerta.', 'warning'); return; }
+  if (!targetValue || targetValue <= 0) { toast('Insira um valor de limite válido.', 'warning'); return; }
+
+  const payload = { symbol, alert_type: alertType, target_value: targetValue, recurring };
+  if (['rsi_oversold','rsi_overbought'].includes(alertType)) payload.rsi_period = rsiPeriod;
+  if (alertType === 'rebalance_drift') {
+    if (!targetAllocation || targetAllocation < 0 || targetAllocation > 100) {
+      toast('Alocação alvo deve ser entre 0 e 100.', 'warning'); return;
+    }
+    payload.target_allocation_pct  = targetAllocation;
+    payload.rebalance_threshold_pct = targetValue;
+  }
+
+  const btn = $('btn-create-alert');
+  if (btn) { btn.disabled = true; btn.textContent = 'Criando…'; }
+
+  try {
+    const res = await apiFetch('/alerts', {
+      method:  'POST',
+      headers: authHeaders(),
+      body:    JSON.stringify(payload),
+    });
+    if (!res) return;
+    if (res.ok) {
+      toast('Alerta criado com sucesso.', 'success');
+      if ($('alert-target-input'))            $('alert-target-input').value = '';
+      if ($('alert-target-allocation-input')) $('alert-target-allocation-input').value = '';
+      await loadAlerts();
+    } else {
+      const err = await res.json().catch(() => ({}));
+      toast(err.detail || 'Não foi possível criar o alerta.', 'error');
+    }
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'Criar Alerta'; }
+  }
+}
+
+// ════════════════════════════════════════════════════════════════
+// SHARE PERFORMANCE
+// ════════════════════════════════════════════════════════════════
+
+async function sharePerformanceCard() {
+  if (!authToken) return;
+  const res = await apiFetch('/portfolio/share-card?period=1mo', { headers: authHeaders() });
+  if (!res || !res.ok) { toast('Não foi possível gerar o card.', 'error'); return; }
+  const blob = await res.blob();
+  const url  = URL.createObjectURL(blob);
+  window.open(url, '_blank');
+  setTimeout(() => URL.revokeObjectURL(url), 60_000);
+}
+
+// ════════════════════════════════════════════════════════════════
+// TAX TOOLS — visibilidade + sub-tabs
+// ════════════════════════════════════════════════════════════════
+
+function updateTaxToolsVisibility() {
+  const taxSection = $('tax-tools-section');
+  const taxCta     = $('tax-pro-cta');
+  if (!taxSection || !taxCta) return;
+
+  if (isTaxPro()) {
+    taxSection.style.display = '';
+    taxCta.style.display     = 'none';
+    buildTaxTabBar();
+    loadTaxLossHarvesting();
+  } else if (isPremium()) {
+    taxSection.style.display = 'none';
+    taxCta.style.display     = '';
+  } else {
+    taxSection.style.display = 'none';
+    taxCta.style.display     = 'none';
+  }
+}
+
+function buildTaxTabBar() {
+  const taxSection = $('tax-tools-section'); if (!taxSection) return;
+  if ($('tax-tab-bar-container')) return;
+
+  const barWrapper = document.createElement('div');
+  barWrapper.id = 'tax-tab-bar-container';
+  barWrapper.innerHTML = `
+    <div class="tax-tab-bar" id="tax-tab-bar">
+      <button class="tax-tab-btn active" data-tab="tlh"><span class="tab-icon">🌿</span>Tax Loss</button>
+      <button class="tax-tab-btn" data-tab="form8949"><span class="tab-icon">📄</span>Form 8949</button>
+      <button class="tax-tab-btn" data-tab="summary"><span class="tab-icon">📊</span>Resumo</button>
+    </div>`;
+  taxSection.insertBefore(barWrapper, taxSection.firstChild);
+
+  // Form 8949 panel
+  const f49Panel = document.createElement('div');
+  f49Panel.id = 'tax-panel-form8949'; f49Panel.className = 'tax-panel';
+  f49Panel.innerHTML = `
+    <div class="form8949-controls">
+      <div><label for="f49-year-select">Ano Fiscal</label>
+        <select id="f49-year-select">
+          <option value="2024">2024</option><option value="2023">2023</option><option value="2022">2022</option>
+        </select></div>
+      <div><label for="f49-method-select">Método de Custo</label>
+        <select id="f49-method-select">
+          <option value="FIFO">FIFO (Padrão IRS)</option>
+          <option value="HIFO">HIFO (Min. Imposto)</option>
+          <option value="LIFO">LIFO</option>
+        </select></div>
+    </div>
+    <button class="btn-download-8949" id="btn-download-8949">⬇️ Baixar Form 8949 CSV</button>
+    <p class="turbotax-note">Compatível com TurboTax, TaxAct &amp; H&amp;R Block</p>
+    <div id="form8949-preview-loading" style="display:none;">
+      <div class="shimmer-line" style="width:80%"></div>
+      <div class="shimmer-line" style="width:60%"></div>
+      <div class="shimmer-line" style="width:70%"></div>
+    </div>
+    <div id="form8949-preview"></div>`;
+  taxSection.appendChild(f49Panel);
+
+  // Summary panel
+  const sumPanel = document.createElement('div');
+  sumPanel.id = 'tax-panel-summary'; sumPanel.className = 'tax-panel';
+  sumPanel.innerHTML = `
+    <div class="form8949-controls">
+      <div><label for="sum-year-select">Ano Fiscal</label>
+        <select id="sum-year-select">
+          <option value="2024">2024</option><option value="2023">2023</option><option value="2022">2022</option>
+        </select></div>
+      <div><label for="sum-method-select">Método</label>
+        <select id="sum-method-select">
+          <option value="FIFO">FIFO</option><option value="HIFO">HIFO</option><option value="LIFO">LIFO</option>
+        </select></div>
+    </div>
+    <div id="tax-summary-content">
+      <div class="shimmer-line" style="width:100%"></div>
+      <div class="shimmer-line" style="width:80%"></div>
+      <div class="shimmer-line" style="width:90%"></div>
+    </div>`;
+  taxSection.appendChild(sumPanel);
+
+  // Wrap existing TLH content
+  const tlhPanel = document.createElement('div');
+  tlhPanel.id = 'tax-panel-tlh'; tlhPanel.className = 'tax-panel active';
+  const existing = [...taxSection.children].filter(el =>
+    !['tax-tab-bar-container','tax-panel-form8949','tax-panel-summary'].includes(el.id)
+  );
+  existing.forEach(node => tlhPanel.appendChild(node));
+  taxSection.appendChild(tlhPanel);
+
+  // Tab click handlers
+  barWrapper.querySelectorAll('.tax-tab-btn').forEach(btn =>
+    btn.addEventListener('click', () => switchTaxTab(btn.dataset.tab))
+  );
+
+  $('btn-download-8949')?.addEventListener('click',    handleDownload8949);
+  $('f49-year-select')?.addEventListener('change',     loadForm8949Preview);
+  $('f49-method-select')?.addEventListener('change',   loadForm8949Preview);
+  $('sum-year-select')?.addEventListener('change',     loadTaxSummary);
+  $('sum-method-select')?.addEventListener('change',   loadTaxSummary);
+}
+
+function switchTaxTab(tab) {
+  activeTaxTab = tab;
+  qsa('.tax-tab-btn').forEach(b => {
+    b.classList.remove('active','active-gold');
+    if (b.dataset.tab === tab)
+      b.classList.add(tab === 'summary' ? 'active-gold' : 'active');
+  });
+  qsa('.tax-panel').forEach(p => p.classList.remove('active'));
+  const panel = $(`tax-panel-${tab}`);
+  if (panel) {
+    panel.classList.add('active');
+    if (tab === 'form8949' && !$('form8949-preview')?.hasChildNodes()) loadForm8949Preview();
+    if (tab === 'summary') loadTaxSummary();
+  }
+}
+
+// ── Form 8949 preview ─────────────────────────────────────────────
+async function loadForm8949Preview() {
+  if (!authToken || !isTaxPro()) return;
+  const year    = $('f49-year-select')?.value   || new Date().getFullYear();
+  const method  = $('f49-method-select')?.value || 'FIFO';
+  const preview = $('form8949-preview');
+  const loadEl  = $('form8949-preview-loading');
+  if (!preview) return;
+
+  preview.innerHTML = ''; if (loadEl) loadEl.style.display = 'block';
+
+  const res = await apiFetch(`/tax/form-8949-json?year=${year}&method=${method}`, { headers: authHeaders() });
+  if (loadEl) loadEl.style.display = 'none';
+
+  if (!res || !res.ok) {
+    preview.innerHTML = '<div class="form8949-empty">Não foi possível carregar as transações.</div>';
+    return;
+  }
+  const data = await res.json();
+
+  if (!data.part_I?.length && !data.part_II?.length) {
+    preview.innerHTML = `<div class="form8949-empty">🎯 Sem vendas registradas para ${year}.<br><span style="font-size:10px;opacity:.6;">Venda um ativo para ver as linhas do Form 8949.</span></div>`;
+    return;
+  }
+
+  function renderRows(rows, title, colorClass) {
+    if (!rows.length) return '';
+    const rowsHtml = rows.map(r => {
+      const isGain = r.gain_loss >= 0;
+      return `<div class="f49-row">
+        <div class="f49-row-top">
+          <span class="f49-symbol">${r.description}</span>
+          <span class="${isGain ? 'f49-gain' : 'f49-loss'}">${isGain ? '+' : ''}${formatUSD(r.gain_loss)}</span>
+        </div>
+        <div class="f49-meta" style="margin-bottom:6px;">Adquirido: ${r.date_acquired} → Vendido: ${r.date_sold}</div>
+        <div class="f49-grid">
+          <span>Receita</span><span>${formatUSD(r.proceeds)}</span>
+          <span>Custo Base</span><span>${formatUSD(r.cost_basis)}</span>
+        </div>
+      </div>`;
+    }).join('');
+    const net = rows.reduce((a, r) => a + r.gain_loss, 0);
+    const isNetGain = net >= 0;
+    return `
+      <div class="form8949-section-title ${colorClass}">${title} (${rows.length} transações)</div>
+      ${rowsHtml}
+      <div class="f49-part-total">
+        <span>${title} Líquido</span>
+        <span class="${isNetGain ? 'f49-gain' : 'f49-loss'}">${isNetGain ? '+' : ''}${formatUSD(net)}</span>
+      </div>`;
+  }
+
+  preview.innerHTML =
+    renderRows(data.part_I,  'Parte I — Curto Prazo', '') +
+    renderRows(data.part_II, 'Parte II — Longo Prazo', 'gold');
+
+  applyVisibilityMask();
+}
+
+// ── Form 8949 download ────────────────────────────────────────────
+async function handleDownload8949() {
+  if (!authToken) { window.location.href = '/'; return; }
+  if (!isTaxPro()) { showTaxProUpgradeModal(); return; }
+
+  const year   = $('f49-year-select')?.value   || new Date().getFullYear();
+  const method = $('f49-method-select')?.value || 'FIFO';
+  const btn    = $('btn-download-8949');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Gerando…'; }
+
+  try {
+    const res = await apiFetch(`/tax/form-8949?year=${year}&method=${method}`, { headers: authHeaders() });
+    if (!res) { toast('Erro de rede. Tente novamente.', 'error'); return; }
+    if (res.status === 402) { toast('Plano Tax Pro necessário.', 'warning'); showTaxProUpgradeModal(); return; }
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      toast(err.detail || 'Não foi possível gerar o Form 8949.', 'error'); return;
+    }
+    const blob = await res.blob();
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href = url; a.download = `form-8949-${year}.csv`;
+    document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+    toast(`Form 8949 (${year}) baixado ✓`, 'success', 5000);
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '⬇️ Baixar Form 8949 CSV'; }
+  }
+}
+
+// ── Tax Summary ───────────────────────────────────────────────────
+async function loadTaxSummary() {
+  if (!authToken || !isTaxPro()) return;
+  const year   = $('sum-year-select')?.value   || new Date().getFullYear();
+  const method = $('sum-method-select')?.value || 'FIFO';
+  const contentEl = $('tax-summary-content'); if (!contentEl) return;
+
+  contentEl.innerHTML = `
+    <div class="shimmer-line" style="width:100%"></div>
+    <div class="shimmer-line" style="width:80%"></div>
+    <div class="shimmer-line" style="width:90%"></div>`;
+
+  const res = await apiFetch(`/tax/summary?year=${year}&method=${method}`, { headers: authHeaders() });
+  if (!res || !res.ok) {
+    contentEl.innerHTML = '<div class="form8949-empty">Não foi possível carregar o resumo fiscal.</div>';
+    return;
+  }
+  const d = await res.json();
+  const netTotal  = d.total_net_gain_loss;
+  const netClass  = netTotal >= 0 ? 'green' : 'red';
+  const stClass   = d.net_short_term  >= 0 ? 'green' : 'red';
+  const ltClass   = d.net_long_term   >= 0 ? 'green' : 'red';
+
+  contentEl.innerHTML = `
+    <div class="tax-summary-grid">
+      <div class="tax-sum-card ${netTotal >= 0 ? 'net-gain' : 'net-loss'}">
+        <div class="tax-sum-label">Ganho/(Perda) Líquido</div>
+        <div class="tax-sum-value ${netClass}">${netTotal >= 0 ? '+' : ''}${formatUSD(netTotal)}</div>
+      </div>
+      <div class="tax-sum-card">
+        <div class="tax-sum-label">Curto Prazo</div>
+        <div class="tax-sum-value ${stClass}">${d.net_short_term >= 0 ? '+' : ''}${formatUSD(d.net_short_term)}</div>
+      </div>
+      <div class="tax-sum-card">
+        <div class="tax-sum-label">Longo Prazo</div>
+        <div class="tax-sum-value ${ltClass}">${d.net_long_term >= 0 ? '+' : ''}${formatUSD(d.net_long_term)}</div>
+      </div>
+      <div class="tax-sum-card">
+        <div class="tax-sum-label">Transações</div>
+        <div class="tax-sum-value">${d.short_term_count + d.long_term_count}</div>
+      </div>
+    </div>
+    <div class="tax-summary-full">
+      <div class="tax-summary-full-title">Receitas &amp; Custo Base</div>
+      <div class="tax-summary-row">
+        <span class="label">Total de Receitas</span>
+        <span class="value sensitive-value">${formatUSD(d.total_proceeds)}</span>
+      </div>
+      <div class="tax-summary-row">
+        <span class="label">Total Custo Base</span>
+        <span class="value sensitive-value">${formatUSD(d.total_cost_basis)}</span>
+      </div>
+      <div class="tax-summary-row">
+        <span class="label">Ganho/(Perda) Líquido</span>
+        <span class="value ${netClass}" style="font-weight:800;">${netTotal >= 0 ? '+' : ''}${formatUSD(netTotal)}</span>
+      </div>
+    </div>
+    <div class="tax-summary-full">
+      <div class="tax-summary-full-title">Estimativa de Imposto</div>
+      <div class="bracket-rows">
+        <div class="bracket-row"><span class="bracket-label">Faixa 22%</span><span class="bracket-value">${formatUSD(d.estimated_tax_22pct)}</span></div>
+        <div class="bracket-row"><span class="bracket-label">Faixa 24%</span><span class="bracket-value">${formatUSD(d.estimated_tax_24pct)}</span></div>
+        <div class="bracket-row"><span class="bracket-label">Faixa 32%</span><span class="bracket-value">${formatUSD(d.estimated_tax_32pct)}</span></div>
+      </div>
+      <p style="font-size:9px;color:rgba(255,255,255,.25);margin:0;text-align:center;">
+        Apenas estimativas. Consulte um profissional de impostos.
+      </p>
+    </div>`;
+
+  applyVisibilityMask();
+}
+
+// ── TLH ──────────────────────────────────────────────────────────
+async function loadTaxLossHarvesting() {
+  if (!authToken || !isTaxPro()) return;
+  const listEl   = $('tlh-list');
+  const badgeEl  = $('tlh-total-badge');
+  if (!listEl) return;
+
+  const bracket = $('tlh-bracket-select')?.value || '0.22';
+  if (badgeEl) { badgeEl.textContent = 'Carregando…'; badgeEl.classList.add('loading'); }
+  listEl.innerHTML = '<div class="tlh-empty"><div class="tlh-empty-icon">⏳</div>Buscando preços…</div>';
+
+  const res = await apiFetch(`/portfolio/tax-loss-harvesting?tax_bracket=${bracket}`, { headers: authHeaders() });
+  if (!res) { listEl.innerHTML = '<div class="tlh-empty">Não foi possível carregar os dados.</div>'; return; }
+  if (res.status === 402) { listEl.innerHTML = '<div class="tlh-empty">Plano Tax Pro necessário.</div>'; return; }
+  if (!res.ok) { listEl.innerHTML = '<div class="tlh-empty">Erro ao carregar oportunidades.</div>'; return; }
+
+  const data          = await res.json();
+  const opportunities = data.opportunities || [];
+  if (badgeEl) {
+    badgeEl.classList.remove('loading');
+    if (data.total_potential_savings > 0) {
+      badgeEl.textContent = `Economize ${formatUSD(data.total_potential_savings)}`;
+    } else {
+      badgeEl.textContent = '✓ Sem perdas'; badgeEl.style.background = 'rgba(0,0,0,0.2)';
+      badgeEl.style.color = 'var(--text3)'; badgeEl.style.borderColor = 'var(--border)';
+    }
+  }
+
+  listEl.innerHTML = '';
+  if (!opportunities.length) {
+    listEl.innerHTML = `
+      <div class="tlh-empty">
+        <div class="tlh-empty-icon">🎉</div>
+        <div>Nenhuma perda a ser colhida agora.</div>
+        <div style="font-size:10px;margin-top:4px;color:var(--text3);">Todas as posições são lucrativas ou abaixo do limite de $50.</div>
+      </div>`;
+    return;
+  }
+
+  opportunities.forEach(opp => {
+    const isShort = opp.gain_type === 'short_term';
+    const item = document.createElement('div'); item.className = 'tlh-item';
+    item.innerHTML = `
+      <div class="tlh-item-top">
+        <div style="display:flex;align-items:center;gap:8px;">
+          <span class="tlh-symbol">${opp.symbol}</span>
+          <span class="tlh-gain-type ${isShort ? 'short' : 'long'}">${isShort ? 'Curto Prazo' : 'Longo Prazo'}</span>
+        </div>
+        <span class="tlh-savings-badge">Economize ${formatUSD(opp.estimated_tax_saved)}</span>
+      </div>
+      <div class="tlh-grid">
+        <div class="tlh-cell"><span class="tlh-cell-label">Perda Não Realizada</span><span class="tlh-cell-value loss">${formatUSD(opp.unrealized_loss)}</span></div>
+        <div class="tlh-cell"><span class="tlh-cell-label">Alíquota Aplicada</span><span class="tlh-cell-value">${opp.effective_rate_pct}%</span></div>
+        <div class="tlh-cell"><span class="tlh-cell-label">Período de Posse</span><span class="tlh-cell-value">${opp.holding_days} dias</span></div>
+        <div class="tlh-cell"><span class="tlh-cell-label">Seguro Recomprar Após</span><span class="tlh-cell-value">${opp.wash_sale_safe_date}</span></div>
+        <div class="tlh-cell"><span class="tlh-cell-label">Preço Atual</span><span class="tlh-cell-value sensitive-value">${formatUSD(opp.current_price)}</span></div>
+        <div class="tlh-cell"><span class="tlh-cell-label">Preço de Compra</span><span class="tlh-cell-value sensitive-value">${formatUSD(opp.purchase_price)}</span></div>
+      </div>
+      ${opp.suggested_replacement ? `<div class="tlh-replacement"><span>⚠️ Regra Wash-Sale:</span> Considere <strong>${opp.suggested_replacement}</strong> como substituto enquanto aguarda 31 dias.</div>` : ''}`;
+    listEl.appendChild(item);
+  });
+  applyVisibilityMask();
+}
+
+// ════════════════════════════════════════════════════════════════
+// DIVIDEND TRACKER
+// ════════════════════════════════════════════════════════════════
+
+function ensureDividendCard() {
+  if ($('div-income-card')) return;
+  const assetsList = $('assets-list'); if (!assetsList) return;
+
+  const card = document.createElement('div');
+  card.id = 'div-income-card'; card.className = 'div-card';
+  card.innerHTML = `
+    <div class="div-card-header">
+      <span class="div-card-title">🌱 Renda de Dividendos</span>
+      <button class="div-refresh-btn" id="btn-div-refresh" title="Atualizar">↻</button>
+    </div>
+    <div id="div-card-body">
+      <div class="shimmer-line" style="width:100%"></div>
+      <div class="shimmer-line" style="width:70%"></div>
+      <div class="shimmer-line" style="width:85%"></div>
+    </div>`;
+
+  assetsList.parentNode.insertBefore(card, assetsList.nextSibling);
+  $('btn-div-refresh')?.addEventListener('click', () => loadDividendCard(true));
+  _divCardBuilt = true;
+}
+
+async function loadDividendCard(force = false) {
+  if (!authToken) return;
+  ensureDividendCard();
+
+  const bodyEl = $('div-card-body'); if (!bodyEl) return;
+  bodyEl.innerHTML = `
+    <div class="shimmer-line" style="width:100%"></div>
+    <div class="shimmer-line" style="width:70%"></div>
+    <div class="shimmer-line" style="width:85%"></div>`;
+
+  const res = await apiFetch('/portfolio/dividends', { headers: authHeaders() });
+  if (!res || !res.ok) {
+    bodyEl.innerHTML = '<div class="div-empty">Não foi possível carregar os dados de dividendos.</div>';
+    return;
+  }
+  const data = await res.json();
+
+  if (!data.assets || data.assets.length === 0) {
+    bodyEl.innerHTML = `
+      <div class="div-empty">Nenhuma posição em ações encontrada.<br>
+        <span style="font-size:10px;opacity:.6;">Adicione ações para ver projeções de renda.</span>
+      </div>`;
+    return;
+  }
+
+  bodyEl.innerHTML = `
+    <div class="div-income-grid">
+      <div class="div-income-cell">
+        <div class="div-income-label">Renda Anual</div>
+        <div class="div-income-value sensitive-value" id="div-annual">${formatUSD(data.total_annual_income)}</div>
+      </div>
+      <div class="div-income-cell">
+        <div class="div-income-label">Renda Mensal</div>
+        <div class="div-income-value sensitive-value" id="div-monthly">${formatUSD(data.total_monthly_income)}</div>
+      </div>
+    </div>
+    ${buildCalendarStrip(data.upcoming_payments)}
+    ${buildUpcomingPayments(data.upcoming_payments)}
+    <div class="div-section-label">Yield on Cost vs Yield Atual</div>
+    ${buildYieldTable(data.assets)}
+    ${data.assets.length > 3
+      ? `<button class="div-toggle-btn" id="btn-div-toggle-assets">
+           ${_divShowAllAssets ? '▲ Mostrar menos' : '▼ Mostrar todos ' + data.assets.length + ' ativos'}
+         </button>` : ''}`;
+
+  const toggleBtn = $('btn-div-toggle-assets');
+  if (toggleBtn) {
+    toggleBtn.addEventListener('click', () => {
+      _divShowAllAssets = !_divShowAllAssets;
+      const tableEl = $('div-yield-table-body');
+      if (tableEl) tableEl.innerHTML = buildYieldRows(data.assets);
+      toggleBtn.textContent = _divShowAllAssets
+        ? '▲ Mostrar menos'
+        : '▼ Mostrar todos ' + data.assets.length + ' ativos';
+    });
+  }
+  applyVisibilityMask();
+}
+
+function buildCalendarStrip(upcoming) {
+  const today    = new Date();
+  const eventMap = {};
+  (upcoming || []).forEach(p => {
+    if (p.ex_date) eventMap[p.ex_date.slice(0,10)] = p.symbol;
+  });
+  const days = [];
+  for (let i = 0; i < 30; i++) {
+    const d   = new Date(today); d.setDate(today.getDate() + i);
+    const key = d.toISOString().slice(0,10);
+    const sym = eventMap[key];
+    days.push(`
+      <div class="div-cal-day ${sym ? 'has-event' : ''}">
+        <div class="div-cal-day-num">${d.getDate()}</div>
+        <div class="div-cal-day-mon">${MONTHS_SHORT[d.getMonth()]}</div>
+        ${sym ? `<div class="div-cal-day-sym">${sym}</div>` : ''}
+      </div>`);
+  }
+  return `
+    <div class="div-section-label">Calendário Ex-Date — Próximos 30 Dias</div>
+    <div class="div-calendar-strip">${days.join('')}</div>`;
+}
+
+function buildUpcomingPayments(upcoming) {
+  if (!upcoming || upcoming.length === 0) {
+    return `<div class="div-section-label">Próximos Pagamentos (60 dias)</div>
+            <div class="div-empty" style="padding:10px 0;">Nenhuma ex-date nos próximos 60 dias.</div>`;
+  }
+  const rows = upcoming.map(p => `
+    <div class="div-upcoming-row">
+      <span class="div-upcoming-sym">${p.symbol}</span>
+      <span class="div-upcoming-date">Ex: ${p.ex_date ? p.ex_date.slice(0,10) : '—'}</span>
+      <span class="div-upcoming-amount sensitive-value">+${formatUSD(p.projected_total)}</span>
+      <span class="div-upcoming-badge">Q</span>
+    </div>`).join('');
+  return `<div class="div-section-label">Próximos Pagamentos (60 dias)</div>
+          <div class="div-upcoming-list">${rows}</div>`;
+}
+
+function buildYieldTable(assets) {
+  return `
+    <table class="div-asset-table">
+      <thead>
+        <tr>
+          <th>Símbolo</th><th>Qtd</th><th>Yield Atual</th>
+          <th>YoC</th><th>Anual</th><th>Próx. Ex</th>
+        </tr>
+      </thead>
+      <tbody id="div-yield-table-body">${buildYieldRows(assets)}</tbody>
+    </table>`;
+}
+
+function buildYieldRows(assets) {
+  const visible = _divShowAllAssets ? assets : assets.slice(0, 3);
+  return visible.map(a => {
+    if (!a.pays_dividend) {
+      return `<tr>
+        <td>${a.symbol}</td><td>${a.shares}</td>
+        <td colspan="4"><span class="div-no-dividend">Sem dividendo</span></td>
+      </tr>`;
+    }
+    const yocClass = a.yield_on_cost > a.yield_current ? 'div-yoc-better'
+      : a.yield_on_cost === a.yield_current ? 'div-yoc-same' : 'div-yoc-lower';
+    return `<tr>
+      <td>${a.symbol}</td><td>${a.shares}</td>
+      <td>${a.yield_current.toFixed(2)}%</td>
+      <td class="${yocClass}">${a.yield_on_cost.toFixed(2)}%</td>
+      <td class="sensitive-value">${formatUSD(a.annual_income)}</td>
+      <td>${a.next_ex_date ? a.next_ex_date.slice(0,10) : '—'}</td>
+    </tr>`;
+  }).join('');
+}
+
+// ════════════════════════════════════════════════════════════════
+// INJEÇÃO DE ESTILOS BASE
+// ════════════════════════════════════════════════════════════════
+
+function injectBaseStyles() {
+  if ($('purp-base-styles')) return;
+  const style = document.createElement('style');
+  style.id = 'purp-base-styles';
+  style.textContent = `
+    @keyframes toastIn { from { opacity:0; transform:translateX(20px); } to { opacity:1; transform:translateX(0); } }
+    @keyframes shimmer { 0%{background-position:-400px 0} 100%{background-position:400px 0} }
+    .shimmer-line {
+      height:12px; border-radius:6px;
+      background:linear-gradient(90deg,rgba(255,255,255,.05) 25%,rgba(255,255,255,.12) 50%,rgba(255,255,255,.05) 75%);
+      background-size:400px 100%; animation:shimmer 1.4s infinite linear; margin-bottom:8px;
+    }
+    .sensitive-value.is-hidden { filter: blur(6px); user-select:none; pointer-events:none; }
+    .text-green { color:#10b981; }
+    .text-red   { color:#ef4444; }
+    .pos        { color:#10b981; }
+    .neg        { color:#ef4444; }
+    /* Tax tab styles */
+    .tax-tab-bar { display:flex;gap:4px;padding:4px;background:rgba(0,0,0,0.3);border-radius:12px;margin-bottom:16px;border:1px solid rgba(255,255,255,0.06); }
+    .tax-tab-btn { flex:1;padding:7px 6px;border-radius:9px;border:none;background:transparent;color:rgba(255,255,255,.35);font-size:10px;font-weight:600;cursor:pointer;transition:all .18s ease;text-align:center; }
+    .tax-tab-btn .tab-icon { font-size:14px;display:block;margin-bottom:2px; }
+    .tax-tab-btn:hover { color:rgba(255,255,255,.6);background:rgba(255,255,255,.05); }
+    .tax-tab-btn.active { background:rgba(124,58,237,.25);color:#a78bfa;border:1px solid rgba(124,58,237,.35); }
+    .tax-tab-btn.active-gold { background:rgba(245,158,11,.18);color:#fbbf24;border:1px solid rgba(245,158,11,.3); }
+    .tax-panel { display:none; }
+    .tax-panel.active { display:block; }
+    /* Dividend card */
+    .div-card { background:rgba(255,255,255,.04);border:1px solid rgba(16,185,129,.2);border-radius:16px;padding:16px;margin-bottom:16px; }
+    .div-card-header { display:flex;justify-content:space-between;align-items:center;margin-bottom:14px; }
+    .div-card-title { font-size:11px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;color:#10b981; }
+    .div-refresh-btn { background:none;border:none;color:rgba(255,255,255,.3);cursor:pointer;font-size:13px;padding:2px 6px;border-radius:6px; }
+    .div-refresh-btn:hover { color:#10b981; }
+    .div-income-grid { display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px; }
+    .div-income-cell { background:rgba(16,185,129,.07);border:1px solid rgba(16,185,129,.15);border-radius:10px;padding:10px 12px;text-align:center; }
+    .div-income-label { font-size:9px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;color:rgba(16,185,129,.6);margin-bottom:3px; }
+    .div-income-value { font-size:17px;font-weight:800;color:#10b981;font-variant-numeric:tabular-nums; }
+    .div-section-label { font-size:9px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;color:rgba(255,255,255,.3);margin:12px 0 6px; }
+    .div-upcoming-row { display:flex;justify-content:space-between;align-items:center;padding:7px 10px;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.06);border-radius:8px;margin-bottom:4px;font-size:11px; }
+    .div-upcoming-sym { font-weight:700;color:#f1f0f5;min-width:48px; }
+    .div-upcoming-date { color:rgba(255,255,255,.4);font-size:10px; }
+    .div-upcoming-amount { color:#10b981;font-weight:700;font-variant-numeric:tabular-nums; }
+    .div-upcoming-badge { background:rgba(16,185,129,.15);color:#10b981;border-radius:4px;font-size:8px;font-weight:700;padding:2px 5px; }
+    .div-asset-table { width:100%;border-collapse:collapse;font-size:10px;margin-bottom:10px; }
+    .div-asset-table th { font-size:8px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;color:rgba(255,255,255,.3);padding:4px 6px;text-align:right;border-bottom:1px solid rgba(255,255,255,.06); }
+    .div-asset-table th:first-child { text-align:left; }
+    .div-asset-table td { padding:6px;border-bottom:1px solid rgba(255,255,255,.04);color:rgba(255,255,255,.6);text-align:right;font-variant-numeric:tabular-nums; }
+    .div-asset-table td:first-child { text-align:left;color:#f1f0f5;font-weight:600; }
+    .div-yoc-better { color:#10b981;font-weight:700; }
+    .div-yoc-same { color:#fbbf24; }
+    .div-yoc-lower { color:rgba(255,255,255,.4); }
+    .div-no-dividend { color:rgba(255,255,255,.25);font-size:9px; }
+    .div-calendar-strip { display:flex;gap:4px;overflow-x:auto;padding-bottom:4px;scrollbar-width:none; }
+    .div-calendar-strip::-webkit-scrollbar { display:none; }
+    .div-cal-day { flex:0 0 38px;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.06);border-radius:8px;padding:6px 4px;text-align:center; }
+    .div-cal-day.has-event { background:rgba(16,185,129,.12);border-color:rgba(16,185,129,.3); }
+    .div-cal-day-num { font-weight:700;color:#f1f0f5;font-size:11px; }
+    .div-cal-day-mon { color:rgba(255,255,255,.3);font-size:9px;margin-top:1px; }
+    .div-cal-day-sym { color:#10b981;font-size:8px;margin-top:3px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:36px; }
+    .div-empty { text-align:center;color:rgba(255,255,255,.25);font-size:11px;padding:16px 0; }
+    .div-toggle-btn { background:none;border:1px solid rgba(255,255,255,.1);border-radius:6px;color:rgba(255,255,255,.4);font-size:9px;padding:3px 8px;cursor:pointer;transition:all .15s; }
+    .div-toggle-btn:hover { border-color:rgba(16,185,129,.4);color:#10b981; }
+    /* Form 8949 */
+    .form8949-controls { display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px; }
+    .form8949-controls select { background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);border-radius:8px;color:#f1f0f5;font-size:11px;padding:8px 10px;width:100%;cursor:pointer;outline:none; }
+    .form8949-controls label { font-size:9px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;color:rgba(255,255,255,.35);margin-bottom:4px;display:block; }
+    .form8949-section-title { font-size:10px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;color:rgba(255,255,255,.35);margin:12px 0 6px;padding-bottom:4px;border-bottom:1px solid rgba(255,255,255,.06); }
+    .form8949-section-title.gold { color:#d97706;border-color:rgba(245,158,11,.2); }
+    .form8949-empty { text-align:center;color:rgba(255,255,255,.3);font-size:11px;padding:20px 0; }
+    .f49-row { background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.06);border-radius:10px;padding:10px 12px;margin-bottom:6px;font-size:11px; }
+    .f49-row-top { display:flex;justify-content:space-between;align-items:center;margin-bottom:6px; }
+    .f49-symbol { font-weight:700;color:#f1f0f5;font-size:12px; }
+    .f49-gain { color:#10b981;font-weight:700;font-variant-numeric:tabular-nums; }
+    .f49-loss { color:#ef4444;font-weight:700;font-variant-numeric:tabular-nums; }
+    .f49-meta { color:rgba(255,255,255,.35);font-size:10px; }
+    .f49-grid { display:grid;grid-template-columns:1fr 1fr;gap:4px 12px;color:rgba(255,255,255,.6); }
+    .f49-grid span:nth-child(odd) { color:rgba(255,255,255,.35);font-size:9px; }
+    .f49-grid span:nth-child(even) { font-size:10px;font-variant-numeric:tabular-nums; }
+    .f49-part-total { display:flex;justify-content:space-between;padding:7px 12px;background:rgba(124,58,237,.1);border:1px solid rgba(124,58,237,.2);border-radius:8px;font-size:11px;font-weight:700;margin-top:4px;margin-bottom:10px; }
+    .btn-download-8949 { width:100%;padding:11px;background:linear-gradient(135deg,#1e1035,#2d1b69);border:1px solid rgba(124,58,237,.5);border-radius:10px;color:#a78bfa;font-size:12px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;transition:all .18s ease;margin-bottom:8px; }
+    .btn-download-8949:hover { background:linear-gradient(135deg,#2d1b69,#3b1fa8);border-color:rgba(124,58,237,.8);transform:translateY(-1px); }
+    .turbotax-note { text-align:center;font-size:9px;color:rgba(255,255,255,.3);margin-bottom:14px; }
+    .tax-summary-grid { display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px; }
+    .tax-sum-card { background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:12px;padding:12px;text-align:center; }
+    .tax-sum-card.net-gain { border-color:rgba(16,185,129,.25);background:rgba(16,185,129,.07); }
+    .tax-sum-card.net-loss { border-color:rgba(239,68,68,.25);background:rgba(239,68,68,.07); }
+    .tax-sum-label { font-size:9px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;color:rgba(255,255,255,.35);margin-bottom:4px; }
+    .tax-sum-value { font-size:15px;font-weight:800;color:#f1f0f5;font-variant-numeric:tabular-nums; }
+    .tax-sum-value.green { color:#10b981; }
+    .tax-sum-value.red { color:#ef4444; }
+    .tax-summary-full { background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:12px;padding:14px;margin-bottom:8px; }
+    .tax-summary-full-title { font-size:9px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;color:rgba(255,255,255,.3);margin-bottom:10px; }
+    .tax-summary-row { display:flex;justify-content:space-between;padding:4px 0;font-size:12px;border-bottom:1px solid rgba(255,255,255,.04); }
+    .tax-summary-row:last-child { border-bottom:none;font-weight:700; }
+    .tax-summary-row .label { color:rgba(255,255,255,.6); }
+    .tax-summary-row .value { font-variant-numeric:tabular-nums; }
+    .bracket-rows { margin-bottom:14px; }
+    .bracket-row { display:flex;justify-content:space-between;align-items:center;padding:8px 12px;border-radius:8px;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.06);margin-bottom:4px;font-size:11px; }
+    .bracket-row .bracket-label { color:rgba(255,255,255,.6); }
+    .bracket-row .bracket-value { font-weight:700;color:#fbbf24;font-variant-numeric:tabular-nums; }
+  `;
+  document.head.appendChild(style);
+}
+
+// ════════════════════════════════════════════════════════════════
+// INICIALIZAÇÃO
+// ════════════════════════════════════════════════════════════════
+
+document.addEventListener('DOMContentLoaded', () => {
+  injectBaseStyles();
+
+  loadSession((hasSession) => {
+    if (hasSession) {
+      // Verificação de email pendente
+      if (currentUser && currentUser.is_verified === false) {
+        showVerifyScreen(authToken, currentUser.email || localStorage.getItem('pending_email') || '', (verifiedUser) => {
+          const updated = { ...currentUser, ...verifiedUser, is_verified: true };
+          saveSession(authToken, updated);
+          finalizeLoginUI();
+        });
+      } else {
+        finalizeLoginUI();
+      }
+    } else {
+      // Redireciona para login se não há sessão
+      if (!window.location.pathname.endsWith('/') && !window.location.pathname.endsWith('index.html')) {
+        window.location.href = '/';
+        return;
+      }
+      showLoginScreen();
+    }
+  });
+
+  // Privacy toggle
+  updatePrivacyToggle();
+  $('btn-privacy-toggle')?.addEventListener('click', () => {
+    hideSensitiveValues = !hideSensitiveValues;
+    updatePrivacyToggle();
+  });
+
+  // Shell navigation
+  initShellNav();
+  bindFeatureGates();
+  bindPlanButtons();
+
+  // Auth buttons (se página tem formulários)
+  $('btn-login')?.addEventListener('click', handleLogin);
+  $('btn-register')?.addEventListener('click', handleRegister);
+  $('btn-show-register')?.addEventListener('click', toggleAuthMode);
+  $('btn-show-login')?.addEventListener('click', toggleAuthMode);
+  $('login-password')?.addEventListener('keydown', e => { if (e.key === 'Enter') handleLogin(); });
+  $('reg-password')?.addEventListener('keydown',   e => { if (e.key === 'Enter') handleRegister(); });
+
+  // Logout
+  $('nav-logout')?.addEventListener('click', handleLogout);
+  $('btn-logout')?.addEventListener('click',  handleLogout);
+
+  // Navigation tabs
+  $('nav-portfolio')?.addEventListener('click',    () => { switchTab('dashboard');        closeMenu(); });
+  $('nav-market')?.addEventListener('click',       () => { switchTab('market-watch');      closeMenu(); });
+  $('nav-add')?.addEventListener('click',          () => { switchTab('add-asset');         closeMenu(); });
+  $('nav-alerts')?.addEventListener('click',       () => { switchTab('alerts-page');       closeMenu(); });
+  $('nav-import')?.addEventListener('click',       () => { switchTab('import-page');       closeMenu(); });
+  $('nav-transactions')?.addEventListener('click', () => { switchTab('transactions-page'); closeMenu(); });
+
+  $('top-tab-dashboard')?.addEventListener('click', () => switchTab('dashboard'));
+  $('top-tab-market')?.addEventListener('click',    () => switchTab('market-watch'));
+  $('btn-quick-add')?.addEventListener('click',          () => switchTab('add-asset'));
+  $('btn-quick-transactions')?.addEventListener('click', () => switchTab('transactions-page'));
+
+  // Upgrade
+  $('btn-upgrade')?.addEventListener('click',
+    () => showUpgradeModal('Desbloqueie ativos ilimitados, análise IA, importação CSV e mais.'));
+  $('btn-upgrade-cancel')?.addEventListener('click',  closeGateModal);
+  $('btn-upgrade-confirm')?.addEventListener('click', handleUpgrade);
+  $('btn-upgrade-tax-pro')?.addEventListener('click', () => showTaxProUpgradeModal());
+  $('btn-taxpro-cancel')?.addEventListener('click',   hideTaxProUpgradeModal);
+  $('btn-taxpro-confirm')?.addEventListener('click',  handleTaxProUpgrade);
+
+  // Export CSV
+  $('btn-export-csv')?.addEventListener('click', exportPortfolioCsv);
+
+  // Portfolio AI
+  $('btn-portfolio-ai')?.addEventListener('click',      handlePortfolioAI);
+  $('btn-share-performance')?.addEventListener('click', sharePerformanceCard);
+
+  // Net worth
+  $('btn-net-worth-add')?.addEventListener('click', openNetWorthModal);
+  $('btn-nw-cancel')?.addEventListener('click',     closeNetWorthModal);
+  $('btn-nw-save')?.addEventListener('click',       saveNetWorthEntry);
+  $('modal-net-worth')?.addEventListener('click', e => {
+    if (e.target === $('modal-net-worth')) closeNetWorthModal();
+  });
+
+  // Rebalance
+  $('btn-rebalance-calc')?.addEventListener('click', calculateRebalance);
+
+  // Detail view
+  $('btn-back')?.addEventListener('click', () => $('detail-view')?.classList.remove('active'));
+  qsa('.time-btn').forEach(btn => {
+    btn.addEventListener('click', e => {
+      qsa('.time-btn').forEach(b => b.classList.remove('active'));
+      e.target.classList.add('active');
+      const sym = $('detail-symbol')?.textContent;
+      if (sym && sym !== '—') loadDetailChart(sym, e.target.dataset.period);
+    });
+  });
+
+  // Main chart controls
+  $('benchmark-select')?.addEventListener('change', () => loadMainChart());
+  qsa('.pill').forEach(btn => {
+    btn.addEventListener('click', e => {
+      qsa('.pill').forEach(b => b.classList.remove('active'));
+      e.target.classList.add('active');
+      loadMainChart();
+    });
+  });
+
+  // Add asset
+  $('btn-save-asset')?.addEventListener('click', handleAddAsset);
+  $('symbol-input')?.addEventListener('input', e => {
+    clearTimeout(searchTimer);
+    const v = e.target.value.trim();
+    selectedAddAssetType = null; setAddAmountInputMode(null);
+    if (v.length < 2) { if ($('search-dropdown')) $('search-dropdown').style.display = 'none'; return; }
+    searchTimer = setTimeout(() => performSearch(v), 380);
+  });
+  document.addEventListener('click', e => {
+    if (!e.target.closest('.input-wrap') && !e.target.closest('#search-dropdown'))
+      if ($('search-dropdown')) $('search-dropdown').style.display = 'none';
+  });
+
+  // Sell modal
+  $('sell-qty')?.addEventListener('input', updateSellEstimate);
+  $('btn-max')?.addEventListener('click', () => {
+    if (assetForSale) { if ($('sell-qty')) $('sell-qty').value = assetForSale.amount; updateSellEstimate(); }
+  });
+  $('btn-sell-cancel')?.addEventListener('click',  closeSellModal);
+  $('btn-sell-confirm')?.addEventListener('click', confirmSell);
+  $('modal-sell')?.addEventListener('click', e => { if (e.target === $('modal-sell')) closeSellModal(); });
+
+  // Alerts
+  $('btn-create-alert')?.addEventListener('click', handleCreateAlert);
+  $('alert-type-input')?.addEventListener('change', updateAlertFormFields);
+  updateAlertFormFields();
+
+  // CSV Import
+  $('btn-open-import')?.addEventListener('click', openImportModal);
+  $('btn-import-cancel')?.addEventListener('click', closeImportModal);
+  $('btn-import-confirm')?.addEventListener('click', handleImportConfirm);
+  $('import-broker-select')?.addEventListener('change', handleBrokerSelect);
+  $('file-drop-area')?.addEventListener('click', () => $('import-file-input')?.click());
+  $('import-file-input')?.addEventListener('change', handleFileSelect);
+  const dropArea = $('file-drop-area');
+  if (dropArea) {
+    dropArea.addEventListener('dragover', e => { e.preventDefault(); dropArea.classList.add('drag-over'); });
+    dropArea.addEventListener('dragleave', () => dropArea.classList.remove('drag-over'));
+    dropArea.addEventListener('drop', e => {
+      e.preventDefault(); dropArea.classList.remove('drag-over');
+      const file = e.dataTransfer.files?.[0];
+      if (file) handleFileSelect({ target: { files: [file] } });
+    });
+  }
+  $('modal-import-csv')?.addEventListener('click', e => {
+    if (e.target === $('modal-import-csv')) closeImportModal();
+  });
+
+  // Tax tools
+  $('btn-refresh-tlh')?.addEventListener('click',     loadTaxLossHarvesting);
+  $('tlh-bracket-select')?.addEventListener('change', loadTaxLossHarvesting);
+});
