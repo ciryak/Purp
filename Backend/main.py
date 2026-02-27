@@ -864,7 +864,7 @@ def forgot_password(request: Request, data: ForgotPasswordInput, session: Sessio
 
 @app.post("/auth/reset-password")
 @limiter.limit("5/minute")
-def reset_password(data: ResetPasswordInput, session: Session = Depends(get_session)):
+def reset_password(request: Request, data: ResetPasswordInput, session: Session = Depends(get_session)):
     ok, err = validate_password_strong(data.new_password)
     if not ok:
         raise HTTPException(400, err)
