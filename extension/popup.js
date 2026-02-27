@@ -1672,6 +1672,9 @@ async function handleImportConfirm() {
     fill.style.width = '80%'; status.textContent = 'Processing…';
     if (!res) { toast('Network error during import.', 'error'); return; }
     const data = await res.json().catch(() => ({}));
+    // #region agent log
+    fetch('http://127.0.0.1:7351/ingest/64ae4719-d813-458e-9378-1f1b6cba8148',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'39d11f'},body:JSON.stringify({sessionId:'39d11f',runId:'pre-fix',hypothesisId:'H3',location:'extension/popup.js:broker-api-fetch',message:'broker API fetch result',data:{broker,ok:!!data.ok,use_csv:!!data.use_csv,holdings:(data.holdings||[]).length},timestamp:Date.now()})}).catch(()=>{});
+    // #endregion agent log
     fill.style.width = '100%';
     if (res.status === 402) { closeImportModal(); showUpgradeModal(apiErrorDetail(data.detail, 'CSV import requires an Investor or Tax Pro plan.')); return; }
     if (!res.ok) { $('import-progress').style.display = 'none'; showImportResult('error', apiErrorDetail(data.detail, 'Import failed.'), null); return; }
@@ -2274,6 +2277,9 @@ function buildYieldRows(assets) {
 
 // ── INIT ─────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
+  // #region agent log
+  fetch('http://127.0.0.1:7351/ingest/64ae4719-d813-458e-9378-1f1b6cba8148',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'39d11f'},body:JSON.stringify({sessionId:'39d11f',runId:'pre-fix',hypothesisId:'H3',location:'extension/popup.js:DOMContentLoaded',message:'extension DOMContentLoaded',data:{},timestamp:Date.now()})}).catch(()=>{});
+  // #endregion agent log
   injectStyles();
   injectPortfolioScoreStyles();
 

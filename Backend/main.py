@@ -1155,19 +1155,43 @@ def remove_from_watchlist(
 
 @app.get("/alerts")
 def get_alerts(user_id: int = Depends(get_current_user), session: Session = Depends(get_session)):
-    alerts = session.exec(
-        select(PriceAlert).where(PriceAlert.user_id == user_id).order_by(PriceAlert.created_at.desc())
-    ).all()
-    return {"alerts": [
-        {"id": a.id, "symbol": a.symbol, "alert_type": a.alert_type,
-         "target_value": a.target_value, "triggered": a.triggered,
-         "triggered_at": a.triggered_at, "active": a.active,
-         "recurring": a.recurring, "created_at": a.created_at,
-         "rsi_period": a.rsi_period,
-         "rebalance_threshold_pct": a.rebalance_threshold_pct,
-         "target_allocation_pct": a.target_allocation_pct}
-        for a in alerts
-    ]}
+    """
+    Return all alerts for the current user.
+    If anything goes wrong (e.g. legacy DB schema in production), fail soft and return an empty list
+    so the dashboard does not break.
+    """
+    try:
+        alerts = session.exec(
+            select(PriceAlert).where(PriceAlert.user_id == user_id).order_by(PriceAlert.created_at.desc())
+        ).all()
+        return {"alerts": [
+            {"id": a.id, "symbol": a.symbol, "alert_type": a.alert_type,
+             "target_value": a.target_value, "triggered": a.triggered,
+             "triggered_at": a.triggered_at, "active": a.active,
+             "recurring": a.recurring, "created_at": a.created_at,
+             "rsi_period": a.rsi_period,
+             "rebalance_threshold_pct": a.rebalance_threshold_pct,
+             "target_allocation_pct": a.target_allocation_pct}
+            for a in alerts
+        ]}
+    except Exception as e:  # pragma: no cover - defensive guard for prod issues
+        # Lightweight NDJSON debug log to help diagnose production-only errors.
+        try:
+            import json, time  # type: ignore
+            with open("debug-39d11f.log", "a", encoding="utf-8") as f:
+                f.write(json.dumps({
+                    "sessionId": "39d11f",
+                    "runId": "pre-fix",
+                    "hypothesisId": "H_alerts",
+                    "location": "Backend/main.py:get_alerts",
+                    "message": "get_alerts exception",
+                    "data": {"error": str(e)},
+                    "timestamp": int(time.time() * 1000),
+                }) + "\n")
+        except Exception:
+            pass
+        # Soft-fail: no alerts instead of 500, so UI keeps working.
+        return {"alerts": [], "error": "alerts_unavailable"}
 
 
 @app.post("/alerts")

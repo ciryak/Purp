@@ -195,6 +195,9 @@ function clearError(elId) {
 function startRefresh() {
   stopRefresh();
   const path = (window.location.pathname || '').replace(/\/$/, '') || '/home';
+   // #region agent log
+  fetch('http://127.0.0.1:7351/ingest/64ae4719-d813-458e-9378-1f1b6cba8148',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'39d11f'},body:JSON.stringify({sessionId:'39d11f',runId:'pre-fix',hypothesisId:'H1',location:'static/home/_base.js:startRefresh',message:'startRefresh',data:{path},timestamp:Date.now()})}).catch(()=>{});
+  // #endregion agent log
   refreshTimer = setInterval(() => {
     if (!authToken) return;
     fetchPortfolio();
@@ -976,7 +979,11 @@ async function loadPortfolioScore() {
 // ════════════════════════════════════════════════════════════════
 
 async function fetchPortfolio() {
+  // #region agent log
+  fetch('http://127.0.0.1:7351/ingest/64ae4719-d813-458e-9378-1f1b6cba8148',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'39d11f'},body:JSON.stringify({sessionId:'39d11f',runId:'pre-fix',hypothesisId:'H1',location:'static/home/_base.js:fetchPortfolio',message:'fetchPortfolio start',data:{path:window.location.pathname},timestamp:Date.now()})}).catch(()=>{});
+  // #endregion agent log
   if (!authToken) return;
+  const _t0 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
   const res = await apiFetch('/portfolio/balance', { headers: authHeaders() });
   if (!res || !res.ok) return;
   const data = await res.json();
@@ -989,7 +996,7 @@ async function fetchPortfolio() {
   const summaryEl = $('portfolio-summary');
   if (summaryEl) {
     const n = (data.assets || []).length;
-    summaryEl.textContent = n === 0 ? 'Nenhum ativo' : `${n} ativo${n !== 1 ? 's' : ''}`;
+    summaryEl.textContent = n === 0 ? 'No assets' : `${n} asset${n !== 1 ? 's' : ''}`;
   }
 
   portfolioCount   = (data.assets || []).length;
@@ -997,6 +1004,10 @@ async function fetchPortfolio() {
   updateProfileBar();
   await loadPortfolioScore();
   await loadNetWorth();
+
+  // #region agent log
+  (function(){const now=(typeof performance!=='undefined'&&performance.now)?performance.now():Date.now();const dur=now-_t0;fetch('http://127.0.0.1:7351/ingest/64ae4719-d813-458e-9378-1f1b6cba8148',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'39d11f'},body:JSON.stringify({sessionId:'39d11f',runId:'pre-fix',hypothesisId:'H2',location:'static/home/_base.js:fetchPortfolio',message:'fetchPortfolio after net worth',data:{durationMs:dur,assetCount:(data.assets||[]).length},timestamp:Date.now()})}).catch(()=>{});})();
+  // #endregion agent log
 
   const list = $('assets-list');
   if (!list) return;
