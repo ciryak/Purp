@@ -700,6 +700,26 @@ function updateProfileBar() {
   if (importCard) importCard.style.display = isPremium() ? '' : 'none';
 
   updateTaxToolsVisibility();
+  _renderAssetLimitBar();
+}
+
+function _renderAssetLimitBar() {
+  const container = $('asset-limit-bar-container');
+  if (!container) return;
+  if (isPremium() || portfolioCount === 0) {
+    container.innerHTML = '';
+    return;
+  }
+  const pct = Math.min(100, (portfolioCount / FREE_ASSET_LIMIT) * 100);
+  const isClose = portfolioCount >= FREE_ASSET_LIMIT - 1;
+  container.innerHTML = `
+    <div class="asset-limit-bar" style="${isClose ? 'border-color:rgba(245,158,11,0.4);background:rgba(245,158,11,0.09);' : ''}">
+      <span style="flex-shrink:0;">${portfolioCount}/${FREE_ASSET_LIMIT} assets</span>
+      <div class="asset-limit-bar__track">
+        <div class="asset-limit-bar__fill" style="width:${pct}%;${isClose ? 'background:linear-gradient(90deg,#f59e0b,#ef4444);' : ''}"></div>
+      </div>
+      ${isClose ? '<span style="flex-shrink:0;font-size:10px;cursor:pointer;text-decoration:underline;" onclick="openUpgradeModal()">Upgrade</span>' : ''}
+    </div>`;
 }
 
 // ════════════════════════════════════════════════════════════════
@@ -1074,8 +1094,32 @@ async function loadPortfolioScore() {
 // PORTFOLIO — balance + assets list
 // ════════════════════════════════════════════════════════════════
 
+function _renderAssetSkeletons(count = 3) {
+  const list = $('assets-list');
+  if (!list) return;
+  list.innerHTML = Array.from({ length: count }, () => `
+    <div class="skeleton-asset-row">
+      <div class="skeleton skeleton-avatar"></div>
+      <div class="skeleton-asset-info">
+        <div class="skeleton skeleton-text" style="width:80px;"></div>
+        <div class="skeleton skeleton-text" style="width:56px;margin-top:4px;"></div>
+      </div>
+      <div class="skeleton-asset-right">
+        <div class="skeleton skeleton-text" style="width:72px;"></div>
+        <div class="skeleton skeleton-text" style="width:48px;margin-top:4px;"></div>
+      </div>
+    </div>`).join('');
+}
+
+function _renderBalanceSkeleton() {
+  const el = $('total-balance');
+  if (el) el.innerHTML = '<span class="skeleton skeleton-title" style="width:160px;display:inline-block;"></span>';
+}
+
 async function fetchPortfolio() {
   if (!authToken) return;
+  _renderBalanceSkeleton();
+  _renderAssetSkeletons(3);
   const res = await apiFetch('/portfolio/balance', { headers: authHeaders() });
   if (!res || !res.ok) return;
   const data = await res.json();
@@ -1107,11 +1151,15 @@ async function fetchPortfolio() {
       <div class="empty-state">
         <div class="empty-state__icon">📊</div>
         <h3 class="empty-state__title">Your portfolio is empty</h3>
-        <p class="empty-state__body">Add your first asset to start tracking performance and get AI insights.</p>
-        <button class="btn primary" onclick="switchTab('add-asset')" style="margin-top:8px;">Add Asset</button>
+        <p class="empty-state__body">Add your first asset to start tracking performance, get AI insights, and stay on top of your wealth.</p>
+        <button class="btn primary" onclick="switchTab('add-asset')" style="margin-top:4px;gap:6px;">
+          <span>+</span> Add your first asset
+        </button>
       </div>`;
     return;
   }
+
+  _renderAssetLimitBar();
 
   renderRebalanceTargets(data.assets || []);
   await loadBalancePerformance();
@@ -2265,54 +2313,163 @@ async function handleCreateAlert() {
 
 let _shareCardBlobUrl = null;
 
+function _buildAllocationPreview(assets) {
+  if (!assets || !assets.length) return '';
+  const total = assets.reduce((s, a) => s + (a.position_value || 0), 0);
+  if (total <= 0) return '';
+
+  const sorted  = [...assets].sort((a, b) => (b.position_value || 0) - (a.position_value || 0));
+  const top6    = sorted.slice(0, 6);
+  const others  = sorted.slice(6);
+  const otherPct = others.reduce((s, a) => s + ((a.position_value || 0) / total * 100), 0);
+
+  const PALETTE = [
+    '#7c3aed','#a78bfa','#10b981','#f59e0b','#ef4444','#3b82f6','#8b5cf6',
+  ];
+
+  const rows = top6.map((a, i) => {
+    const pct  = ((a.position_value || 0) / total * 100).toFixed(1);
+    const sym2 = (a.symbol || '').substring(0, 2).toUpperCase();
+    const iconHtml = a.icon
+      ? `<img src="${a.icon}" alt="${a.symbol}" style="width:20px;height:20px;border-radius:6px;object-fit:cover;" onerror="this.style.display='none'">`
+      : `<span style="width:20px;height:20px;border-radius:6px;background:${PALETTE[i % PALETTE.length]};display:inline-flex;align-items:center;justify-content:center;font-size:8px;font-weight:800;color:#fff;">${sym2}</span>`;
+    return `
+      <div style="display:flex;align-items:center;gap:8px;">
+        ${iconHtml}
+        <div style="flex:1;min-width:0;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:3px;">
+            <span style="font-size:11px;font-weight:700;color:#f2f0ff;">${a.symbol}</span>
+            <span style="font-size:11px;font-weight:800;color:#f2f0ff;font-variant-numeric:tabular-nums;">${pct}%</span>
+          </div>
+          <div style="height:4px;border-radius:99px;background:rgba(255,255,255,0.1);overflow:hidden;">
+            <div style="height:100%;width:${pct}%;background:${PALETTE[i % PALETTE.length]};border-radius:99px;"></div>
+          </div>
+        </div>
+      </div>`;
+  }).join('');
+
+  const othersRow = otherPct > 0.5 ? `
+    <div style="display:flex;align-items:center;gap:8px;">
+      <span style="width:20px;height:20px;border-radius:6px;background:rgba(255,255,255,0.12);display:inline-flex;align-items:center;justify-content:center;font-size:8px;font-weight:800;color:rgba(242,240,255,0.6);">+${others.length}</span>
+      <div style="flex:1;min-width:0;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:3px;">
+          <span style="font-size:11px;font-weight:600;color:rgba(242,240,255,0.55);">Others</span>
+          <span style="font-size:11px;font-weight:700;color:rgba(242,240,255,0.55);font-variant-numeric:tabular-nums;">${otherPct.toFixed(1)}%</span>
+        </div>
+        <div style="height:4px;border-radius:99px;background:rgba(255,255,255,0.1);overflow:hidden;">
+          <div style="height:100%;width:${otherPct.toFixed(1)}%;background:rgba(255,255,255,0.25);border-radius:99px;"></div>
+        </div>
+      </div>
+    </div>` : '';
+
+  return `
+    <div style="background:linear-gradient(135deg,#0f0c1e,#18153a);border-radius:16px;padding:20px;border:1px solid rgba(124,58,237,0.25);">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
+        <div style="display:flex;align-items:center;gap:8px;">
+          <div style="width:28px;height:28px;border-radius:8px;background:linear-gradient(135deg,#7c3aed,#a78bfa);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:900;color:#fff;">P</div>
+          <div>
+            <div style="font-size:13px;font-weight:800;color:#f2f0ff;letter-spacing:-0.2px;">Portfolio Allocation</div>
+            <div style="font-size:10px;color:rgba(242,240,255,0.5);">No monetary values · Purp.ai</div>
+          </div>
+        </div>
+        <div style="font-size:10px;padding:3px 8px;border-radius:99px;background:rgba(124,58,237,0.2);border:1px solid rgba(124,58,237,0.35);color:#a78bfa;font-weight:700;">${assets.length} assets</div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:10px;">
+        ${rows}${othersRow}
+      </div>
+      <div style="margin-top:14px;padding-top:12px;border-top:1px solid rgba(255,255,255,0.07);text-align:center;font-size:10px;color:rgba(242,240,255,0.35);">
+        Track your portfolio at getpurpai.com
+      </div>
+    </div>`;
+}
+
 function _openShareModal() {
   let modal = document.getElementById('share-card-modal');
+  const modalClose = () => {
+    modal?.remove();
+    if (_shareCardBlobUrl) { URL.revokeObjectURL(_shareCardBlobUrl); _shareCardBlobUrl = null; }
+  };
+
   if (!modal) {
     modal = document.createElement('div');
     modal.id = 'share-card-modal';
-    modal.style.cssText = [
-      'position:fixed;inset:0;z-index:9000;background:rgba(7,6,15,0.88)',
-      'display:flex;align-items:center;justify-content:center;padding:20px',
-      'backdrop-filter:blur(14px)',
-    ].join(';');
+    modal.className = 'share-modal-overlay';
+    modal.style.cssText = 'position:fixed;inset:0;z-index:9000;background:rgba(7,6,15,0.9);display:flex;align-items:center;justify-content:center;padding:20px;backdrop-filter:blur(16px);';
     modal.innerHTML = `
-      <div style="background:var(--bg2);border:1px solid var(--border-l);border-radius:var(--r-lg);width:min(100%,600px);padding:24px;animation:modalIn 0.22s ease;">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
-          <h3 style="font-size:15px;font-weight:800;margin:0;">📤 Share Your Portfolio Card</h3>
-          <button id="share-modal-close" style="background:none;border:none;color:var(--text3);font-size:20px;cursor:pointer;line-height:1;">✕</button>
+      <div class="share-modal-inner" style="background:var(--bg2);border:1px solid var(--border-l);border-radius:var(--r-lg);width:min(100%,520px);padding:0;overflow:hidden;animation:modalIn 0.24s var(--ease-out);">
+
+        <!-- Header -->
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:18px 20px 0;">
+          <div>
+            <h3 style="font-size:15px;font-weight:800;margin:0;letter-spacing:-0.3px;">📤 Share Portfolio</h3>
+            <p style="font-size:11px;color:var(--text3);margin:3px 0 0;">Shows allocation % — no dollar amounts</p>
+          </div>
+          <button id="share-modal-close" style="background:var(--card);border:1px solid var(--border);color:var(--text3);width:32px;height:32px;border-radius:var(--r-sm);font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all 0.2s;">✕</button>
         </div>
 
-        <!-- Period selector -->
-        <div style="display:flex;gap:8px;margin-bottom:16px;">
-          ${['1mo','3mo','1y'].map(p => `
-            <button class="share-period-btn btn ghost" data-period="${p}" style="flex:1;padding:8px;font-size:12px;">
-              ${p === '1mo' ? 'This Month' : p === '3mo' ? 'This Quarter' : 'This Year'}
-            </button>`).join('')}
+        <!-- Mode tabs -->
+        <div style="display:flex;gap:6px;padding:14px 20px 0;">
+          <button class="share-mode-btn btn ghost active-tab" data-mode="preview" style="flex:1;font-size:11px;padding:7px;">👁 Allocation Preview</button>
+          <button class="share-mode-btn btn ghost" data-mode="image" style="flex:1;font-size:11px;padding:7px;">🖼 Download Image</button>
         </div>
 
-        <!-- Preview area -->
-        <div id="share-preview" style="background:var(--bg3);border-radius:var(--r-sm);overflow:hidden;min-height:180px;display:flex;align-items:center;justify-content:center;margin-bottom:16px;">
-          <span style="color:var(--text3);font-size:13px;">Select a period to preview</span>
+        <!-- Allocation preview pane -->
+        <div id="share-pane-preview" style="padding:14px 20px;">
+          <div id="share-allocation-content" style="min-height:180px;"></div>
         </div>
 
-        <!-- Actions -->
-        <div style="display:flex;gap:10px;">
+        <!-- Image pane -->
+        <div id="share-pane-image" style="padding:14px 20px;display:none;">
+          <div style="display:flex;gap:6px;margin-bottom:12px;">
+            ${['1mo','3mo','1y'].map(p => `
+              <button class="share-period-btn btn ghost" data-period="${p}" style="flex:1;padding:7px;font-size:11px;">
+                ${p === '1mo' ? 'This Month' : p === '3mo' ? 'This Quarter' : 'This Year'}
+              </button>`).join('')}
+          </div>
+          <div id="share-preview" style="background:var(--bg3);border-radius:var(--r);overflow:hidden;min-height:160px;display:flex;align-items:center;justify-content:center;">
+            <span style="color:var(--text3);font-size:12px;">Select a period above</span>
+          </div>
+        </div>
+
+        <!-- Footer actions -->
+        <div style="display:flex;gap:8px;padding:0 20px 18px;">
           <button id="share-btn-download" class="btn ghost" style="flex:1;" disabled>⬇ Download</button>
-          <button id="share-btn-copy"     class="btn ghost" style="flex:1;" disabled>🔗 Copy Link</button>
+          <button id="share-btn-copy-img" class="btn ghost" style="flex:1;" disabled>🔗 Copy Link</button>
+          <button id="share-btn-copy-preview" class="btn primary" style="flex:1;">Copy as Text</button>
         </div>
       </div>`;
     document.body.appendChild(modal);
 
-    document.getElementById('share-modal-close').addEventListener('click', () => {
-      modal.remove();
-      if (_shareCardBlobUrl) { URL.revokeObjectURL(_shareCardBlobUrl); _shareCardBlobUrl = null; }
+    document.getElementById('share-modal-close').addEventListener('click', modalClose);
+    modal.addEventListener('click', e => { if (e.target === modal) modalClose(); });
+
+    // Mode switch
+    modal.querySelectorAll('.share-mode-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        modal.querySelectorAll('.share-mode-btn').forEach(b => {
+          b.classList.remove('active-tab');
+          b.style.cssText = b.style.cssText.replace('background:linear-gradient(135deg,var(--accent),#9333ea);color:#fff;border-color:transparent;','');
+        });
+        btn.classList.add('active-tab');
+        const mode = btn.dataset.mode;
+        document.getElementById('share-pane-preview').style.display = mode === 'preview' ? '' : 'none';
+        document.getElementById('share-pane-image').style.display   = mode === 'image'   ? '' : 'none';
+        document.getElementById('share-btn-download').style.display  = mode === 'image'   ? '' : 'none';
+        document.getElementById('share-btn-copy-img').style.display  = mode === 'image'   ? '' : 'none';
+        document.getElementById('share-btn-copy-preview').style.display = mode === 'preview' ? '' : 'none';
+      });
     });
-    modal.addEventListener('click', e => {
-      if (e.target === modal) {
-        modal.remove();
-        if (_shareCardBlobUrl) { URL.revokeObjectURL(_shareCardBlobUrl); _shareCardBlobUrl = null; }
-      }
-    });
+
+    // Populate allocation preview immediately
+    const allocEl = document.getElementById('share-allocation-content');
+    if (allocEl) {
+      // Get current portfolio data from page state
+      apiFetch('/portfolio/balance', { headers: authHeaders() }).then(async r => {
+        if (!r || !r.ok) { allocEl.innerHTML = '<p style="color:var(--text3);font-size:12px;text-align:center;padding:20px 0;">Unable to load portfolio data.</p>'; return; }
+        const d = await r.json();
+        allocEl.innerHTML = _buildAllocationPreview(d.assets || []) || '<p style="color:var(--text3);font-size:12px;text-align:center;padding:20px 0;">No assets to display.</p>';
+      });
+    }
 
     modal.querySelectorAll('.share-period-btn').forEach(btn => {
       btn.addEventListener('click', () => {
@@ -2325,20 +2482,28 @@ function _openShareModal() {
     document.getElementById('share-btn-download').addEventListener('click', () => {
       if (!_shareCardBlobUrl) return;
       const a = document.createElement('a');
-      a.href     = _shareCardBlobUrl;
-      a.download = 'purp-portfolio.png';
-      a.click();
+      a.href = _shareCardBlobUrl; a.download = 'purp-portfolio.png'; a.click();
     });
 
-    document.getElementById('share-btn-copy').addEventListener('click', async () => {
+    document.getElementById('share-btn-copy-img').addEventListener('click', async () => {
       if (!_shareCardBlobUrl) return;
-      try {
-        await navigator.clipboard.writeText(_shareCardBlobUrl);
-        toast('Link copied to clipboard!', 'success', 2500);
-      } catch (_) {
-        window.open(_shareCardBlobUrl, '_blank');
-      }
+      try { await navigator.clipboard.writeText(_shareCardBlobUrl); toast('Link copied!', 'success', 2500); }
+      catch (_) { window.open(_shareCardBlobUrl, '_blank'); }
     });
+
+    document.getElementById('share-btn-copy-preview').addEventListener('click', async () => {
+      const allocEl = document.getElementById('share-allocation-content');
+      if (!allocEl) return;
+      try {
+        const text = allocEl.innerText.replace(/\s+/g, ' ').trim();
+        await navigator.clipboard.writeText(`My Purp Portfolio:\n${text}\n\nTrack yours at getpurpai.com`);
+        toast('Portfolio summary copied!', 'success', 2500);
+      } catch (_) { toast('Could not copy.', 'warning'); }
+    });
+
+    // Hide image actions initially
+    document.getElementById('share-btn-download').style.display  = 'none';
+    document.getElementById('share-btn-copy-img').style.display  = 'none';
   }
   modal.style.display = 'flex';
 }
@@ -3228,7 +3393,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const span = _fieldError(id);
     const input = document.getElementById(id);
     if (span) span.textContent = msg;
-    if (input) input.classList.toggle('input-error', !!msg);
+    if (input) {
+      input.classList.toggle('input-error', !!msg);
+      input.classList.toggle('input-valid', !msg && !!input.value);
+    }
   }
 
   $('symbol-input')?.addEventListener('input', e => {

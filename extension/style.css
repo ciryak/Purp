@@ -4,26 +4,45 @@
    @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=DM+Mono:wght@400;500&display=swap');
 
    :root {
-     --bg:          #0a0914;
-     --bg2:         #110f20;
-     --bg3:         #1a1730;
+     /* ── Aligned with web _base.css design system ── */
+     --bg:          #07060f;
+     --bg2:         #0f0c1e;
+     --bg3:         #18153a;
      --card:        rgba(255,255,255,0.04);
+     --card-hover:  rgba(255,255,255,0.07);
      --border:      rgba(255,255,255,0.08);
+     --border-l:    rgba(255,255,255,0.13);
      --accent:      #7c3aed;
      --accent-l:    #a78bfa;
-     --accent-glow: rgba(124,58,237,0.3);
+     --accent-d:    #5b21b6;
+     --accent-glow: rgba(124,58,237,0.28);
      --gold:        #f59e0b;
      --gold-l:      #fbbf24;
      --green:       #10b981;
      --red:         #ef4444;
-     --text:        #f1f0f5;
-     --text2:       rgba(241,240,245,0.6);
-     /* WCAG AA 4.5:1 contrast — raised from 0.35 to 0.55 */
-     --text3:       rgba(241,240,245,0.55);
-     --r:           14px;
+     --danger:      #ef4444;
+     --text:        #f2f0ff;
+     --text2:       rgba(242,240,255,0.6);
+     /* WCAG AA 4.5:1 contrast on dark bg */
+     --text3:       rgba(242,240,255,0.55);
+     /* Radius scale — same as web */
+     --r-xs:        4px;
      --r-sm:        8px;
+     --r:           12px;
+     --r-md:        12px;
+     --r-lg:        16px;
+     --r-xl:        24px;
+     /* Spacing scale */
+     --gap-xs:      4px;
+     --gap-sm:      8px;
+     --gap-md:      16px;
+     --gap-lg:      24px;
      --font:        'DM Sans', system-ui, sans-serif;
      --mono:        'DM Mono', 'Courier New', monospace;
+     --shadow:      0 4px 16px rgba(0,0,0,0.4);
+     --shadow-xl:   0 20px 60px rgba(0,0,0,0.6);
+     --ease-out:    cubic-bezier(0.22,1,0.36,1);
+     --duration:    0.2s;
    }
    
    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -39,7 +58,7 @@
      line-height: 1.4;
      overflow-x:  hidden;
      overflow-y:  auto;
-     border-radius: 18px;
+     border-radius: var(--r-lg);
      position: relative;
    }
    
@@ -66,7 +85,7 @@
      align-items: center;
      gap: 10px;
      padding: 12px 16px;
-     border-radius: 12px;
+     border-radius: var(--r);
      font-size: 12px;
      font-weight: 500;
      pointer-events: auto;
@@ -115,7 +134,7 @@
      padding: 9px 13px;
      background: rgba(239,68,68,0.12);
      border: 1px solid rgba(239,68,68,0.3);
-     border-radius: 10px;
+     border-radius: var(--r);
      color: #fca5a5;
      font-size: 12px;
      font-weight: 500;
@@ -1189,3 +1208,78 @@
   color: var(--text2);
   line-height: 1.6;
 }
+
+/* ══ TABULAR NUMBERS — monetary / price values ══════ */
+.asset-price-ext,
+.balance-main,
+.balance-sub,
+.asset-value-ext,
+.pnl-value,
+[class*="value-"],
+[class*="-value"],
+[class*="price-"] {
+  font-variant-numeric: tabular-nums;
+}
+
+/* ══ SKELETON / SHIMMER (extension) ════════════════ */
+@keyframes shimmer-ext {
+  0%   { background-position: -300px 0; }
+  100% { background-position:  300px 0; }
+}
+
+.skeleton-ext {
+  background: linear-gradient(
+    90deg,
+    rgba(255,255,255,0.04) 25%,
+    rgba(255,255,255,0.09) 50%,
+    rgba(255,255,255,0.04) 75%
+  );
+  background-size: 300px 100%;
+  animation: shimmer-ext 1.4s ease-in-out infinite;
+  border-radius: var(--r-sm);
+}
+
+.skeleton-text-ext  { height: 12px; border-radius: var(--r-xs); }
+.skeleton-title-ext { height: 24px; border-radius: var(--r-sm); }
+
+/* ══ ASSET LIMIT PILL (extension) ══════════════════ */
+.ext-limit-pill {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-sm);
+  padding: 6px 10px;
+  background: rgba(245,158,11,0.07);
+  border: 1px solid rgba(245,158,11,0.2);
+  border-radius: var(--r);
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--gold-l);
+  margin: 0 12px 8px;
+}
+
+.ext-limit-pill__track {
+  flex: 1;
+  height: 3px;
+  background: rgba(255,255,255,0.08);
+  border-radius: 99px;
+  overflow: hidden;
+}
+
+.ext-limit-pill__fill {
+  height: 100%;
+  border-radius: 99px;
+  background: linear-gradient(90deg, var(--gold), var(--gold-l));
+  transition: width 0.4s var(--ease-out);
+}
+
+/* ══ FIELD VALIDATION (extension) ══════════════════ */
+.field-error-ext {
+  display: block;
+  font-size: 10px;
+  color: var(--danger);
+  margin-top: 3px;
+  font-weight: 600;
+}
+
+input.input-error-ext  { border-color: var(--danger); box-shadow: 0 0 0 2px rgba(239,68,68,0.15); }
+input.input-valid-ext  { border-color: var(--green);  box-shadow: 0 0 0 2px rgba(16,185,129,0.12); }
