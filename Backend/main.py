@@ -12,7 +12,9 @@ import csv
 import re
 import random
 import string
+import secrets
 import threading
+import traceback
 import concurrent.futures
 from datetime import date, datetime, timedelta, timezone
 import sentry_sdk
@@ -31,19 +33,11 @@ from fastapi.staticfiles import StaticFiles
 import sentry_sdk
 from sentry_sdk.integrations.fastapi import FastApiIntegration
 from sentry_sdk.integrations.starlette import StarletteIntegration
-
 from slowapi import Limiter
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 
-import sentry_sdk
-from sentry_sdk.integrations.fastapi import FastApiIntegration
-from sentry_sdk.integrations.starlette import StarletteIntegration
-from slowapi import Limiter
-from slowapi.errors import RateLimitExceeded
-from slowapi.util import get_remote_address
-
-from models import Asset, User, Transaction, PriceAlert, WatchlistItem, ProcessedEvent, Dividend, EmailVerification, NetWorthEntry
+from models import Asset, User, Transaction, PriceAlert, WatchlistItem, ProcessedEvent, Dividend, EmailVerification, NetWorthEntry, PasswordResetToken
 from services import (
     get_asset_data,
     get_ai_analysis,
@@ -58,11 +52,13 @@ from services import (
     generate_form_8949,
     get_dividend_data,
     generate_weekly_digest,
+    calculate_portfolio_score,
 )
 
 sentry_sdk.init(
     dsn=os.getenv("SENTRY_DSN", ""),
-    traces_sample_rate=0.1,
+    integrations=[FastApiIntegration(), StarletteIntegration()],
+    traces_sample_rate=float(os.getenv("SENTRY_TRACES_SAMPLE_RATE", "0.1")),
     environment=os.getenv("ENVIRONMENT", "production"),
 )
 
@@ -86,7 +82,10 @@ if RESEND_API_KEY:
 else:
     print("⚠️  RESEND_API_KEY not set — emails disabled")
 
+FRONTEND_URL = os.getenv("FRONTEND_URL", "").rstrip("/")  # ex: https://getpurpai.com — link do email de reset
+
 VERIFICATION_EXPIRE_MINUTES = 15
+RESET_PASSWORD_EXPIRE_MINUTES = 60
 CRON_SECRET = os.getenv("CRON_SECRET", "")
 SYMBOL_PATTERN = re.compile(r"^[A-Z0-9.\-\^]+$")
 MAX_SYMBOL_LENGTH = 20
@@ -265,6 +264,34 @@ def _send_welcome_email(to_email: str, username: str) -> None:
   </td></tr>
 </table></td></tr></table></body></html>"""
     _send_email(to_email, "Welcome to Purp 🚀", html)
+
+
+def _send_password_reset_email(to_email: str, username: str, reset_link: str) -> None:
+    html = f"""<!DOCTYPE html><html><body style="margin:0;padding:0;background:#0a0914;font-family:'Segoe UI',Arial,sans-serif;">
+<table width="100%" cellpadding="0" cellspacing="0"><tr><td align="center" style="padding:48px 16px;">
+<table width="520" cellpadding="0" cellspacing="0"
+       style="background:#110f20;border-radius:20px;border:1px solid rgba(124,58,237,.25);overflow:hidden;">
+  <tr><td style="background:linear-gradient(135deg,#7c3aed,#a78bfa);padding:40px;text-align:center;">
+    <div style="font-size:48px;margin-bottom:14px;">🔑</div>
+    <h1 style="margin:0;color:#fff;font-size:24px;font-weight:800;">Reset your password</h1>
+    <p style="color:rgba(255,255,255,.8);margin:8px 0 0;font-size:13px;">Purp · AI Portfolio Tracker</p>
+  </td></tr>
+  <tr><td style="padding:32px 36px;">
+    <p style="color:#f1f0f5;font-size:15px;margin:0 0 14px;">Hey <strong style="color:#a78bfa;">{username}</strong> 👋</p>
+    <p style="color:rgba(241,240,245,.7);font-size:13px;line-height:1.7;margin:0 0 22px;">
+      You requested a password reset. Click the button below to choose a new password. This link expires in <strong style="color:#fff;">1 hour</strong>.
+    </p>
+    <p style="text-align:center;margin:0 0 24px;">
+      <a href="{reset_link}" style="display:inline-block;background:linear-gradient(135deg,#7c3aed,#a78bfa);color:#fff;text-decoration:none;padding:14px 32px;border-radius:12px;font-weight:700;font-size:14px;">Reset password</a>
+    </p>
+    <p style="color:rgba(241,240,245,.35);font-size:11px;margin:0;word-break:break-all;">Or copy this link: {reset_link}</p>
+    <p style="color:rgba(241,240,245,.25);font-size:11px;margin:24px 0 0;">If you didn't request this, you can safely ignore this email. Your password will not change.</p>
+  </td></tr>
+  <tr><td style="padding:0 36px 24px;text-align:center;">
+    <p style="color:rgba(241,240,245,.2);font-size:10px;margin:0;">Purp · AI Portfolio Tracker</p>
+  </td></tr>
+</table></td></tr></table></body></html>"""
+    _send_email(to_email, "Reset your Purp password", html)
 
 
 def _send_alert_email(
@@ -522,16 +549,6 @@ def create_db() -> None:
     PRICE_PLAN_MAP = _build_price_plan_map()
     print(f"💳 Price→plan map: {PRICE_PLAN_MAP}")
 
-# ── Sentry ─────────────────────────────────────────────────────────────────────
-
-sentry_sdk.init(
-    dsn=os.getenv("SENTRY_DSN"),
-    integrations=[FastApiIntegration(), StarletteIntegration()],
-    traces_sample_rate=1.0,
-    profiles_sample_rate=1.0,
-    debug=False,
-)
-
 # ── App ────────────────────────────────────────────────────────────────────────
 
 app = FastAPI(title="Purp API", version="7.0", on_startup=[create_db])
@@ -569,6 +586,11 @@ if os.path.isdir(EXTENSION_STATIC_DIR):
 
 @app.get("/")
 async def read_index():
+    return FileResponse("static/index.html")
+
+@app.get("/reset-password")
+async def reset_password_page():
+    """Serve a mesma SPA para o usuário abrir o link do email e ver o formulário de redefinição."""
     return FileResponse("static/index.html")
 
 @app.get("/home")
@@ -632,6 +654,22 @@ def verify_pw(pw: str, hashed: str) -> bool:
         return False
 
 
+def validate_password_strong(pw: str) -> tuple[bool, str | None]:
+    """Requisitos: mínimo 8 caracteres, 1 maiúscula, 1 minúscula, 1 dígito, 1 caractere especial."""
+    if len(pw) < 8:
+        return False, "Password must be at least 8 characters"
+    if not any(c.isupper() for c in pw):
+        return False, "Password must contain at least one uppercase letter"
+    if not any(c.islower() for c in pw):
+        return False, "Password must contain at least one lowercase letter"
+    if not any(c.isdigit() for c in pw):
+        return False, "Password must contain at least one number"
+    special = set("!@#$%^&*()_+-=[]{}|;':\",./<>?`~")
+    if not any(c in special for c in pw):
+        return False, "Password must contain at least one special character (!@#$%^&* etc.)"
+    return True, None
+
+
 def _history_days_for_user(user: User) -> int:
     return INVESTOR_HISTORY_DAYS if has_plan(user, "investor", "tax_pro") else FREE_HISTORY_DAYS
 
@@ -655,6 +693,11 @@ class VerifyEmailInput(BaseModel):
 
 class ForgotPasswordInput(BaseModel):
     email: EmailStr
+
+
+class ResetPasswordInput(BaseModel):
+    token: str
+    new_password: str
 
 
 class ResendVerificationInput(BaseModel):
@@ -714,8 +757,9 @@ class RebalanceInput(BaseModel):
 @limiter.limit("5/minute")
 def register(request: Request, data: RegisterInput, session: Session = Depends(get_session)):
     full_name = sanitize_full_name(data.full_name)
-    if len(data.password) < 4:
-        raise HTTPException(400, "Password must be at least 4 characters")
+    ok, err = validate_password_strong(data.password)
+    if not ok:
+        raise HTTPException(400, err)
     try:
         email_norm = str(data.email).strip().lower()
         if session.exec(select(User).where(User.email == email_norm)).first():
@@ -792,9 +836,66 @@ def login(request: Request, data: LoginInput, session: Session = Depends(get_ses
   
 @app.post("/auth/forgot-password")
 @limiter.limit("3/minute")
-def forgot_password(request: Request, data: ForgotPasswordInput):
-    _ = str(data.email).strip().lower()
+def forgot_password(request: Request, data: ForgotPasswordInput, session: Session = Depends(get_session)):
+    email = str(data.email).strip().lower()
+    user = session.exec(select(User).where(User.email == email)).first()
+    if not user or not user.email:
+        return {"ok": True, "message": "If this email exists, a reset link will be sent."}
+
+    now = datetime.utcnow()
+    expires = now + timedelta(minutes=RESET_PASSWORD_EXPIRE_MINUTES)
+    token = secrets.token_urlsafe(32)
+    prt = PasswordResetToken(
+        user_id=user.id,
+        token=token,
+        expires_at=expires.isoformat(),
+        used=False,
+        created_at=now.isoformat(),
+    )
+    session.add(prt)
+    session.commit()
+
+    base = FRONTEND_URL or str(request.base_url).rstrip("/")
+    reset_link = f"{base}/reset-password?token={token}"
+    _send_password_reset_email(user.email, user.username, reset_link)
+
     return {"ok": True, "message": "If this email exists, a reset link will be sent."}
+
+
+@app.post("/auth/reset-password")
+@limiter.limit("5/minute")
+def reset_password(data: ResetPasswordInput, session: Session = Depends(get_session)):
+    ok, err = validate_password_strong(data.new_password)
+    if not ok:
+        raise HTTPException(400, err)
+
+    prt = session.exec(select(PasswordResetToken).where(PasswordResetToken.token == data.token)).first()
+    if not prt:
+        raise HTTPException(400, "Invalid or expired reset link. Please request a new one.")
+    if prt.used:
+        raise HTTPException(400, "This reset link has already been used. Please request a new one.")
+
+    try:
+        expires = datetime.fromisoformat(prt.expires_at)
+        if datetime.utcnow() > expires:
+            prt.used = True
+            session.add(prt)
+            session.commit()
+            raise HTTPException(400, "This reset link has expired. Please request a new one.")
+    except (ValueError, TypeError):
+        raise HTTPException(400, "Invalid or expired reset link. Please request a new one.")
+
+    user = session.get(User, prt.user_id)
+    if not user:
+        raise HTTPException(400, "User not found.")
+
+    user.password_hash = hash_pw(data.new_password)
+    prt.used = True
+    session.add(user)
+    session.add(prt)
+    session.commit()
+
+    return {"ok": True, "message": "Password updated. You can sign in with your new password."}
 
 
 @app.post("/auth/verify-email")
@@ -1133,7 +1234,9 @@ def _run_alert_check():
 
 
 @app.post("/digest/send-weekly")
-def send_weekly_digest(session: Session = Depends(get_session)):
+def send_weekly_digest(request: Request, session: Session = Depends(get_session)):
+    if request.headers.get("X-Cron-Secret") != CRON_SECRET:
+        raise HTTPException(403, "Forbidden")
     users = session.exec(
         select(User).where(
             User.notification_email == True,
@@ -2299,7 +2402,8 @@ async def stripe_webhook(request: Request, session: Session = Depends(get_sessio
         event = stripe.Webhook.construct_event(payload, sig_header, secret)
     except stripe.SignatureVerificationError:
         raise HTTPException(400, "Invalid webhook signature")
-    except Exception:
+    except Exception as e:
+        traceback.print_exc()
         raise HTTPException(400, "Webhook processing error")
 
     event_id = event.get("id")

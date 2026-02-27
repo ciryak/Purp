@@ -643,50 +643,54 @@ def get_ai_analysis(symbol: str, change: float) -> str:
     if not _gemini_client:
         return "⚠️ Gemini API not configured. Add GEMINI_API_KEY to your environment."
 
-    direction = "rose" if change > 0 else "fell" if change < 0 else "was flat"
+    direction = "subiu" if change > 0 else "caiu" if change < 0 else "ficou estável"
+    pct = abs(change)
     prompt = (
-        f"In 1-2 concise sentences, analyze the asset {symbol} which {direction} "
-        f"{abs(change):.2f}% in the last 24h. Mention possible general market reasons "
-        "without inventing specific news. Respond in English."
-    )
+        "Você é um analista de investimentos conciso. O ativo {symbol} {direction} {pct:.2f}% nas últimas 24h. "
+        "Forneça uma análise curta (2-3 frases) que inclua: (1) possível contexto de mercado ou setor que explique o movimento, "
+        "(2) um comentário sobre o que observar a seguir (ex.: suporte, resistência, notícias). "
+        "Não invente notícias específicas; seja genérico mas útil. Não dê recomendações de compra ou venda. "
+        "Responda em português do Brasil, de forma direta e profissional."
+    ).format(symbol=symbol, direction=direction, pct=pct)
 
     try:
         res = _gemini_client.models.generate_content(
             model="gemini-1.5-flash",
             contents=prompt,
         )
-        return _extract_gemini_text(res) or "Analysis temporarily unavailable."
+        return _extract_gemini_text(res) or "Análise temporariamente indisponível."
     except Exception as e:
         print(f"❌ Gemini error for {symbol}: {e}")
-        return "AI analysis temporarily unavailable."
+        return "Análise por IA temporariamente indisponível."
 
 
 def get_portfolio_ai_analysis(portfolio_change: float, assets: list[dict]) -> str:
     if not _gemini_client:
         return "⚠️ Gemini API not configured. Add GEMINI_API_KEY to your environment."
 
-    direction = "rose" if portfolio_change > 0 else "fell" if portfolio_change < 0 else "was flat"
+    direction = "subiu" if portfolio_change > 0 else "caiu" if portfolio_change < 0 else "ficou estável"
+    pct = abs(portfolio_change)
     lines = "\n".join(
-        f"- {a.get('symbol')} ({a.get('type')}) "
-        f"{a.get('allocation_pct', 0):.1f}% allocation, {a.get('change_pct', 0):+.2f}% today"
-        for a in assets[:8]
+        f"- {a.get('symbol')} ({a.get('type', 'asset')}): alocação {a.get('allocation_pct', 0):.1f}%, variação 24h {a.get('change_pct', 0):+.2f}%"
+        for a in (assets or [])[:10]
     )
     prompt = (
-        f"As a portfolio manager, my portfolio {direction} {abs(portfolio_change):.2f}% today.\n"
-        f"Holdings:\n{lines}\n\n"
-        "In 2-3 sentences: comment on the portfolio behavior and give 1-2 generic "
-        "allocation tips. Do not recommend specific assets. Respond in English."
-    )
+        "Você é um gestor de portfólio. O portfólio do usuário {direction} {pct:.2f}% hoje. "
+        "Carteira (até 10 ativos):\n{lines}\n\n"
+        "Forneça uma análise em 2-4 frases: (1) comente o comportamento geral do portfólio e qual ativo mais contribuiu; "
+        "(2) dê 1-2 dicas genéricas de alocação ou diversificação (sem recomendar ativos específicos). "
+        "Seja objetivo e acionável. Responda em português do Brasil."
+    ).format(direction=direction, pct=pct, lines=lines or "Nenhum ativo.")
 
     try:
         res = _gemini_client.models.generate_content(
             model="gemini-1.5-flash",
             contents=prompt,
         )
-        return _extract_gemini_text(res) or "Portfolio analysis temporarily unavailable."
+        return _extract_gemini_text(res) or "Análise de portfólio temporariamente indisponível."
     except Exception as e:
         print(f"❌ Gemini portfolio error: {e}")
-        return "Portfolio analysis temporarily unavailable."
+        return "Análise de portfólio temporariamente indisponível."
 
 
 
@@ -1599,3 +1603,28 @@ def get_dividend_data(symbol: str) -> dict:
             "quarterly_dividend":   0.0,
             "last_12m_dividends":   [],
         }
+
+
+def calculate_portfolio_score(enriched_assets: list[dict], txs: list) -> dict:
+    """Calcula score do portfólio: grade (A-D) e tax_efficiency (0-100 para tax_pro)."""
+    total_value = sum(float(a.get("position_value") or 0) for a in enriched_assets)
+    n_positions = len(enriched_assets)
+
+    # Grade por diversificação e tamanho
+    if n_positions >= 10 and total_value >= 50_000:
+        grade = "A"
+    elif n_positions >= 5 and total_value >= 10_000:
+        grade = "B"
+    elif n_positions >= 2 or total_value >= 1_000:
+        grade = "C"
+    else:
+        grade = "D"
+
+    tax_efficiency = None
+    if enriched_assets and any(a.get("is_tax_pro") for a in enriched_assets):
+        # Tax efficiency: incentivo a holdings de longo prazo (>365 dias)
+        long_term = sum(1 for a in enriched_assets if int(a.get("days_held") or 0) >= 365)
+        pct_long = (long_term / len(enriched_assets)) * 100 if enriched_assets else 0
+        tax_efficiency = min(100, max(0, round(pct_long)))
+
+    return {"grade": grade, "tax_efficiency": tax_efficiency}

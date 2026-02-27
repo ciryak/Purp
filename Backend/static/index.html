@@ -827,6 +827,27 @@
       display: flex; align-items: center; gap: 7px;
     }
     .error-msg.hidden { display: none; }
+    .form-hint { font-size: 12px; color: var(--txt2); margin-top: 4px; }
+    .link-forgot { background: none; border: none; color: var(--violet-ll); cursor: pointer; font-size: 12px; text-decoration: underline; text-underline-offset: 2px; font-family: var(--font-body); padding: 0; }
+    .link-forgot:hover { color: var(--violet-l); }
+    .password-strength-wrap { margin-top: 8px; }
+    .password-strength-bar {
+      height: 4px; border-radius: 2px; background: var(--border); overflow: hidden; margin-bottom: 8px;
+    }
+    .password-strength-bar-fill {
+      height: 100%; border-radius: 2px; transition: width 0.2s ease, background 0.2s ease;
+      width: 0%; background: var(--red);
+    }
+    .password-strength-bar-fill.w1 { width: 20%; background: var(--red); }
+    .password-strength-bar-fill.w2 { width: 40%; background: var(--amber); }
+    .password-strength-bar-fill.w3 { width: 60%; background: var(--amber-l); }
+    .password-strength-bar-fill.w4 { width: 80%; background: var(--green); }
+    .password-strength-bar-fill.w5 { width: 100%; background: var(--green-l); }
+    .password-requirements { list-style: none; font-size: 11px; color: var(--txt2); display: flex; flex-direction: column; gap: 3px; }
+    .password-requirement { display: flex; align-items: center; gap: 6px; }
+    .password-requirement .icon { width: 14px; text-align: center; color: var(--txt3); }
+    .password-requirement.met .icon { color: var(--green-l); }
+    .password-requirement.met { color: var(--txt2); }
     .success-msg {
       padding: 10px 13px;
       background: rgba(5,150,105,0.1); border: 1px solid rgba(5,150,105,0.28);
@@ -1019,7 +1040,7 @@
 
 <!-- ════════ NAVIGATION ════════ -->
 <nav id="nav">
-  <a href="#" class="nav-logo" aria-label="Purp home">
+  <a href="/" class="nav-logo" aria-label="Purp home">
     <div class="nav-logo-mark">P</div>
     <span class="nav-logo-name">Purp</span>
   </a>
@@ -1555,7 +1576,7 @@
 <footer>
   <div class="footer-top">
     <div class="footer-brand">
-      <a href="#" class="nav-logo">
+      <a href="/" class="nav-logo" aria-label="Purp home">
         <div class="nav-logo-mark">P</div>
         <span class="nav-logo-name">Purp</span>
       </a>
@@ -1631,10 +1652,52 @@
         <div class="form-field">
           <label class="form-label" for="signin-password">Password</label>
           <input class="form-input" type="password" id="signin-password" placeholder="&#8226;&#8226;&#8226;&#8226;&#8226;&#8226;&#8226;&#8226;" autocomplete="current-password" />
+          <p class="form-hint"><button type="button" class="link-forgot" id="btn-forgot-password">Esqueci minha senha</button></p>
         </div>
         <button class="btn-modal-submit" id="btn-do-signin">Sign in to Purp</button>
       </div>
       <p class="modal-switch">No account? <button class="modal-link" onclick="switchForm('register')">Create one free</button></p>
+    </div>
+
+    <div id="form-forgot" class="hidden">
+      <div class="modal-header">
+        <div class="modal-mark">P</div>
+        <h2 class="modal-title">Esqueci minha senha</h2>
+        <p class="modal-sub">Informe seu email e enviaremos um link para redefinir</p>
+      </div>
+      <div class="modal-form">
+        <div id="forgot-error" class="error-msg hidden"><span>&#9888;</span><span id="forgot-error-msg">Error</span></div>
+        <div class="form-field">
+          <label class="form-label" for="forgot-email">Email</label>
+          <input class="form-input" type="email" id="forgot-email" placeholder="you@email.com" autocomplete="email" />
+        </div>
+        <button class="btn-modal-submit" id="btn-do-forgot">Enviar link de redefinição</button>
+      </div>
+      <p class="modal-switch"><button class="modal-link" onclick="switchForm('signin')">Voltar ao login</button></p>
+    </div>
+
+    <div id="form-reset" class="hidden">
+      <div class="modal-header">
+        <div class="modal-mark">P</div>
+        <h2 class="modal-title">Nova senha</h2>
+        <p class="modal-sub">Escolha uma senha forte. O link expira em 1 hora.</p>
+      </div>
+      <div class="modal-form">
+        <div id="reset-error" class="error-msg hidden"><span>&#9888;</span><span id="reset-error-msg">Error</span></div>
+        <input type="hidden" id="reset-token" value="" />
+        <div class="form-field">
+          <label class="form-label" for="reset-new-password">Nova senha</label>
+          <input class="form-input" type="password" id="reset-new-password" placeholder="Mín. 8 caracteres, maiúscula, minúscula, número e símbolo" autocomplete="new-password" />
+          <div id="reset-password-strength" class="password-strength-wrap"></div>
+        </div>
+        <div class="form-field">
+          <label class="form-label" for="reset-confirm">Confirmar senha</label>
+          <input class="form-input" type="password" id="reset-confirm" placeholder="Repita a nova senha" autocomplete="new-password" />
+          <p id="reset-confirm-hint" class="form-hint hidden" style="color:var(--red);">As senhas não coincidem</p>
+        </div>
+        <button class="btn-modal-submit" id="btn-do-reset">Redefinir senha</button>
+      </div>
+      <p class="modal-switch"><button class="modal-link" onclick="switchForm('signin')">Voltar ao login</button></p>
     </div>
 
     <div id="form-register" class="hidden">
@@ -1657,7 +1720,8 @@
         </div>
         <div class="form-field">
           <label class="form-label" for="reg-password">Password</label>
-          <input class="form-input" type="password" id="reg-password" placeholder="at least 4 characters" autocomplete="new-password" />
+          <input class="form-input" type="password" id="reg-password" placeholder="Mín. 8 caracteres, maiúscula, minúscula, número e símbolo" autocomplete="new-password" />
+          <div id="reg-password-strength" class="password-strength-wrap"></div>
         </div>
         <button class="btn-modal-submit" id="btn-do-register">Create free account</button>
       </div>
@@ -1789,7 +1853,7 @@
     const ids = CRYPTO_LIST.map(c => c.id).join(',');
     try {
       const res = await fetch(`https://api.coingecko.com/api/v3/simple/price?ids=${ids}&vs_currencies=usd&include_24hr_change=true`, { signal: AbortSignal.timeout(9000) });
-      if (!res.ok) throw new Error();
+      if (!res.ok) throw new Error(`Request failed: ${res.status} ${res.statusText || ''}`);
       const json = await res.json();
       CRYPTO_LIST.forEach(c => { const row = json[c.id]; if (row?.usd) tickerData[c.sym] = { price: row.usd, changePercent: row.usd_24h_change ?? 0 }; });
     } catch {
@@ -1802,7 +1866,7 @@
     const proxy = `https://corsproxy.io/?url=${encodeURIComponent(`https://query1.finance.yahoo.com/v8/finance/spark?symbols=${syms}&range=1d&interval=1d`)}`;
     try {
       const res = await fetch(proxy, { signal: AbortSignal.timeout(10000) });
-      if (!res.ok) throw new Error();
+      if (!res.ok) throw new Error(`Request failed: ${res.status} ${res.statusText || ''}`);
       const json = await res.json();
       STOCK_LIST.forEach(s => {
         const row = json[s.sym]; if (!row) return;
@@ -1826,19 +1890,43 @@
   ════════════════════════════════════ */
   const CONFIG = {
     API_BASE:      'https://purp-production.up.railway.app',
-    ENDPOINTS: { register: '/auth/register', login: '/auth/login', me: '/auth/me', checkout: '/stripe/create-checkout', resend: '/auth/resend-verification' },
+    ENDPOINTS: { register: '/auth/register', login: '/auth/login', me: '/auth/me', checkout: '/stripe/create-checkout', resend: '/auth/resend-verification', forgot: '/auth/forgot-password', reset: '/auth/reset-password' },
     TOKEN_KEY:     'token',
     AUTH_HEADER:   'X-Auth-Token',
     AUTH_PREFIX:   '',
-    /* ✦ CORRIGIDO: era 'purp_token', agora alinhado com _base.js */
     STORAGE_TOKEN: 'auth_token',
     STORAGE_USER:  'purp_user',
     MIN_FULL_NAME: 3,
-    MIN_PASSWORD:  6,
+    MIN_PASSWORD:  8,
+    PASSWORD_REQUIREMENTS: [
+      { id: 'len', label: 'Mínimo 8 caracteres', test: p => p.length >= 8 },
+      { id: 'upper', label: 'Uma letra maiúscula', test: p => /[A-Z]/.test(p) },
+      { id: 'lower', label: 'Uma letra minúscula', test: p => /[a-z]/.test(p) },
+      { id: 'number', label: 'Um número', test: p => /\d/.test(p) },
+      { id: 'special', label: 'Um caractere especial (!@#$%^&* etc.)', test: p => /[!@#$%^&*()_+\-=[\]{}|;':",./<>?`~]/.test(p) },
+    ],
   };
 
   function apiUrl(key) { return CONFIG.API_BASE + CONFIG.ENDPOINTS[key]; }
   function hdrs(token) { return { 'Content-Type': 'application/json', [CONFIG.AUTH_HEADER]: CONFIG.AUTH_PREFIX + (token||'') }; }
+
+  function getPasswordStrength(pw) {
+    const reqs = CONFIG.PASSWORD_REQUIREMENTS;
+    const met = reqs.map(r => ({ ...r, met: r.test(pw || '') }));
+    const count = met.filter(m => m.met).length;
+    return { met, count, score: count };
+  }
+  function renderPasswordStrength(wrapId, pw) {
+    const wrap = document.getElementById(wrapId);
+    if (!wrap) return;
+    const { met, score } = getPasswordStrength(pw);
+    const w = Math.min(5, score);
+    wrap.innerHTML = `
+      <div class="password-strength-bar"><div class="password-strength-bar-fill w${w}"></div></div>
+      <ul class="password-requirements" aria-live="polite">
+        ${met.map(m => `<li class="password-requirement ${m.met ? 'met' : ''}" data-id="${m.id}"><span class="icon">${m.met ? '✓' : '○'}</span>${m.label}</li>`).join('')}
+      </ul>`;
+  }
 
   let authToken = localStorage.getItem(CONFIG.STORAGE_TOKEN) || null;
   let currentUser = null;
@@ -1974,16 +2062,18 @@
   function openAuthModal(mode = 'signin') {
     authModal.classList.add('open'); switchForm(mode); document.body.style.overflow = 'hidden';
     hideUnverifiedBanner();
-    setTimeout(() => { const first = authModal.querySelector(`#form-${mode} input`); if (first) first.focus(); }, 260);
+    setTimeout(() => { const first = authModal.querySelector(`#form-${mode} input:not([type="hidden"])`); if (first) first.focus(); }, 260);
   }
   function closeAuthModal() {
     authModal.classList.remove('open'); document.body.style.overflow = '';
-    ['signin-error','register-error'].forEach(id => document.getElementById(id).classList.add('hidden'));
+    ['signin-error','register-error','forgot-error','reset-error'].forEach(id => document.getElementById(id)?.classList.add('hidden'));
     hideUnverifiedBanner();
   }
   function switchForm(mode) {
     document.getElementById('form-signin').classList.toggle('hidden', mode !== 'signin');
     document.getElementById('form-register').classList.toggle('hidden', mode !== 'register');
+    document.getElementById('form-forgot').classList.toggle('hidden', mode !== 'forgot');
+    document.getElementById('form-reset').classList.toggle('hidden', mode !== 'reset');
     hideUnverifiedBanner();
   }
 
@@ -2156,7 +2246,8 @@
     if (!fullName) { showFieldError('register-error','register-error-msg','Full name is required'); return; }
     if (fullName.length < CONFIG.MIN_FULL_NAME) { showFieldError('register-error','register-error-msg',`Full name must be at least ${CONFIG.MIN_FULL_NAME} characters`); return; }
     if (!email || !isValidEmail(email)) { showFieldError('register-error','register-error-msg','Please enter a valid email address'); return; }
-    if (!password || password.length < CONFIG.MIN_PASSWORD) { showFieldError('register-error','register-error-msg',`Password must be at least ${CONFIG.MIN_PASSWORD} characters`); return; }
+    const { met } = getPasswordStrength(password);
+    if (!password || !met.every(m => m.met)) { showFieldError('register-error','register-error-msg','Password must meet all requirements (min 8 chars, upper, lower, number, special character)'); return; }
 
     btn.disabled = true; btn.textContent = 'Creating account…';
 
@@ -2196,6 +2287,79 @@
   document.getElementById('btn-do-register').addEventListener('click', handleRegister);
   document.getElementById('signin-password').addEventListener('keydown', e => { if (e.key === 'Enter') handleSignIn(); });
   document.getElementById('reg-password').addEventListener('keydown', e => { if (e.key === 'Enter') handleRegister(); });
+
+  document.getElementById('btn-forgot-password')?.addEventListener('click', () => switchForm('forgot'));
+  document.getElementById('btn-do-forgot')?.addEventListener('click', handleForgotPassword);
+  document.getElementById('btn-do-reset')?.addEventListener('click', handleResetPassword);
+  document.getElementById('forgot-email')?.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); handleForgotPassword(); } });
+  document.getElementById('reset-confirm')?.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); handleResetPassword(); } });
+  document.getElementById('reg-password')?.addEventListener('input', e => renderPasswordStrength('reg-password-strength', e.target.value));
+  document.getElementById('reset-new-password')?.addEventListener('input', e => { renderPasswordStrength('reset-password-strength', e.target.value); checkResetConfirm(); });
+  document.getElementById('reset-confirm')?.addEventListener('input', checkResetConfirm);
+
+  async function handleForgotPassword() {
+    const email = document.getElementById('forgot-email').value.trim().toLowerCase();
+    document.getElementById('forgot-error').classList.add('hidden');
+    if (!email || !isValidEmail(email)) { showFieldError('forgot-error','forgot-error-msg','Informe um email válido.'); return; }
+    const btn = document.getElementById('btn-do-forgot');
+    btn.disabled = true; btn.textContent = 'Enviando…';
+    try {
+      const res = await fetch(apiUrl('forgot'), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email }) });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        toast('Se o email existir, você receberá um link para redefinir a senha. Verifique sua caixa de entrada.', 'success', 5000);
+        switchForm('signin');
+        document.getElementById('forgot-email').value = '';
+      } else {
+        showFieldError('forgot-error','forgot-error-msg', data.detail || data.message || 'Erro ao enviar. Tente novamente.');
+      }
+    } catch {
+      showFieldError('forgot-error','forgot-error-msg','Erro de conexão. Tente novamente.');
+    } finally { btn.disabled = false; btn.textContent = 'Enviar link de redefinição'; }
+  }
+  function checkResetConfirm() {
+    const pw = document.getElementById('reset-new-password')?.value || '';
+    const cf = document.getElementById('reset-confirm')?.value || '';
+    const hint = document.getElementById('reset-confirm-hint');
+    if (!hint) return;
+    if (!cf) hint.classList.add('hidden');
+    else hint.classList.toggle('hidden', pw === cf);
+  }
+  async function handleResetPassword() {
+    const token = document.getElementById('reset-token').value.trim();
+    const newPw = document.getElementById('reset-new-password').value;
+    const confirm = document.getElementById('reset-confirm').value;
+    document.getElementById('reset-error').classList.add('hidden');
+    const { met } = getPasswordStrength(newPw);
+    const allMet = met.every(m => m.met);
+    if (!allMet) { showFieldError('reset-error','reset-error-msg','A senha não atende a todos os requisitos abaixo.'); return; }
+    if (newPw !== confirm) { showFieldError('reset-error','reset-error-msg','As senhas não coincidem.'); return; }
+    if (!token) { showFieldError('reset-error','reset-error-msg','Link inválido ou expirado. Solicite um novo link.'); return; }
+    const btn = document.getElementById('btn-do-reset');
+    btn.disabled = true; btn.textContent = 'Redefinindo…';
+    try {
+      const res = await fetch(apiUrl('reset'), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token, new_password: newPw }) });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        toast('Senha alterada! Faça login com a nova senha.', 'success', 5000);
+        switchForm('signin');
+        document.getElementById('reset-new-password').value = '';
+        document.getElementById('reset-confirm').value = '';
+        document.getElementById('reset-token').value = '';
+        window.history.replaceState({}, '', window.location.pathname);
+      } else {
+        showFieldError('reset-error','reset-error-msg', data.detail || data.message || 'Link inválido ou expirado. Solicite um novo.');
+      }
+    } catch {
+      showFieldError('reset-error','reset-error-msg','Erro de conexão. Tente novamente.');
+    } finally { btn.disabled = false; btn.textContent = 'Redefinir senha'; }
+  }
+
+  const urlToken = new URLSearchParams(window.location.search).get('token') || new URLSearchParams(window.location.search).get('reset');
+  if (urlToken) {
+    document.getElementById('reset-token').value = urlToken;
+    openAuthModal('reset');
+  }
 
   /* ════ PLAN UPGRADE ════ */
   async function handlePlanUpgrade(plan) {

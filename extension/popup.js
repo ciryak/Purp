@@ -23,6 +23,10 @@ let hideSensitiveValues   = true;
 let selectedAddAssetType  = null;
 let activeTaxTab          = 'tlh';   // 'tlh' | 'form8949' | 'summary'
 
+let _detailSymbol   = '';
+let _detailPeriod   = '1mo';
+let detailChartMode = 'line';
+
 let importSelectedFile   = null;
 let importSelectedBroker = '';
 
@@ -820,6 +824,45 @@ async function loadDetailChart(symbol, period) {
   if (!res || !res.ok) return;
   const data = await res.json();
   if (!data.prices?.length) return;
+
+  _detailSymbol = symbol;
+  _detailPeriod = period;
+
+  if (detailChartMode === 'candles') {
+    const dates = data.dates || [];
+    const prices = data.prices || [];
+    const open = []; const high = []; const low = []; const close = [...prices];
+    for (let i = 0; i < prices.length; i++) {
+      open.push(i === 0 ? prices[0] : prices[i - 1]);
+      high.push(Math.max(open[i], close[i]));
+      low.push(Math.min(open[i], close[i]));
+    }
+    const upColor = 'rgba(16,185,129,0.9)';
+    const downColor = 'rgba(239,68,68,0.9)';
+    const wickColor = 'rgba(255,255,255,0.25)';
+    const wicks = dates.map((_, i) => [low[i], high[i]]);
+    const bodyUpNarrow = dates.map((_, i) => close[i] >= open[i] ? [open[i], close[i]] : null);
+    const bodyDownNarrow = dates.map((_, i) => close[i] < open[i] ? [open[i], close[i]] : null);
+    detailChart = new Chart(ctx, {
+      type: 'bar',
+      data: {
+        labels: dates,
+        datasets: [
+          { label: 'Wick', data: wicks, backgroundColor: wickColor, barThickness: 1, order: 1 },
+          { label: 'Up', data: bodyUpNarrow, backgroundColor: upColor, barThickness: 6, order: 2 },
+          { label: 'Down', data: bodyDownNarrow, backgroundColor: downColor, barThickness: 6, order: 3 },
+        ],
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false, animation: { duration: 300 },
+        interaction: { mode: 'index', intersect: false }, plugins: { legend: { display: false } },
+        scales: { x: { display: false }, y: { display: true, position: 'right', grid: { color: 'rgba(255,255,255,0.04)' }, ticks: { color: 'rgba(255,255,255,0.3)', font: { family: 'DM Mono', size: 9 } } } },
+      },
+    });
+    applyVisibilityMask();
+    return;
+  }
+
   const grad = ctx.createLinearGradient(0, 0, 0, 260);
   grad.addColorStop(0, 'rgba(124,58,237,0.4)'); grad.addColorStop(1, 'rgba(124,58,237,0)');
   detailChart = new Chart(ctx, {
@@ -907,11 +950,28 @@ async function fetchQuoteForSymbol(symbol) {
 function renderMarketRows(containerId, rows) {
   const root = $(containerId); if (!root) return; root.innerHTML = '';
   if (!rows.length) { root.innerHTML = '<div class="empty-sub">Unable to load quotes right now.</div>'; return; }
+  const isStocks = containerId.includes('stocks');
   rows.forEach((item) => {
     const isUp = (item.pct || 0) >= 0;
     const row = document.createElement('div');
     row.className = 'market-row';
-    row.innerHTML = `<span class="market-symbol">${item.symbol}</span><span class="market-price sensitive-value">${formatUSD(item.price)}</span><span class="market-change ${isUp ? 'text-green' : 'text-red'}">${formatPct(item.pct)}</span>`;
+    row.setAttribute('role', 'button');
+    row.tabIndex = 0;
+    row.innerHTML = `
+      <div class="market-left">
+        <div class="market-avatar">${(item.symbol || '?')[0]}</div>
+        <div class="market-symbol-block">
+          <span class="market-symbol">${item.symbol}</span>
+          <span class="market-tag">${isStocks ? 'Stock' : 'Crypto'}</span>
+        </div>
+      </div>
+      <div class="market-right">
+        <span class="market-price sensitive-value">${formatUSD(item.price)}</span>
+        <span class="market-change ${isUp ? 'text-green' : 'text-red'}">${formatPct(item.pct)}</span>
+      </div>`;
+    const assetPayload = { symbol: item.symbol, real_symbol: item.symbol, current_price: item.price, percent_change: item.pct, days_held: 0, type: isStocks ? 'stock' : 'crypto' };
+    row.addEventListener('click', () => openDetail(assetPayload));
+    row.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openDetail(assetPayload); } });
     root.appendChild(row);
   });
   applyVisibilityMask();
@@ -1257,8 +1317,11 @@ function openDetail(asset) {
     imgEl.src = asset.icon; imgEl.style.display = 'block'; fbEl.style.display = 'none';
     imgEl.onerror = () => { imgEl.style.display = 'none'; fbEl.style.display = 'flex'; };
   } else { imgEl.style.display = 'none'; fbEl.style.display = 'flex'; }
+  detailChartMode = 'line';
+  document.querySelectorAll('.chart-type-btn').forEach((b) => { b.classList.remove('active'); if (b.dataset.type === 'line') b.classList.add('active'); });
   document.querySelectorAll('.time-btn').forEach((b) => b.classList.remove('active'));
   document.querySelector('.time-btn[data-period="1mo"]')?.classList.add('active');
+  _detailPeriod = '1mo';
   loadDetailChart(asset.real_symbol || asset.symbol, '1mo');
 }
 
@@ -2288,8 +2351,18 @@ document.addEventListener('DOMContentLoaded', () => {
     btn.addEventListener('click', (e) => {
       document.querySelectorAll('.time-btn').forEach((b) => b.classList.remove('active'));
       e.target.classList.add('active');
-      const sym = $('detail-symbol').textContent;
-      if (sym && sym !== '—') loadDetailChart(sym, e.target.dataset.period);
+      _detailPeriod = e.target.dataset.period;
+      if (_detailSymbol) loadDetailChart(_detailSymbol, _detailPeriod);
+    });
+  });
+  document.querySelectorAll('.chart-type-btn').forEach((btn) => {
+    btn.addEventListener('click', (e) => {
+      const t = e.target.dataset.type;
+      if (!t) return;
+      detailChartMode = t;
+      document.querySelectorAll('.chart-type-btn').forEach((b) => b.classList.remove('active'));
+      e.target.classList.add('active');
+      if (_detailSymbol) loadDetailChart(_detailSymbol, _detailPeriod);
     });
   });
 

@@ -113,3 +113,13 @@ class NetWorthEntry(SQLModel, table=True):
     label: str
     value: float   # positive for assets, negative for debts
     updated_at: str
+
+
+class PasswordResetToken(SQLModel, table=True):
+    """Token único para redefinição de senha por link no email."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    user_id: int = Field(foreign_key="user.id", index=True)
+    token: str = Field(unique=True, index=True, max_length=64)
+    expires_at: str   # ISO datetime
+    used: bool = Field(default=False)
+    created_at: str

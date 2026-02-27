@@ -74,10 +74,10 @@
   <aside id="sidebar" class="sidebar" aria-label="Main navigation">
 
     <!-- Logo / Brand -->
-    <div class="sidebar-brand">
+    <a href="/home" class="sidebar-brand" aria-label="Go to dashboard home">
       <div class="sidebar-brand-icon">P</div>
       <span class="sidebar-brand-name">Purp</span>
-    </div>
+    </a>
 
     <!-- Profile pill compacto -->
     <div class="sidebar-profile">
@@ -424,6 +424,10 @@
     <button class="time-btn active" data-period="1mo">1M</button>
     <button class="time-btn" data-period="6mo">6M</button>
     <button class="time-btn" data-period="1y">1Y</button>
+    <div class="chart-type-toggle" role="group" aria-label="Chart type">
+      <button type="button" class="chart-type-btn active" data-type="line" title="Line chart">Line</button>
+      <button type="button" class="chart-type-btn" data-type="candles" title="Candlestick chart">Candles</button>
+    </div>
   </div>
   <div class="detail-chart-wrap"><canvas id="detailChart"></canvas></div>
 </div>
