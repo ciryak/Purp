@@ -575,6 +575,7 @@ async def read_index():
 async def home_dashboard():
     return FileResponse("static/home.html")
 
+# Cada seção é uma página separada para melhor organização da área logada.
 HOME_SECTION_FILES = {
     "market": "static/home/market.html",
     "add-asset": "static/home/add-asset.html",

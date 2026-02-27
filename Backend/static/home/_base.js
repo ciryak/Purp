@@ -187,12 +187,16 @@ function clearError(elId) {
 
 function startRefresh() {
   stopRefresh();
+  const path = (window.location.pathname || '').replace(/\/$/, '') || '/home';
   refreshTimer = setInterval(() => {
     if (!authToken) return;
     fetchPortfolio();
-    loadMainChart(true);
-    loadDividendCard();
-    if ($('market-watch')?.classList.contains('active')) loadMarketWatch();
+    if (path === '/home') {
+      if ($('mainChart')) loadMainChart(true);
+      if (typeof loadDividendCard === 'function') loadDividendCard();
+    } else if (path === '/home/market' && $('market-stocks-list')) {
+      loadMarketWatch();
+    }
   }, REFRESH_MS);
 }
 function stopRefresh() {
@@ -205,6 +209,7 @@ function stopRefresh() {
 
 function showLoginScreen() {
   $('login-screen')?.classList.remove('hidden');
+  $('app-shell')?.classList.add('hidden');
 }
 function hideLoginScreen() {
   $('login-screen')?.classList.add('hidden');
@@ -323,11 +328,23 @@ async function handleRegister() {
 
 function finalizeLoginUI() {
   hideLoginScreen();
+  const shell = $('app-shell');
+  if (shell) shell.classList.remove('hidden');
   updateProfileBar();
-  fetchPortfolio();
-  loadMainChart();
-  startRefresh();
-  checkAIStatus();
+  fetchPortfolio(); // necessário para profile bar em todas as páginas
+  // Carrega dados específicos da página atual (navegação por páginas separadas)
+  const path = (window.location.pathname || '').replace(/\/$/, '') || '/home';
+  if (path === '/home') {
+    if ($('mainChart')) loadMainChart();
+    checkAIStatus();
+  } else if (path === '/home/market') {
+    loadMarketWatch();
+  } else if (path === '/home/alerts') {
+    loadAlerts();
+  } else if (path === '/home/transactions') {
+    loadTransactions();
+  }
+  startRefresh(); // refresh periódico (fetchPortfolio + dados da página atual)
 }
 
 async function handleLogout() {
@@ -578,62 +595,43 @@ function updateProfileBar() {
 }
 
 // ════════════════════════════════════════════════════════════════
-// SHELL NAVIGATION (drawer / overlay)
+// SHELL NAVIGATION — sidebar drawer (mobile), links para páginas
 // ════════════════════════════════════════════════════════════════
 
 function initShellNav() {
-  const hamburger = $('btn-hamburger-shell') || $('btn-hamburger');
-  const drawer    = $('shell-drawer') || $('nav-menu');
-  const overlay   = $('shell-overlay');
+  const hamburger = $('btn-hamburger');
+  const sidebar   = $('sidebar');
+  const overlay   = $('sidebar-overlay');
 
-  const toggleDrawer = (open) => {
-    drawer?.classList.toggle('open', open);
-    overlay?.classList.toggle('show', open);
-    // fallback para classe hidden usada no popup original
-    if (open) drawer?.classList.remove('hidden');
-    else drawer?.classList.add('hidden');
-    hamburger?.classList.toggle('open', open);
-  };
+  function openSidebar() {
+    sidebar?.classList.add('open');
+    overlay?.classList.add('show');
+    hamburger?.classList.add('open');
+    hamburger?.setAttribute('aria-expanded', 'true');
+  }
+  function closeSidebar() {
+    sidebar?.classList.remove('open');
+    overlay?.classList.remove('show');
+    hamburger?.classList.remove('open');
+    hamburger?.setAttribute('aria-expanded', 'false');
+  }
 
   hamburger?.addEventListener('click', () => {
-    toggleDrawer(!drawer?.classList.contains('open') && drawer?.classList.contains('hidden') === true
-      ? true
-      : !drawer?.classList.contains('open'));
+    sidebar?.classList.contains('open') ? closeSidebar() : openSidebar();
   });
-  overlay?.addEventListener('click', () => toggleDrawer(false));
-}
+  overlay?.addEventListener('click', closeSidebar);
 
-function switchTab(id) {
-  qsa('.page').forEach(p => p.classList.remove('active'));
-  $(id)?.classList.add('active');
-
-  $('top-tab-dashboard')?.classList.toggle('active', id !== 'market-watch');
-  $('top-tab-market')?.classList.toggle('active', id === 'market-watch');
-
-  const navMap = {
-    'dashboard':          'nav-portfolio',
-    'market-watch':       'nav-market',
-    'add-asset':          'nav-add',
-    'alerts-page':        'nav-alerts',
-    'import-page':        'nav-import',
-    'transactions-page':  'nav-transactions',
-  };
-  Object.entries(navMap).forEach(([tabId, navId]) => {
-    $(navId)?.classList.toggle('active', id === tabId);
+  $('btn-privacy-toggle-mobile')?.addEventListener('click', () => {
+    hideSensitiveValues = !hideSensitiveValues;
+    updatePrivacyToggle();
   });
-
-  if (id === 'dashboard')          loadMainChart();
-  if (id === 'transactions-page')  loadTransactions();
-  if (id === 'market-watch')       loadMarketWatch();
-  if (id === 'alerts-page')        loadAlerts();
 }
 
 function closeMenu() {
-  const drawer = $('nav-menu') || $('shell-drawer');
-  drawer?.classList.add('hidden');
-  drawer?.classList.remove('open');
+  $('sidebar')?.classList.remove('open');
+  $('sidebar-overlay')?.classList.remove('show');
   $('btn-hamburger')?.classList.remove('open');
-  $('shell-overlay')?.classList.remove('show');
+  $('btn-hamburger')?.setAttribute('aria-expanded', 'false');
 }
 
 // ════════════════════════════════════════════════════════════════
@@ -756,8 +754,11 @@ function applyVisibilityMask() {
 }
 
 function updatePrivacyToggle() {
-  const icon = $('privacy-icon');
-  if (icon) icon.innerHTML = getEyeIconSvg(hideSensitiveValues);
+  // Sincroniza os dois botões de privacidade (sidebar + mobile topbar)
+  ['privacy-icon', 'privacy-icon-mobile'].forEach(id => {
+    const icon = $(id);
+    if (icon) icon.innerHTML = getEyeIconSvg(hideSensitiveValues);
+  });
   applyVisibilityMask();
 }
 
@@ -2557,19 +2558,19 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
-  // Privacy toggle
+  // Privacy toggle — sidebar desktop
   updatePrivacyToggle();
   $('btn-privacy-toggle')?.addEventListener('click', () => {
     hideSensitiveValues = !hideSensitiveValues;
     updatePrivacyToggle();
   });
 
-  // Shell navigation
+  // Shell navigation (drawer mobile)
   initShellNav();
   bindFeatureGates();
   bindPlanButtons();
 
-  // Auth buttons (se página tem formulários)
+  // Auth buttons
   $('btn-login')?.addEventListener('click', handleLogin);
   $('btn-register')?.addEventListener('click', handleRegister);
   $('btn-show-register')?.addEventListener('click', toggleAuthMode);
@@ -2581,18 +2582,7 @@ document.addEventListener('DOMContentLoaded', () => {
   $('nav-logout')?.addEventListener('click', handleLogout);
   $('btn-logout')?.addEventListener('click',  handleLogout);
 
-  // Navigation tabs
-  $('nav-portfolio')?.addEventListener('click',    () => { switchTab('dashboard');        closeMenu(); });
-  $('nav-market')?.addEventListener('click',       () => { switchTab('market-watch');      closeMenu(); });
-  $('nav-add')?.addEventListener('click',          () => { switchTab('add-asset');         closeMenu(); });
-  $('nav-alerts')?.addEventListener('click',       () => { switchTab('alerts-page');       closeMenu(); });
-  $('nav-import')?.addEventListener('click',       () => { switchTab('import-page');       closeMenu(); });
-  $('nav-transactions')?.addEventListener('click', () => { switchTab('transactions-page'); closeMenu(); });
-
-  $('top-tab-dashboard')?.addEventListener('click', () => switchTab('dashboard'));
-  $('top-tab-market')?.addEventListener('click',    () => switchTab('market-watch'));
-  $('btn-quick-add')?.addEventListener('click',          () => switchTab('add-asset'));
-  $('btn-quick-transactions')?.addEventListener('click', () => switchTab('transactions-page'));
+  // Navegação: links <a href="/home/..."> na sidebar — carregamento de página completa
 
   // Upgrade
   $('btn-upgrade')?.addEventListener('click',
