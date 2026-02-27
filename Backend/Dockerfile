@@ -30,9 +30,9 @@ COPY gateways/ gateways/
 COPY domain/ domain/
 COPY infrastructure/ infrastructure/
 
-# Diretório persistente para SQLite (montado como volume no Railway/Docker)
+# Cria o diretório /data para SQLite — no Railway, monte um Volume em /data via dashboard
+# A instrução VOLUME é proibida no Railway; o mount é configurado na interface do Railway
 RUN mkdir -p /data
-VOLUME ["/data"]
 
 # Fallback: usa SQLite em /data se DATABASE_URL não estiver definida
 # (Railway injeta DATABASE_URL apontando para Postgres automaticamente)
