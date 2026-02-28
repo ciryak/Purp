@@ -760,10 +760,12 @@ function initShellNav() {
   });
   overlay?.addEventListener('click', closeSidebar);
 
-  $('btn-privacy-toggle-mobile')?.addEventListener('click', () => {
-    hideSensitiveValues = !hideSensitiveValues;
-    updatePrivacyToggle();
-  });
+  if ($('dashboard')) {
+    $('btn-privacy-toggle-mobile')?.addEventListener('click', () => {
+      hideSensitiveValues = !hideSensitiveValues;
+      updatePrivacyToggle();
+    });
+  }
 }
 
 function closeMenu() {
@@ -882,8 +884,11 @@ function getEyeIconSvg(hidden) {
     : `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg>`;
 }
 
+// Só aplica máscara de privacidade no dashboard (home): saldo do portfólio e valores de posições
 function applyVisibilityMask() {
-  qsa('.sensitive-value').forEach(el =>
+  const scope = $('dashboard');
+  if (!scope) return; // outras páginas não são afetadas
+  qsa('.sensitive-value', scope).forEach(el =>
     el.classList.toggle('is-hidden', hideSensitiveValues)
   );
 }
@@ -3796,12 +3801,14 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
-  // Privacy toggle — sidebar desktop
-  updatePrivacyToggle();
-  $('btn-privacy-toggle')?.addEventListener('click', () => {
-    hideSensitiveValues = !hideSensitiveValues;
+  // Privacy toggle — apenas na página home (dashboard): saldo e posições
+  if ($('dashboard')) {
     updatePrivacyToggle();
-  });
+    $('btn-privacy-toggle')?.addEventListener('click', () => {
+      hideSensitiveValues = !hideSensitiveValues;
+      updatePrivacyToggle();
+    });
+  }
 
   // Shell navigation (drawer mobile)
   initShellNav();

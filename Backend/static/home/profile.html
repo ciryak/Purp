@@ -39,14 +39,17 @@
 
 <div id="app-shell" class="app-shell hidden">
   <aside id="sidebar" class="sidebar" aria-label="Main navigation">
-    <a href="/home" class="sidebar-brand" aria-label="Go to home"><div class="sidebar-brand-icon">P</div><span class="sidebar-brand-name">Purp</span></a>
+    <a href="/home" class="sidebar-brand" aria-label="Go to home">
+      <img src="/extension-assets/icons/icon16.png" alt="" class="sidebar-brand-icon-img" width="32" height="32" onerror="this.style.display='none';this.nextElementSibling?.classList.remove('hidden')">
+      <span class="sidebar-brand-fallback hidden">P</span>
+      <span class="sidebar-brand-name">Purp</span>
+    </a>
     <div class="sidebar-profile">
       <div class="sidebar-avatar" id="profile-avatar">U</div>
       <div class="sidebar-profile-info">
         <div class="sidebar-profile-name" id="profile-full-name">—</div>
         <div class="sidebar-profile-meta"><span id="profile-plan" class="plan-badge">Free</span><span id="profile-count" class="asset-count">0/4</span></div>
       </div>
-      <button type="button" id="btn-privacy-toggle" class="privacy-btn sidebar-privacy" aria-label="Toggle value visibility"><span id="privacy-icon" aria-hidden="true"></span></button>
     </div>
     <nav id="nav-menu" role="navigation">
       <a href="/home" class="nav-item" id="nav-portfolio"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg><span>Portfolio</span></a>
@@ -66,16 +69,19 @@
   </aside>
   <header class="mobile-topbar" aria-label="Mobile header">
     <button type="button" id="btn-hamburger" class="hamburger-btn" aria-label="Open menu" aria-expanded="false"><span></span><span></span><span></span></button>
-    <span class="app-title">Purp</span>
-    <button type="button" id="btn-privacy-toggle-mobile" class="privacy-btn" aria-label="Toggle value visibility"><span id="privacy-icon-mobile" aria-hidden="true"></span></button>
+    <a href="/home" class="topbar-home-link" aria-label="Purp home"><img src="/extension-assets/icons/icon16.png" alt="" class="topbar-home-icon" width="24" height="24" onerror="this.style.display='none'"><span class="app-title">Purp</span></a>
+    <span class="header-spacer"></span>
   </header>
   <div id="sidebar-overlay" class="sidebar-overlay" aria-hidden="true"></div>
 
   <main id="main-content" class="main-content" role="main">
     <section class="page-content" aria-label="My Profile">
       <header class="panel-header">
-        <h1 class="panel-title">My Profile</h1>
-        <p class="panel-sub">Your account and plan information</p>
+        <a href="/home" class="btn-back-desk">← Back to Portfolio</a>
+        <div class="panel-header-inner">
+          <h1 class="panel-title">My Profile</h1>
+          <p class="panel-sub">Your account and plan information</p>
+        </div>
       </header>
       <div class="panel-body panel-body--narrow">
         <div class="form-card">
