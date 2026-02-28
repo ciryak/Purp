@@ -17,7 +17,7 @@ import threading
 import traceback
 import concurrent.futures
 import requests
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timedelta
 import sentry_sdk
 import resend
 from fastapi import FastAPI, HTTPException, Depends, Header, Request, BackgroundTasks, UploadFile, File, Query
@@ -31,7 +31,6 @@ import stripe
 from jose import JWTError, jwt
 from fastapi.staticfiles import StaticFiles
 
-import sentry_sdk
 from sentry_sdk.integrations.fastapi import FastApiIntegration
 from sentry_sdk.integrations.starlette import StarletteIntegration
 from slowapi import Limiter
@@ -100,7 +99,7 @@ DATABASE_URL = _raw_db_url.replace("postgres://", "postgresql://")
 _is_postgres = DATABASE_URL.startswith("postgresql://")
 
 RESEND_API_KEY = os.getenv("RESEND_API_KEY", "")
-FROM_EMAIL     = os.getenv("FROM_EMAIL", "Purp <noreply@getpurpai.com>")
+FROM_EMAIL     = os.getenv("FROM_EMAIL", "[REDACTED]")
 
 if RESEND_API_KEY:
     resend.api_key = RESEND_API_KEY
@@ -507,7 +506,7 @@ def _create_verification_code(session: Session, user_id: int) -> str:
     old = session.exec(
         select(EmailVerification).where(
             EmailVerification.user_id == user_id,
-            EmailVerification.used == False,
+            EmailVerification.used.is_(False),
         )
     ).all()
     for v in old:
@@ -596,7 +595,8 @@ def create_db() -> None:
                 # Owner is always verified
                 if not u.is_verified:
                     u.is_verified = True
-                s.add(u); s.commit()
+                s.add(u)
+                s.commit()
     except Exception as e:
         print(f"⚠️  Owner plan check: {e}")
 
@@ -836,7 +836,9 @@ def register(request: Request, data: RegisterInput, session: Session = Depends(g
         email_norm = str(data.email).strip().lower()
         if session.exec(select(User).where(User.email == email_norm)).first():
             raise HTTPException(400, "Email already registered")
-        
+        if session.exec(select(User).where(User.username == full_name)).first():
+            raise HTTPException(400, "Username already taken")
+
         user = User(
             username=full_name, 
             password_hash=hash_pw(data.password),
@@ -993,7 +995,7 @@ def verify_email(
     ev = session.exec(
         select(EmailVerification).where(
             EmailVerification.user_id == user_id,
-            EmailVerification.used == False,
+            EmailVerification.used.is_(False),
         ).order_by(EmailVerification.id.desc())
     ).first()
 
@@ -1004,7 +1006,9 @@ def verify_email(
     try:
         expires = datetime.fromisoformat(ev.expires_at)
         if datetime.utcnow() > expires:
-            ev.used = True; session.add(ev); session.commit()
+            ev.used = True
+            session.add(ev)
+            session.commit()
             raise HTTPException(400, "Code has expired. Please request a new one.")
     except ValueError:
         pass  # malformed date — proceed
@@ -1013,8 +1017,10 @@ def verify_email(
         raise HTTPException(400, "Incorrect code. Please try again.")
 
     # Mark code used and user verified
-    ev.used = True; session.add(ev)
-    user.is_verified = True; session.add(user)
+    ev.used = True
+    session.add(ev)
+    user.is_verified = True
+    session.add(user)
     session.commit()
 
     # Send welcome email now that they're verified
@@ -1041,7 +1047,7 @@ def resend_verification(
     recent = session.exec(
         select(EmailVerification).where(
             EmailVerification.user_id == user_id,
-            EmailVerification.used == False,
+            EmailVerification.used.is_(False),
         ).order_by(EmailVerification.id.desc())
     ).first()
 
@@ -1170,7 +1176,9 @@ def add_to_watchlist(
         user_id=user_id, symbol=asset_data["real_symbol"], type=asset_data["type"],
         added_at=str(date.today()), order_index=0,
     )
-    session.add(item); session.commit(); session.refresh(item)
+    session.add(item)
+    session.commit()
+    session.refresh(item)
     return {"id": item.id, "symbol": item.symbol, "type": item.type}
 
 
@@ -1183,7 +1191,8 @@ def remove_from_watchlist(
     item = session.get(WatchlistItem, item_id)
     if not item or item.user_id != user_id:
         raise HTTPException(404, "Item not found")
-    session.delete(item); session.commit()
+    session.delete(item)
+    session.commit()
     return {"ok": True}
 
 
@@ -1215,7 +1224,8 @@ def get_alerts(user_id: int = Depends(get_current_user), session: Session = Depe
     except Exception as e:  # pragma: no cover - defensive guard for prod issues
         # Lightweight NDJSON debug log to help diagnose production-only errors.
         try:
-            import json, time  # type: ignore
+            import json  # type: ignore
+            import time  # type: ignore
             with open("debug-39d11f.log", "a", encoding="utf-8") as f:
                 f.write(json.dumps({
                     "sessionId": "39d11f",
@@ -1245,7 +1255,7 @@ def create_alert(
         raise HTTPException(403, "Account not verified")
     if not has_plan(user, "investor", "tax_pro"):
         count = len(session.exec(
-            select(PriceAlert).where(PriceAlert.user_id == user_id, PriceAlert.active == True)
+            select(PriceAlert).where(PriceAlert.user_id == user_id, PriceAlert.active.is_(True))
         ).all())
         if count >= FREE_ALERT_LIMIT:
             raise HTTPException(402, f"Free plan limited to {FREE_ALERT_LIMIT} price alerts.")
@@ -1288,7 +1298,9 @@ def create_alert(
         rebalance_threshold_pct=data.rebalance_threshold_pct,
         target_allocation_pct=data.target_allocation_pct,
     )
-    session.add(alert); session.commit(); session.refresh(alert)
+    session.add(alert)
+    session.commit()
+    session.refresh(alert)
     return {"id": alert.id, "symbol": alert.symbol, "alert_type": alert.alert_type,
             "target_value": alert.target_value, "recurring": alert.recurring,
             "rsi_period": alert.rsi_period,
@@ -1301,7 +1313,8 @@ def delete_alert(alert_id: int, user_id: int = Depends(get_current_user), sessio
     alert = session.get(PriceAlert, alert_id)
     if not alert or alert.user_id != user_id:
         raise HTTPException(404, "Alert not found")
-    session.delete(alert); session.commit()
+    session.delete(alert)
+    session.commit()
     return {"ok": True}
 
 
@@ -1311,7 +1324,8 @@ def toggle_alert(alert_id: int, user_id: int = Depends(get_current_user), sessio
     if not alert or alert.user_id != user_id:
         raise HTTPException(404, "Alert not found")
     alert.active = not alert.active
-    session.add(alert); session.commit()
+    session.add(alert)
+    session.commit()
     return {"active": alert.active}
 
 
@@ -1335,8 +1349,8 @@ def send_weekly_digest(request: Request, session: Session = Depends(get_session)
         raise HTTPException(403, "Forbidden")
     users = session.exec(
         select(User).where(
-            User.notification_email == True,
-            User.notification_digest == True,
+            User.notification_email.is_(True),
+            User.notification_digest.is_(True),
             User.email.is_not(None),
         )
     ).all()
@@ -1394,7 +1408,8 @@ def create_asset(
             amount=data.amount, price=data.purchase_price,
             total_usd=data.amount * data.purchase_price, date=p_date, created_at=str(date.today()),
         ))
-        session.commit(); session.refresh(existing)
+        session.commit()
+        session.refresh(existing)
         return existing
     if not has_plan(user, "investor", "tax_pro"):
         count = len(session.exec(select(Asset).where(Asset.user_id == user_id)).all())
@@ -1404,13 +1419,15 @@ def create_asset(
         symbol=real_sym, amount=data.amount, type=m.get("type", "stock"),
         purchase_price=data.purchase_price, purchase_date=p_date, user_id=user_id,
     )
-    session.add(asset); session.commit()
+    session.add(asset)
+    session.commit()
     session.add(Transaction(
         user_id=user_id, symbol=real_sym, type="buy",
         amount=data.amount, price=data.purchase_price,
         total_usd=data.amount * data.purchase_price, date=p_date, created_at=str(date.today()),
     ))
-    session.commit(); session.refresh(asset)
+    session.commit()
+    session.refresh(asset)
     return asset
 
 
@@ -1418,7 +1435,8 @@ def create_asset(
 def delete_asset(asset_id: int, user_id: int = Depends(get_current_user), session: Session = Depends(get_session)):
     asset = session.get(Asset, asset_id)
     if asset and asset.user_id == user_id:
-        session.delete(asset); session.commit()
+        session.delete(asset)
+        session.commit()
     return {"ok": True}
 
 
@@ -1439,7 +1457,7 @@ def sell_asset(
     if data.amount > asset.amount + 1e-9:
         raise HTTPException(400, f"Cannot sell more than you hold ({asset.amount})")
     if asset.type.lower() == "stock" and not data.amount.is_integer():
-        raise HTTPException(400, f"For stocks, sell quantity must be a whole number.")
+        raise HTTPException(400, "For stocks, sell quantity must be a whole number.")
 
     m             = get_asset_data(asset.symbol)
     current_price = (m.get("current_price") if m else None) or asset.purchase_price
@@ -1448,9 +1466,12 @@ def sell_asset(
     new_amt       = round(asset.amount - data.amount, 8)
 
     if new_amt <= 1e-9:
-        session.delete(asset); status = "sold_all"
+        session.delete(asset)
+        status = "sold_all"
     else:
-        asset.amount = new_amt; session.add(asset); status = "partial"
+        asset.amount = new_amt
+        session.add(asset)
+        status = "partial"
 
     session.add(Transaction(
         user_id=user_id, symbol=asset.symbol, type="sell",
@@ -1577,7 +1598,9 @@ async def import_csv(
     if not transactions:
         raise HTTPException(400, f"No valid transactions found in the {broker} CSV.")
 
-    imported = 0; skipped = 0; errors: list[str] = []
+    imported = 0
+    skipped = 0
+    errors: list[str] = []
 
     for i, tx in enumerate(transactions):
         try:
@@ -1591,7 +1614,8 @@ async def import_csv(
         tx_type= tx["type"]
 
         if amount <= 0:
-            skipped += 1; continue
+            skipped += 1
+            continue
 
         if tx_type == "buy":
             if price <= 0:
@@ -1599,12 +1623,14 @@ async def import_csv(
                 price = (mkt.get("current_price") if mkt else None) or 0.0
             if price <= 0:
                 errors.append(f"Row {i+1} [{sym}]: could not determine price — skipped.")
-                skipped += 1; continue
+                skipped += 1
+                continue
             try:
                 m = get_asset_data(sym)
                 if not m:
                     errors.append(f"Row {i+1} [{sym}]: symbol not found — skipped.")
-                    skipped += 1; continue
+                    skipped += 1
+                    continue
                 real_sym = m.get("real_symbol", m.get("symbol", sym))
                 existing = session.exec(select(Asset).where(Asset.symbol == real_sym, Asset.user_id == user_id)).first()
                 if existing:
@@ -1623,9 +1649,12 @@ async def import_csv(
                 session.add(Transaction(user_id=user_id, symbol=real_sym, type="buy",
                     amount=amount, price=price, total_usd=amount * price,
                     date=tx_date, created_at=str(date.today())))
-                session.commit(); imported += 1
+                session.commit()
+                imported += 1
             except Exception as e:
-                session.rollback(); errors.append(f"Row {i+1} [{sym}]: {e}"); skipped += 1
+                session.rollback()
+                errors.append(f"Row {i+1} [{sym}]: {e}")
+                skipped += 1
 
         elif tx_type == "sell":
             try:
@@ -1638,14 +1667,20 @@ async def import_csv(
                 if asset:
                     realized_pnl = (price - asset.purchase_price) * amount
                     new_qty = round(asset.amount - amount, 8)
-                    if new_qty <= 1e-9: session.delete(asset)
-                    else: asset.amount = new_qty; session.add(asset)
+                    if new_qty <= 1e-9:
+                        session.delete(asset)
+                    else:
+                        asset.amount = new_qty
+                        session.add(asset)
                 session.add(Transaction(user_id=user_id, symbol=real_sym, type="sell",
                     amount=amount, price=price, total_usd=amount * price,
                     realized_pnl=realized_pnl, date=tx_date, created_at=str(date.today())))
-                session.commit(); imported += 1
+                session.commit()
+                imported += 1
             except Exception as e:
-                session.rollback(); errors.append(f"Row {i+1} [{sym}]: {e}"); skipped += 1
+                session.rollback()
+                errors.append(f"Row {i+1} [{sym}]: {e}")
+                skipped += 1
 
     return {"imported": imported, "skipped": skipped, "errors": errors[:20],
             "total_parsed": len(transactions), "broker": broker}
@@ -1695,10 +1730,12 @@ def portfolio_balance(user_id: int = Depends(get_current_user), session: Session
 
     details, total = [], 0.0
     for r in results:
-        if not r: continue
+        if not r:
+            continue
         a, m = r
         price = m.get("current_price")
-        if price is None: continue
+        if price is None:
+            continue
         val    = price * a.amount
         profit = val - a.purchase_price * a.amount
         total += val
@@ -1737,7 +1774,8 @@ def portfolio_history(
     series, final_dates = None, []
     for a in assets:
         h = get_historical_data(a.symbol, period)
-        if not h["prices"]: continue
+        if not h["prices"]:
+            continue
         scaled = [p * a.amount for p in h["prices"]]
         if series is None:
             series, final_dates = scaled, h["dates"]
@@ -2218,7 +2256,8 @@ def portfolio_tax_loss_harvesting(
 
     def fetch(a: Asset):
         d = get_asset_data(a.symbol)
-        if not d: return None
+        if not d:
+            return None
         return {"symbol": a.symbol, "amount": a.amount, "purchase_price": a.purchase_price,
                 "current_price": d["current_price"], "purchase_date": a.purchase_date or str(date.today())}
 
@@ -2277,10 +2316,12 @@ def tax_loss_harvesting(user_id: int = Depends(get_current_user), session: Sessi
 
     opportunities = []
     for r in results:
-        if not r: continue
+        if not r:
+            continue
         a, m = r
         price = m.get("current_price")
-        if price is None: continue
+        if price is None:
+            continue
         current_value  = price * a.amount
         cost_basis     = a.purchase_price * a.amount
         unrealised_pnl = current_value - cost_basis
@@ -2340,7 +2381,8 @@ def form_8949_csv(
     writer.writerow(["Net Short-Term",f"${s['net_short_term']:,.2f}"])
     writer.writerow(["Net Long-Term",f"${s['net_long_term']:,.2f}"])
     writer.writerow(["Total Net Gain/(Loss)",f"${s['total_net_gain_loss']:,.2f}"])
-    csv_content = output.getvalue(); output.close()
+    csv_content = output.getvalue()
+    output.close()
     return StreamingResponse(
         io.BytesIO(csv_content.encode("utf-8-sig")),
         media_type="text/csv",
@@ -2470,7 +2512,8 @@ def pl_report(
     summary = form_data.get("summary", {})
 
     if fmt == "csv":
-        import io as _io, csv as _csv
+        import io as _io
+        import csv as _csv
         buf = _io.StringIO()
         w = _csv.writer(buf)
         w.writerow(["Quarter", "Period", "Proceeds", "Cost Basis", "Gain/Loss", "Trades"])
@@ -2524,8 +2567,11 @@ def portfolio_dividends(user_id: int = Depends(get_current_user), session: Sessi
     with concurrent.futures.ThreadPoolExecutor(max_workers=8) as ex:
         results = list(ex.map(fetch_div, assets))
 
-    asset_rows = []; total_annual = 0.0; upcoming_payments = []
-    today = date.today(); cutoff_60 = today + timedelta(days=60)
+    asset_rows = []
+    total_annual = 0.0
+    upcoming_payments = []
+    today = date.today()
+    cutoff_60 = today + timedelta(days=60)
 
     for a, div in results:
         annual_rate   = div.get("annual_dividend_rate") or 0.0
@@ -2533,7 +2579,8 @@ def portfolio_dividends(user_id: int = Depends(get_current_user), session: Sessi
         annual_income = round(annual_rate * a.amount, 2)
         yield_on_cost = round((annual_rate / a.purchase_price * 100), 4) if a.purchase_price > 0 and annual_rate > 0 else 0.0
         total_annual += annual_income
-        ex_date = div.get("ex_dividend_date"); pay_date = div.get("pay_date")
+        ex_date = div.get("ex_dividend_date")
+        pay_date = div.get("pay_date")
         if ex_date:
             try:
                 ex_dt = datetime.strptime(ex_date[:10], "%Y-%m-%d").date()
@@ -2583,7 +2630,9 @@ def record_dividend(
         total_received=total_received, ex_date=data.ex_date, pay_date=data.pay_date,
         recorded_at=str(datetime.now().date()),
     )
-    session.add(div); session.commit(); session.refresh(div)
+    session.add(div)
+    session.commit()
+    session.refresh(div)
     return {
         "id": div.id, "symbol": div.symbol, "amount_per_share": div.amount_per_share,
         "total_received": div.total_received, "shares_at_record": asset.amount,
@@ -2753,10 +2802,12 @@ def ai_portfolio(user_id: int = Depends(get_current_user), session: Session = De
 
     enriched, total_val = [], 0.0
     for r in results:
-        if not r: continue
+        if not r:
+            continue
         a, m = r
         price = m.get("current_price")
-        if price is None: continue
+        if price is None:
+            continue
         val = price * a.amount
         total_val += val
         enriched.append({"symbol": m.get("symbol", a.symbol), "type": m.get("type", "stock"), "value": val, "change_pct": m.get("percent_change")})
@@ -2838,8 +2889,8 @@ def create_checkout(
     if not price_id:
         raise HTTPException(500, f"Stripe not configured (missing STRIPE_PRICE_ID_{data.plan.upper()})")
 
-    success_url = os.getenv("STRIPE_SUCCESS_URL", "https://purp-production.up.railway.app/success")
-    cancel_url  = os.getenv("STRIPE_CANCEL_URL",  "https://purp-production.up.railway.app/cancelled")
+    success_url = os.getenv("STRIPE_SUCCESS_URL", "https://[REDACTED]")
+    cancel_url  = os.getenv("STRIPE_CANCEL_URL",  "https://[REDACTED]")
 
     try:
         customer_kwargs: dict = {}
@@ -2859,7 +2910,8 @@ def create_checkout(
         )
         if session_obj.get("customer") and not user.stripe_customer_id:
             user.stripe_customer_id = session_obj["customer"]
-            session.add(user); session.commit()
+            session.add(user)
+            session.commit()
         return {"checkout_url": session_obj.url, "plan": data.plan, "plan_label": plan_label}
     except stripe.StripeError as e:
         msg = getattr(e, "user_message", None) or str(e)
@@ -2875,7 +2927,7 @@ async def stripe_webhook(request: Request, session: Session = Depends(get_sessio
         event = stripe.Webhook.construct_event(payload, sig_header, secret)
     except stripe.SignatureVerificationError:
         raise HTTPException(400, "Invalid webhook signature")
-    except Exception as e:
+    except Exception:
         traceback.print_exc()
         raise HTTPException(400, "Webhook processing error")
 
@@ -2897,12 +2949,14 @@ async def stripe_webhook(request: Request, session: Session = Depends(get_sessio
         if user_id:
             u = session.get(User, user_id)
             if u:
-                u.plan = plan; u.is_premium = True
+                u.plan = plan
+                u.is_premium = True
                 if obj.get("subscription"):
                     u.stripe_subscription_id = obj["subscription"]
                 if obj.get("customer") and not u.stripe_customer_id:
                     u.stripe_customer_id = obj["customer"]
-                session.add(u); session.commit()
+                session.add(u)
+                session.commit()
 
     elif event_type in ["customer.subscription.deleted", "customer.subscription.paused"]:
         subscription = event["data"]["object"]
@@ -2918,14 +2972,18 @@ async def stripe_webhook(request: Request, session: Session = Depends(get_sessio
                     email    = customer.get("email", "").lower().strip()
                     if email:
                         u = session.exec(select(User).where(User.email == email)).first()
-                        if u: user_id = u.id
+                        if u:
+                            user_id = u.id
                 except Exception as e:
                     print(f"⚠️  Stripe customer retrieve: {e}")
         if user_id:
             u = session.get(User, user_id)
             if u and has_plan(u, "investor", "tax_pro"):
-                u.plan = "free"; u.is_premium = False; u.stripe_subscription_id = None
-                session.add(u); session.commit()
+                u.plan = "free"
+                u.is_premium = False
+                u.stripe_subscription_id = None
+                session.add(u)
+                session.commit()
 
     elif event_type == "customer.subscription.updated":
         subscription = event["data"]["object"]
@@ -2940,8 +2998,10 @@ async def stripe_webhook(request: Request, session: Session = Depends(get_sessio
                     if customer_id:
                         u = session.exec(select(User).where(User.stripe_customer_id == customer_id)).first()
                     if u:
-                        u.plan = new_plan; u.is_premium = True
-                        session.add(u); session.commit()
+                        u.plan = new_plan
+                        u.is_premium = True
+                        session.add(u)
+                        session.commit()
         except Exception as e:
             print(f"⚠️  subscription.updated handler: {e}")
 
@@ -2991,7 +3051,8 @@ def debug_db():
                 rows = conn.execute(sa_text("SELECT name FROM sqlite_master WHERE type='table'")).fetchall()
             result["tables"] = [r[0] for r in rows]
     except Exception as e:
-        result["error"] = str(e); return result
+        result["error"] = str(e)
+        return result
     try:
         with Session(engine) as s:
             result["user_count"] = len(s.exec(select(User)).all())
