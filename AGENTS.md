@@ -27,7 +27,7 @@ cd Backend && DATABASE_URL="sqlite:///local.db" uvicorn main:app --host 0.0.0.0 
 pytest Backend/test_main.py -v
 ```
 
-Tests use an in-memory SQLite database and mock all external calls — no API keys or network access needed. Note: 5 auth-related tests (`test_register_*`, `test_login_*`) have pre-existing failures due to field-name mismatches between the test payloads and the current `RegisterInput`/`LoginInput` models (`username` vs `full_name`/`email`). The remaining 17 tests pass.
+Tests use an in-memory SQLite database and mock all external calls — no API keys or network access needed. All 22 tests pass.
 
 ### Linting
 
@@ -35,7 +35,7 @@ Tests use an in-memory SQLite database and mock all external calls — no API ke
 ruff check Backend/
 ```
 
-There is no project-level ruff config; the codebase has ~103 pre-existing lint warnings (mostly import ordering and unused imports).
+There is no project-level ruff config. All lint checks pass.
 
 ### Key API endpoints for manual testing
 

@@ -15,7 +15,7 @@ pip install pytest pytest-asyncio httpx
 No diretório do repositório:
 
 ```bash
-pytest Backend/test_main.py -q
+pytest Backend/test_main.py -v
 ```
 
 ## O que os testes cobrem
