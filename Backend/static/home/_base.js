@@ -801,7 +801,9 @@ function mountGateModal() {
   modal.addEventListener('click', e => { if (e.target === modal) closeGateModal(); });
   $('gate-close')?.addEventListener('click', closeGateModal);
   $('gate-upgrade')?.addEventListener('click', () => {
-    createCheckout(modal.dataset.plan || 'investor');
+    const plan = modal.dataset.plan || 'investor';
+    const url = plan === 'tax_pro' ? STRIPE_TAXPRO_URL : STRIPE_INVESTOR_URL;
+    window.open(url, '_blank');
     closeGateModal();
   });
 }
@@ -827,26 +829,20 @@ function hideUpgradeModal() { closeGateModal(); }
 function showTaxProUpgradeModal() { showUpgradeModal('Esta função requer o plano Tax Pro.', 'tax_pro'); }
 function hideTaxProUpgradeModal() { closeGateModal(); }
 
+const STRIPE_INVESTOR_URL = 'https://buy.stripe.com/7sYfZj2ozh2z0Je4tf8og02';
+const STRIPE_TAXPRO_URL   = 'https://buy.stripe.com/00wfZjfblh2z63ye3P8og03';
+
+function openStripeCheckout(plan) {
+  const url = plan === 'tax_pro' ? STRIPE_TAXPRO_URL : STRIPE_INVESTOR_URL;
+  window.open(url, '_blank');
+  closeGateModal();
+  $('modal-upgrade')?.classList.remove('active');
+  $('modal-upgrade-tax-pro')?.classList.remove('active');
+}
+
 async function createCheckout(plan) {
   if (!authToken) { window.location.href = '/'; return; }
-  const btn = $('btn-upgrade-confirm') || $('btn-taxpro-confirm');
-  if (btn) { btn.disabled = true; btn.textContent = 'Loading…'; }
-  try {
-    const res = await apiFetch('/stripe/create-checkout', {
-      method:  'POST',
-      headers: authHeaders(),
-      body:    JSON.stringify({ plan }),
-    });
-    if (!res) return;
-    const data = await res.json().catch(() => ({}));
-    if (res.ok && (data.checkout_url || data.url)) {
-      window.open(data.checkout_url || data.url, '_blank');
-    } else {
-      toast(apiErrorDetail(data.detail, 'Could not open checkout.'), 'error');
-    }
-  } finally {
-    if (btn) { btn.disabled = false; btn.textContent = 'Upgrade'; }
-  }
+  openStripeCheckout(plan);
 }
 
 async function handleUpgrade()       { await createCheckout('investor'); }
@@ -3829,11 +3825,21 @@ document.addEventListener('DOMContentLoaded', () => {
   // Upgrade
   $('btn-upgrade')?.addEventListener('click',
     () => showUpgradeModal('Desbloqueie ativos ilimitados, análise IA, importação CSV e mais.'));
-  $('btn-upgrade-cancel')?.addEventListener('click',  closeGateModal);
-  $('btn-upgrade-confirm')?.addEventListener('click', handleUpgrade);
+  $('btn-upgrade-cancel')?.addEventListener('click', () => { $('modal-upgrade')?.classList.remove('active'); closeGateModal(); });
+  document.getElementById('btn-upgrade-confirm')?.addEventListener('click', (e) => {
+    const el = e.currentTarget;
+    if (el.tagName === 'BUTTON') { e.preventDefault(); window.open(STRIPE_INVESTOR_URL, '_blank'); }
+    $('modal-upgrade')?.classList.remove('active');
+    closeGateModal();
+  });
   $('btn-upgrade-tax-pro')?.addEventListener('click', () => showTaxProUpgradeModal());
-  $('btn-taxpro-cancel')?.addEventListener('click',   hideTaxProUpgradeModal);
-  $('btn-taxpro-confirm')?.addEventListener('click',  handleTaxProUpgrade);
+  $('btn-taxpro-cancel')?.addEventListener('click', () => { $('modal-upgrade-tax-pro')?.classList.remove('active'); closeGateModal(); });
+  document.getElementById('btn-taxpro-confirm')?.addEventListener('click', (e) => {
+    const el = e.currentTarget;
+    if (el.tagName === 'BUTTON') { e.preventDefault(); window.open(STRIPE_TAXPRO_URL, '_blank'); }
+    $('modal-upgrade-tax-pro')?.classList.remove('active');
+    closeGateModal();
+  });
 
   // Export CSV
   $('btn-export-csv')?.addEventListener('click', exportPortfolioCsv);

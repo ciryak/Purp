@@ -677,6 +677,7 @@
       align-self: flex-start; margin-top: 4px;
     }
     .plan-price-per { font-size: 13px; color: var(--txt3); margin-left: 4px; align-self: flex-end; padding-bottom: 3px; }
+    .plan-trial { font-size: 12px; color: var(--green-l, #34d399); margin: -8px 0 16px; font-weight: 600; }
 
     .plan-features { list-style: none; display: flex; flex-direction: column; gap: 10px; margin-bottom: 26px; }
     .plan-feature { display: flex; align-items: flex-start; gap: 9px; font-size: 13px; color: var(--txt2); }
@@ -1498,9 +1499,10 @@
       <div class="plan-name">Investor</div>
       <div class="plan-desc">Unlimited tracking with Gemini AI insights</div>
       <div class="plan-price">
-        <span class="plan-price-num">$19</span><span class="plan-price-cents">.99</span>
+        <span class="plan-price-num">$18</span><span class="plan-price-cents">.99</span>
         <span class="plan-price-per">/month</span>
       </div>
+      <p class="plan-trial">7-day free trial</p>
       <ul class="plan-features">
         <li class="plan-feature"><span class="pf-check">&#10003;</span><span>Unlimited assets, watchlist &amp; alerts</span></li>
         <li class="plan-feature"><span class="pf-check">&#10003;</span><span>Gemini AI per asset &amp; portfolio</span></li>
@@ -1508,7 +1510,7 @@
         <li class="plan-feature"><span class="pf-check">&#10003;</span><span>2-year price history</span></li>
         <li class="plan-feature"><span class="pf-check">&#10003;</span><span>Priority email support</span></li>
       </ul>
-      <button class="btn-plan btn-plan-primary" data-plan="investor" id="btn-plan-investor">Upgrade to Investor</button>
+      <a href="https://buy.stripe.com/7sYfZj2ozh2z0Je4tf8og02" target="_blank" rel="noopener noreferrer" class="btn-plan btn-plan-primary" id="btn-plan-investor">Upgrade to Investor</a>
     </div>
     <div class="plan-card">
       <div class="plan-badge-top" style="background:linear-gradient(135deg,var(--violet),var(--violet-l));color:#fff;box-shadow:0 4px 12px var(--glow);">Max savings</div>
@@ -1518,6 +1520,7 @@
         <span class="plan-price-num">$29</span><span class="plan-price-cents">.99</span>
         <span class="plan-price-per">/month</span>
       </div>
+      <p class="plan-trial">7-day free trial</p>
       <ul class="plan-features">
         <li class="plan-feature"><span class="pf-check">&#10003;</span><span>Everything in Investor</span></li>
         <li class="plan-feature"><span class="pf-check">&#10003;</span><span>Tax Loss Harvesting engine</span></li>
@@ -1526,7 +1529,7 @@
         <li class="plan-feature"><span class="pf-check">&#10003;</span><span>Form 8949 export</span></li>
         <li class="plan-feature"><span class="pf-check">&#10003;</span><span>Replacement asset suggestions</span></li>
       </ul>
-      <button class="btn-plan btn-plan-gold" data-plan="tax_pro" id="btn-plan-taxpro">Upgrade to Tax Pro</button>
+      <a href="https://buy.stripe.com/00wfZjfblh2z63ye3P8og03" target="_blank" rel="noopener noreferrer" class="btn-plan btn-plan-gold" id="btn-plan-taxpro">Upgrade to Tax Pro</a>
     </div>
   </div>
 </section>
@@ -2361,26 +2364,18 @@
     openAuthModal('reset');
   }
 
-  /* ════ PLAN UPGRADE ════ */
-  async function handlePlanUpgrade(plan) {
-    if (!authToken || !currentUser) { openAuthModal('register'); toast('Create an account first to upgrade 👆', 'info'); return; }
-    const alreadyOn = (plan === 'investor' && ['investor','tax_pro'].includes(currentUser.plan)) || (plan === 'tax_pro' && currentUser.plan === 'tax_pro');
-    if (alreadyOn) { toast("You're already on this plan or higher!", 'info'); return; }
-    const btnId = plan === 'investor' ? 'btn-plan-investor' : 'btn-plan-taxpro';
-    const btn   = document.getElementById(btnId);
-    const orig  = btn.textContent;
-    btn.disabled = true; btn.textContent = 'Loading…';
-    try {
-      const res  = await fetch(apiUrl('checkout'), { method:'POST', headers:{'Content-Type':'application/json',[CONFIG.AUTH_HEADER]:CONFIG.AUTH_PREFIX+authToken}, body: JSON.stringify({ plan }) });
-      const data = await res.json().catch(() => ({}));
-      if (res.ok && data.checkout_url) window.open(data.checkout_url, '_blank');
-      else toast(data.detail || data.message || 'Could not initiate checkout.', 'error');
-    } catch { toast('Connection error. Please try again.', 'error'); }
-    finally { btn.disabled = false; btn.textContent = orig; }
-  }
-
-  document.getElementById('btn-plan-investor').addEventListener('click', () => handlePlanUpgrade('investor'));
-  document.getElementById('btn-plan-taxpro').addEventListener('click',   () => handlePlanUpgrade('tax_pro'));
+  /* ════ PLAN UPGRADE (direct Stripe Checkout links) ════ */
+  const STRIPE_LINK_INVESTOR = 'https://buy.stripe.com/7sYfZj2ozh2z0Je4tf8og02';
+  const STRIPE_LINK_TAX_PRO  = 'https://buy.stripe.com/00wfZjfblh2z63ye3P8og03';
+  document.getElementById('btn-plan-investor').addEventListener('click', (e) => {
+    if (currentUser && ['investor','tax_pro'].includes(currentUser.plan)) { e.preventDefault(); toast("You're already on this plan or higher!", 'info'); return; }
+    if (!currentUser) { e.preventDefault(); openAuthModal('register'); toast('Create an account first to upgrade 👆', 'info'); }
+    /* else link opens in new tab */
+  });
+  document.getElementById('btn-plan-taxpro').addEventListener('click', (e) => {
+    if (currentUser && currentUser.plan === 'tax_pro') { e.preventDefault(); toast("You're already on Tax Pro!", 'info'); return; }
+    if (!currentUser) { e.preventDefault(); openAuthModal('register'); toast('Create an account first to upgrade 👆', 'info'); }
+  });
   document.querySelectorAll('.btn-plan[data-plan="free"]').forEach(b => {
     b.addEventListener('click', () => { if (currentUser) { toast('You already have a Purp account!', 'info'); return; } openAuthModal('register'); });
   });

@@ -946,6 +946,7 @@
      color:var(--gold-l); letter-spacing:-0.5px;
    }
    .upgrade-per { font-size:13px; font-weight:500; color:rgba(251,191,36,0.6); }
+   .upgrade-trial { font-size:11px; color:var(--green-l,#34d399); margin:-2px 0 8px; font-weight:600; }
    .upgrade-list {
      list-style:none; margin-top:12px;
      display:flex; flex-direction:column; gap:5px;

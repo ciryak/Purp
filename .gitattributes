@@ -1,0 +1,5 @@
+# Ensure requirements-Docker.txt is always stored and checked out as UTF-8 (no BOM).
+# Prevents UTF-16 encoding that breaks pip in Docker build.
+* text=auto eol=lf
+*.txt text eol=lf
+*.py text eol=lf

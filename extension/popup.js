@@ -748,17 +748,14 @@ function updateProfileBar() {
 }
 
 // ── UPGRADE MODAL ────────────────────────────────────────────────
+const STRIPE_INVESTOR_URL = 'https://buy.stripe.com/7sYfZj2ozh2z0Je4tf8og02';
+const STRIPE_TAXPRO_URL   = 'https://buy.stripe.com/00wfZjfblh2z63ye3P8og03';
+
 function showUpgradeModal(reason) { $('upgrade-reason').textContent = reason || 'Unlock advanced features.'; $('modal-upgrade').classList.add('active'); }
 function hideUpgradeModal() { $('modal-upgrade').classList.remove('active'); }
-async function handleUpgrade() {
+function handleUpgrade() {
   hideUpgradeModal();
-  const btn = $('btn-upgrade-confirm'); btn.disabled = true; btn.textContent = 'Loading…';
-  try {
-    const res = await apiFetch('/stripe/create-checkout', { method: 'POST', headers: authHeaders(), body: JSON.stringify({ plan: 'investor' }) });
-    if (!res) return;
-    if (res.ok) { const data = await res.json(); if (data.checkout_url) window.open(data.checkout_url, '_blank'); }
-    else { const err = await res.json().catch(() => ({})); toast(apiErrorDetail(err.detail, 'Could not initiate payment.'), 'error'); }
-  } finally { btn.disabled = false; btn.textContent = 'Get Premium'; }
+  window.open(STRIPE_INVESTOR_URL, '_blank');
 }
 
 // ── MENU / TABS ──────────────────────────────────────────────────
@@ -2071,15 +2068,9 @@ async function loadTaxLossHarvesting() {
 // Tax Pro upgrade modal
 function showTaxProUpgradeModal() { $('modal-upgrade-tax-pro').classList.add('active'); }
 function hideTaxProUpgradeModal() { $('modal-upgrade-tax-pro').classList.remove('active'); }
-async function handleTaxProUpgrade() {
+function handleTaxProUpgrade() {
   hideTaxProUpgradeModal();
-  const btn = $('btn-taxpro-confirm'); btn.disabled = true; btn.textContent = 'Loading…';
-  try {
-    const res = await apiFetch('/stripe/create-checkout', { method: 'POST', headers: authHeaders(), body: JSON.stringify({ plan: 'tax_pro' }) });
-    if (!res) return;
-    if (res.ok) { const data = await res.json(); if (data.checkout_url) window.open(data.checkout_url, '_blank'); }
-    else { const err = await res.json().catch(() => ({})); toast(apiErrorDetail(err.detail, 'Could not initiate payment.'), 'error'); }
-  } finally { btn.disabled = false; btn.textContent = 'Upgrade to Tax Pro'; }
+  window.open(STRIPE_TAXPRO_URL, '_blank');
 }
 
 
