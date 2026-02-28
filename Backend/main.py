@@ -623,7 +623,7 @@ async def request_logging_middleware(request: Request, call_next):
     response = await call_next(request)
     elapsed_ms = round((time.monotonic() - start) * 1000, 1)
     path = request.url.path
-    if not path.startswith("/static") and not path.startswith("/extension-assets"):
+    if not path.startswith("/static"):
         logger.info(json.dumps({
             "method": request.method, "path": path,
             "status": response.status_code, "ms": elapsed_ms,
@@ -646,10 +646,6 @@ async def add_security_headers(request: Request, call_next):
     return response
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
-
-EXTENSION_STATIC_DIR = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "extension"))
-if os.path.isdir(EXTENSION_STATIC_DIR):
-    app.mount("/extension-assets", StaticFiles(directory=EXTENSION_STATIC_DIR), name="extension-assets")
 
 @app.get("/")
 async def read_index():
