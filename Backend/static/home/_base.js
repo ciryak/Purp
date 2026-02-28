@@ -428,6 +428,8 @@ function finalizeLoginUI() {
   hideLoginScreen();
   const shell = $('app-shell');
   if (shell) shell.classList.remove('hidden');
+  const topbar = $('app-topbar');
+  if (topbar) topbar.classList.remove('hidden');
   updateProfileBar();
   fetchPortfolio(); // necessário para profile bar em todas as páginas
   // Carrega dados específicos da página atual (navegação por páginas separadas)
@@ -666,6 +668,9 @@ function updateProfileBar() {
   if (avatarEl) avatarEl.textContent = name.charAt(0).toUpperCase();
   const headerAvatar = $('profile-avatar-header');
   if (headerAvatar) headerAvatar.textContent = name.charAt(0).toUpperCase();
+  // Hero banner (mobile)
+  const heroName = $('hero-full-name');
+  if (heroName) heroName.textContent = name.split(' ')[0] || name;
 
   const plan    = currentUser?.plan || 'free';
   const planEl  = $('profile-plan') || $('shell-plan-badge');
@@ -1052,6 +1057,32 @@ function renderSpark(canvasId, data, color) {
 }
 
 // ════════════════════════════════════════════════════════════════
+// SCORE GAUGE — SVG needle animation helper
+// ════════════════════════════════════════════════════════════════
+function _updateScoreGauge(overall) {
+  // Semi-circle arc: 0=left, 100=right, needle rotates from -90deg to +90deg
+  const angle = -90 + (Math.max(0, Math.min(100, overall)) / 100) * 180;
+  const rad   = angle * (Math.PI / 180);
+  const cx    = 65, cy = 70, len = 36; // mobile
+  const x2m   = cx + len * Math.cos(rad);
+  const y2m   = cy + len * Math.sin(rad);
+  const needleM = $('score-needle');
+  if (needleM) { needleM.setAttribute('x1', cx); needleM.setAttribute('y1', cy); needleM.setAttribute('x2', x2m.toFixed(1)); needleM.setAttribute('y2', y2m.toFixed(1)); }
+
+  const cxD = 75, cyD = 82, lenD = 44; // desktop
+  const x2d = cxD + lenD * Math.cos(rad);
+  const y2d = cyD + lenD * Math.sin(rad);
+  const needleD = $('score-needle-d');
+  if (needleD) { needleD.setAttribute('x1', cxD); needleD.setAttribute('y1', cyD); needleD.setAttribute('x2', x2d.toFixed(1)); needleD.setAttribute('y2', y2d.toFixed(1)); }
+
+  // Arc fill: mobile arc has 163 total, desktop 195
+  const arcM = $('score-gauge-arc');
+  if (arcM) arcM.setAttribute('stroke-dasharray', `${(overall/100)*163} 163`);
+  const arcD = $('score-gauge-arc-d');
+  if (arcD) arcD.setAttribute('stroke-dasharray', `${(overall/100)*195} 195`);
+}
+
+// ════════════════════════════════════════════════════════════════
 // PORTFOLIO SCORE
 // ════════════════════════════════════════════════════════════════
 
@@ -1064,12 +1095,14 @@ async function loadPortfolioScore() {
   const overall = Number(score.overall || 0);
   const dash    = 283 - (Math.max(0, Math.min(100, overall)) / 100) * 283;
 
-  const overallEl = $('score-overall');
-  if (overallEl) overallEl.textContent = `${overall}`;
+  // Update both mobile and desktop score elements
+  ['score-overall', 'score-overall-d'].forEach(id => { if ($(id)) $(id).textContent = `${overall}`; });
   const gradeEl = $('score-grade');
   if (gradeEl) gradeEl.textContent = score.grade || '—';
-  const gaugeEl = $('score-gauge-value');
-  if (gaugeEl) gaugeEl.style.strokeDashoffset = `${dash}`;
+  ['score-gauge-value'].forEach(id => { if ($(id)) $(id).style.strokeDashoffset = `${dash}`; });
+
+  // Animate SVG gauge needle for new layout
+  _updateScoreGauge(overall);
 
   const setBar = (id, val, labelId) => {
     const v = Number(val || 0);
@@ -1094,13 +1127,15 @@ async function loadPortfolioScore() {
       ? items.map(txt => `<li>${txt}</li>`).join('')
       : '<li>Seu portfólio está estável. Continue monitorando diversificação e consistência.</li>';
   }
-  const labelEl = $('score-label');
-  if (labelEl) {
-    const g = (score.grade || '').toUpperCase();
-    labelEl.textContent = { A: 'Excellent', B: 'Good', C: 'Fair', D: 'Poor' }[g] || g || '—';
-  }
-  if ($('score-risk-level')) $('score-risk-level').textContent = 'Moderate';
-  const change30El = $('score-change-30d');
+  const GRADE_MAP = { A: 'Excellent', B: 'Good', C: 'Fair', D: 'Poor' };
+  ['score-label', 'score-label-d'].forEach(id => {
+    if ($(id)) {
+      const g = (score.grade || '').toUpperCase();
+      $(id).textContent = GRADE_MAP[g] || g || '—';
+    }
+  });
+  ['score-risk-level', 'score-risk-level-d'].forEach(id => { if ($(id)) $(id).textContent = '⚠ Moderate'; });
+  const change30El = $('score-change-30d') || $('score-change-30d-d');
   if (change30El) {
     apiFetch('/portfolio/history?period=1mo', { headers: authHeaders() }).then(r => {
       if (!r || !r.ok) return r;
@@ -1117,160 +1152,302 @@ async function loadPortfolioScore() {
   }
 }
 
-let allocationDonutChart = null;
+let allocationDonutChart  = null;
+let allocationDonutChartD = null;
+
+function _buildSingleDonut(canvasId, legendId, donutPctId, donutLblId, chartRef, data) {
+  const canvas = $(canvasId);
+  if (!canvas || typeof Chart === 'undefined') return chartRef;
+  const legendEl  = $(legendId);
+  const pctEl     = $(donutPctId);
+  const lblEl     = $(donutLblId);
+  if (chartRef) chartRef.destroy();
+  // Allocation bars legend
+  const COLORS = ['#7c5cfc','#00ddb4','#5b3df5','#f59e0b','#1fce65'];
+  if (legendEl) {
+    legendEl.innerHTML = data.length ? data.map((d,i) => `
+      <div class="al-item">
+        <div class="al-left"><div class="al-dot" style="background:${COLORS[i%COLORS.length]}"></div><span class="al-name">${d.label}</span></div>
+        <span class="al-pct">${d.value.toFixed(0)}%</span>
+      </div>
+      <div class="al-bar-wrap"><div class="al-bar" style="width:${d.value.toFixed(0)}%;background:${COLORS[i%COLORS.length]}"></div></div>`).join('') : '';
+  }
+  if (pctEl && data.length) pctEl.textContent = data[0].value.toFixed(0) + '%';
+  if (lblEl && data.length) lblEl.textContent = data[0].label;
+  if (!data.length) return null;
+  return new Chart(canvas.getContext('2d'), {
+    type: 'doughnut',
+    data: {
+      labels: data.map(d => d.label),
+      datasets: [{ data: data.map(d => d.value), backgroundColor: data.map((_, i) => COLORS[i % COLORS.length]), borderWidth: 2, borderColor: '#181530' }],
+    },
+    options: { responsive: true, maintainAspectRatio: true, cutout: '70%', plugins: { legend: { display: false }, tooltip: { callbacks: { label: (ctx) => ` ${ctx.label}: ${ctx.raw.toFixed(1)}%` } } } },
+  });
+}
+
 function buildAllocationDonut(balanceData) {
-  const canvas = $('allocationDonutChart');
-  const legendEl = $('allocation-legend');
-  if (!canvas || typeof Chart === 'undefined') return;
   const assets = balanceData.assets || [];
   let stocks = 0, crypto = 0, cash = 0;
   assets.forEach(a => {
     const val = parseFloat(a.position_value) || 0;
-    const t = (a.type || '').toLowerCase();
+    const t   = (a.type || '').toLowerCase();
     if (t === 'crypto') crypto += val; else if (t === 'cash') cash += val; else stocks += val;
   });
   const total = stocks + crypto + cash || 1;
   const data = [
-    { label: 'Stocks', value: (stocks / total) * 100, color: '#7B3FE4' },
-    { label: 'Crypto', value: (crypto / total) * 100, color: '#14b8a6' },
-    { label: 'Cash', value: (cash / total) * 100, color: 'rgba(255,255,255,0.25)' },
-  ].filter(d => d.value > 0);
-  if (allocationDonutChart) allocationDonutChart.destroy();
-  if (legendEl) legendEl.innerHTML = data.length ? data.map(d => `<span style="display:flex;align-items:center;gap:6px;margin-bottom:4px;"><span style="width:8px;height:8px;border-radius:50%;background:${d.color};"></span>${d.label} ${d.value.toFixed(0)}%</span>`).join('') : '';
-  if (!data.length) return;
-  allocationDonutChart = new Chart(canvas.getContext('2d'), {
-    type: 'doughnut',
-    data: {
-      labels: data.map(d => d.label),
-      datasets: [{ data: data.map(d => d.value), backgroundColor: data.map(d => d.color), borderWidth: 0 }],
-    },
-    options: { responsive: true, maintainAspectRatio: true, cutout: '65%', plugins: { legend: { display: false } } },
-  });
+    { label: 'Stocks', value: (stocks / total) * 100 },
+    { label: 'Crypto', value: (crypto / total) * 100 },
+    { label: 'Cash',   value: (cash   / total) * 100 },
+  ].filter(d => d.value > 0.5);
+
+  allocationDonutChart  = _buildSingleDonut('allocationDonutChart',  'allocation-legend',   'donut-main-pct',   'donut-main-lbl',   allocationDonutChart,  data);
+  allocationDonutChartD = _buildSingleDonut('allocationDonutChartD', 'allocation-legend-d', 'donut-main-pct-d', 'donut-main-lbl-d', allocationDonutChartD, data);
 }
 function buildPortfolioOverviewList(assets) {
-  const list = $('portfolio-overview-list');
-  if (!list) return;
+  // Render into mobile (#portfolio-overview-list) and desktop (#portfolio-overview-list-d)
+  const lists = ['portfolio-overview-list', 'portfolio-overview-list-d'].map(id => $(id)).filter(Boolean);
+  if (!lists.length) return;
   if (!assets || !assets.length) {
-    list.innerHTML = '<div class="empty-sub" style="padding:8px 0;">No assets yet.</div>';
+    lists.forEach(l => { l.innerHTML = '<div class="empty-sub" style="padding:8px 0;">No assets yet.</div>'; });
     return;
   }
-  list.innerHTML = assets.slice(0, 5).map(a => {
-    const pct = a.percent_change != null ? (a.percent_change >= 0 ? '+' : '') + a.percent_change.toFixed(2) + '%' : '—';
-    const isUp = (a.percent_change || 0) >= 0;
-    const esc = (s) => (s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-    return `<div class="overview-item"><span class="sym">${esc(a.symbol)}</span><span class="price sensitive-value">${formatUSD(a.current_price)}</span><span class="pct ${isUp ? 'text-green' : 'text-red'}">${pct}</span></div>`;
+  const esc  = (s) => (s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  const html = assets.slice(0, 6).map(a => {
+    const pct   = a.percent_change != null ? (a.percent_change >= 0 ? '+' : '') + a.percent_change.toFixed(2) + '%' : '—';
+    const isUp  = (a.percent_change || 0) >= 0;
+    const arrow = isUp ? '<span style="color:var(--green)">↑</span>' : '<span style="color:var(--red)">↓</span>';
+    return `<div class="portfolio-asset-row" onclick="openDetailFromSymbol('${esc(a.symbol)}')">
+      <span class="sym">${esc(a.symbol)}</span>
+      <div style="text-align:right">
+        <div class="val sensitive-value">${formatUSD(a.current_price)} ${arrow}</div>
+        <div class="pct ${isUp ? 'up' : 'dn'}">${pct}</div>
+      </div>
+    </div>`;
   }).join('');
+  lists.forEach(l => { l.innerHTML = html; });
   applyVisibilityMask();
 }
 async function loadRelevantNews() {
-  const list = $('relevant-news-list');
-  if (!list) return;
+  // Render into both mobile (#relevant-news-list) and desktop (#relevant-news-list-d)
+  const containers = ['relevant-news-list', 'relevant-news-list-d'].map(id => $(id)).filter(Boolean);
+  if (!containers.length) return;
   try {
     const res = await apiFetch('/news?limit=6');
     const data = await res?.json?.() || {};
     const news = data.news || [];
-    if (!news.length) { list.innerHTML = '<div class="news-loading">No news available.</div>'; return; }
     const escapeHtml = (s) => (s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-    list.innerHTML = news.map(n => {
+    if (!news.length) {
+      containers.forEach(l => { l.innerHTML = '<div class="news-loading">No news available.</div>'; });
+      return;
+    }
+    // Icon colour palette cycling
+    const iconStyles = [
+      'background:rgba(124,92,252,.14);color:#a780ff',
+      'background:rgba(245,158,11,.12);color:#f59e0b',
+      'background:rgba(0,221,180,.10);color:#00ddb4',
+      'background:rgba(255,77,109,.10);color:#ff4d6d',
+      'background:rgba(31,206,101,.12);color:#1fce65',
+    ];
+    const newsIconSVG = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>`;
+    const html = news.slice(0,5).map((n, i) => {
       const sym = (n.symbols || [])[0] || '';
       const url = (n.url || '#').trim();
       const safeUrl = url.startsWith('http://') || url.startsWith('https://') ? url : '#';
-      const title = escapeHtml((n.headline || '').slice(0, 60)) + ((n.headline || '').length > 60 ? '…' : '');
-      return `<a href="${safeUrl}" target="_blank" rel="noopener noreferrer" class="news-item"><span class="news-item-icon">${escapeHtml(sym) || 'N'}</span><span class="news-item-title">${title}</span><span class="news-item-arrow">→</span></a>`;
+      const title = escapeHtml((n.headline || '').slice(0, 72)) + ((n.headline || '').length > 72 ? '…' : '');
+      const tag   = escapeHtml(sym ? `${sym} · ${_timeAgo(n.created_at)}` : _timeAgo(n.created_at));
+      const style = iconStyles[i % iconStyles.length];
+      return `<a href="${safeUrl}" target="_blank" rel="noopener noreferrer" class="news-item"><div class="news-icon" style="${style}">${newsIconSVG}</div><div class="news-body"><div class="news-title">${title}</div><span class="news-tag">${tag}</span></div><span class="news-arrow">›</span></a>`;
     }).join('');
-  } catch (e) { list.innerHTML = '<div class="news-loading">Could not load news.</div>'; }
+    containers.forEach(l => { l.innerHTML = html; });
+  } catch (e) {
+    containers.forEach(l => { l.innerHTML = '<div class="news-loading">Could not load news.</div>'; });
+  }
+}
+
+function _timeAgo(ts) {
+  if (!ts) return '';
+  try {
+    const diff = Math.floor((Date.now() - new Date(ts).getTime()) / 1000);
+    if (diff < 60) return 'just now';
+    if (diff < 3600) return `${Math.floor(diff/60)}m ago`;
+    if (diff < 86400) return `${Math.floor(diff/3600)}h ago`;
+    return `${Math.floor(diff/86400)}d ago`;
+  } catch (_) { return ''; }
 }
 async function loadWatchlistCards() {
-  const container = $('watchlist-cards');
-  if (!container || !authToken) return;
+  // Render into both desktop grid (#watchlist-cards) and mobile scroll row (#watchlist-scroll)
+  const desktopContainer = $('watchlist-cards');
+  const mobileContainer  = $('watchlist-scroll');
+  if (!authToken) return;
+
   const res = await apiFetch('/watchlist', { headers: authHeaders() });
-  if (!res || !res.ok) { container.innerHTML = '<div class="empty-sub">Could not load watchlist.</div>'; return; }
+  if (!res || !res.ok) {
+    if (desktopContainer) desktopContainer.innerHTML = '<div class="empty-sub">Could not load watchlist.</div>';
+    if (mobileContainer)  mobileContainer.innerHTML  = '<div class="empty-sub">Could not load watchlist.</div>';
+    return;
+  }
   const items = (await res.json()).items || [];
   watchlistSymbols = new Set(items.map(i => (i.symbol || '').toUpperCase()));
   items.forEach(i => { watchlistIdBySymbol[(i.symbol || '').toUpperCase()] = i.id; });
-  if (!items.length) { container.innerHTML = '<div class="empty-sub">Add assets from Market or search to track them here.</div>'; return; }
-  container.innerHTML = '';
+
+  const emptyMsg = '<div class="empty-sub" style="padding:8px 0;font-size:.78rem;color:var(--muted);">Add assets to track them here.</div>';
+  if (!items.length) {
+    if (desktopContainer) desktopContainer.innerHTML = emptyMsg;
+    if (mobileContainer)  mobileContainer.innerHTML  = emptyMsg;
+    return;
+  }
+  if (desktopContainer) desktopContainer.innerHTML = '';
+  if (mobileContainer)  mobileContainer.innerHTML  = '';
+
+  // Also update hero stats
+  const heroStats = $('hero-stats');
+  if (heroStats) heroStats.innerHTML = '';
+
   for (const w of items.slice(0, 8)) {
     const sym = (w.symbol || '').toUpperCase();
     const snapRes = await apiFetch('/snapshot/' + encodeURIComponent(sym));
     const d = snapRes?.ok ? await snapRes.json() : null;
-    const price = d?.current_price ?? w.current_price ?? 0;
-    const pct = d?.percent_change ?? w.percent_change ?? 0;
+    const price   = d?.current_price ?? w.current_price ?? 0;
+    const pct     = d?.percent_change ?? w.percent_change ?? 0;
     const history = d?.history || [];
-    const isUp = pct >= 0;
+    const isUp    = pct >= 0;
     const iconPath = d?.icon || '/logo/' + sym;
-    const logoUrl = (iconPath && iconPath.startsWith('http')) ? iconPath : (API_BASE + (iconPath.startsWith('/') ? iconPath : '/logo/' + sym));
-    const card = document.createElement('div');
-    card.className = 'watchlist-card';
-    card.dataset.symbol = sym;
-    card.innerHTML = '<div class="watchlist-card-logo"><img src="' + logoUrl + '" alt="" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'block\';this.nextElementSibling.textContent=\'' + sym.slice(0,2) + '\';"><span style="display:none;font-size:11px;"></span></div><div class="watchlist-card-info"><div class="watchlist-card-ticker">' + sym + '</div><div class="watchlist-card-price">' + formatUSD(price) + '</div><div class="watchlist-card-pct ' + (isUp ? 'text-green' : 'text-red') + '">' + (pct >= 0 ? '+' : '') + (pct || 0).toFixed(2) + '%</div></div><div class="watchlist-card-spark"><canvas id="watch-spark-' + sym + '"></canvas></div>';
-    card.addEventListener('click', () => openDetailFromSymbol(sym));
-    container.appendChild(card);
-    if (history.length && typeof Chart !== 'undefined') setTimeout(() => renderSpark('watch-spark-' + sym, history, isUp ? '#10b981' : '#ef4444'), 50);
+    const logoUrl  = (iconPath && iconPath.startsWith('http')) ? iconPath : (API_BASE + (iconPath.startsWith('/') ? iconPath : '/logo/' + sym));
+    const pctTxt   = (pct >= 0 ? '+' : '') + (pct || 0).toFixed(2) + '%';
+    const chgClass = isUp ? 'up' : 'dn';
+    const cardId   = 'watch-ac-' + sym;
+
+    // Build asset-card element (shared between mobile scroll and desktop grid)
+    function makeAssetCard(sparkId) {
+      const sparkLine = history.length
+        ? `<polyline points="${history.map((v,i)=>`${(i/(history.length-1||1))*140},${42-Math.max(0,Math.min(42,((v-Math.min(...history))/(Math.max(...history)-Math.min(...history)||1))*42))+1}`).join(' ')}" fill="none" stroke="${isUp?'#1fce65':'#ff4d6d'}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>`
+        : '';
+      const card = document.createElement('div');
+      card.className = 'asset-card';
+      card.dataset.symbol = sym;
+      card.innerHTML = `
+        <div class="ac-head">
+          <span class="ac-ticker">${sym}</span>
+          <span class="ac-chg ${chgClass}">${pctTxt}</span>
+        </div>
+        <div class="ac-price">${formatUSD(price)}</div>
+        <div class="ac-chart">
+          <svg viewBox="0 0 140 42" preserveAspectRatio="none">${sparkLine}</svg>
+        </div>`;
+      card.addEventListener('click', () => openDetailFromSymbol(sym));
+      return card;
+    }
+
+    if (mobileContainer)  mobileContainer.appendChild(makeAssetCard('mob-' + sym));
+    // Desktop grid shows first 3 with asset-card style
+    if (desktopContainer && items.indexOf(w) < 3) desktopContainer.appendChild(makeAssetCard('desk-' + sym));
+
+    // Populate hero stats (first 3)
+    if (heroStats && items.indexOf(w) < 3) {
+      const hs = document.createElement('div');
+      hs.className = 'hs';
+      hs.innerHTML = `<div class="hs-v" style="color:${isUp?'var(--green)':'var(--red)'}">${pctTxt}</div><div class="hs-l">${sym}</div>`;
+      heroStats.appendChild(hs);
+    }
   }
   applyVisibilityMask();
 }
 async function loadMarketAnalysisForSymbol(symbol) {
-  const placeholder = $('market-analysis-placeholder');
-  const content = $('market-analysis-content');
-  const symEl = $('market-analysis-symbol');
-  const priceEl = $('market-analysis-price');
-  const textEl = $('market-analysis-text');
-  if (!content || !symEl) return;
-  if (placeholder) placeholder.style.display = 'none';
-  content.style.display = 'block';
-  symEl.textContent = symbol || '—';
-  if (priceEl) { priceEl.textContent = '—'; priceEl.className = 'market-analysis-price'; }
-  if (textEl) textEl.textContent = 'Loading…';
+  // Update both mobile and desktop panels
+  const pairs = [
+    { ph: 'market-analysis-placeholder',   content: 'market-analysis-content',   sym: 'market-analysis-symbol',   price: 'market-analysis-price',   text: 'market-analysis-text',   priceF: 'ma-current-price',   ratingF: 'ma-ai-rating',   btn: 'btn-market-analysis-register' },
+    { ph: 'market-analysis-placeholder-d', content: 'market-analysis-content-d', sym: 'market-analysis-symbol-d', price: 'market-analysis-price-d', text: 'market-analysis-text-d', priceF: 'ma-current-price-d', ratingF: 'ma-ai-rating-d', btn: 'btn-market-analysis-register-d' },
+  ];
+  pairs.forEach(p => {
+    if ($(p.ph)) $(p.ph).style.display = 'none';
+    if ($(p.content)) $(p.content).style.display = 'block';
+    if ($(p.sym)) $(p.sym).textContent = symbol || '—';
+    if ($(p.price)) { $(p.price).textContent = '—'; $(p.price).className = 'ma-price'; }
+    if ($(p.text)) $(p.text).textContent = 'Loading…';
+    if ($(p.btn)) $(p.btn).onclick = () => { window.location.href = '/home/add-asset'; };
+  });
+
   const snapRes = await apiFetch('/snapshot/' + encodeURIComponent(symbol));
   const snap = snapRes?.ok ? await snapRes.json() : null;
-  if (snap && snap.current_price != null && priceEl) {
-    priceEl.textContent = formatUSD(snap.current_price);
-    priceEl.classList.add((snap.percent_change || 0) >= 0 ? 'text-green' : 'text-red');
-  }
+  pairs.forEach(p => {
+    if (snap && snap.current_price != null) {
+      if ($(p.price)) { $(p.price).textContent = formatUSD(snap.current_price); $(p.price).classList.add((snap.percent_change || 0) >= 0 ? 'text-green' : 'text-red'); }
+      if ($(p.priceF)) { $(p.priceF).textContent = formatUSD(snap.current_price); }
+    }
+  });
+
   const analysisRes = await apiFetch('/analysis/' + encodeURIComponent(symbol) + '?change=' + (snap?.percent_change || 0), { headers: authHeaders() });
   const analysis = analysisRes?.ok ? await analysisRes.json() : null;
-  if (textEl) textEl.textContent = analysis?.analysis || 'No AI analysis available for this asset.';
-  const btn = $('btn-market-analysis-register');
-  if (btn) btn.onclick = () => { window.location.href = '/home/add-asset'; };
+  const analysisText = analysis?.analysis || 'No AI analysis available for this asset.';
+  const ratingText   = analysis?.rating   || (analysis?.score ? `+${analysis.score}%` : '—');
+  pairs.forEach(p => {
+    if ($(p.text)) $(p.text).textContent = analysisText;
+    if ($(p.ratingF)) $(p.ratingF).textContent = ratingText;
+  });
 }
 async function loadTopMovers() {
-  const list = $('top-movers-list');
-  if (!list) return;
+  // Render into both mobile list (#top-movers-list) and desktop grid (#top-movers-list-d)
+  const mobileList   = $('top-movers-list');
+  const desktopGrid  = $('top-movers-list-d');
+  const targets      = [mobileList, desktopGrid].filter(Boolean);
+  if (!targets.length) return;
   try {
     const res = await apiFetch('/movers');
     const data = await res?.json?.() || {};
     const all = data.all || (data.gainers || []).concat(data.losers || []);
-    if (!all.length) { list.innerHTML = '<div class="movers-loading">No movers data.</div>'; return; }
+    if (!all.length) {
+      targets.forEach(t => { t.innerHTML = '<div class="movers-loading">No movers data.</div>'; });
+      return;
+    }
     const esc = (s) => (s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-    list.innerHTML = '';
-    all.slice(0, 8).forEach(m => {
-      const pct = m.percent_change ?? 0;
-      const isUp = pct >= 0;
-      const div = document.createElement('div');
-      div.className = 'movers-item';
-      div.setAttribute('role', 'button');
-      div.tabIndex = 0;
-      div.innerHTML = '<span class="sym">' + esc(m.symbol) + '</span><span class="pct ' + (isUp ? 'text-green' : 'text-red') + '">' + (pct >= 0 ? '+' : '') + pct.toFixed(2) + '%</span>';
-      div.addEventListener('click', () => openDetailFromSymbol(m.symbol));
-      div.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openDetailFromSymbol(m.symbol); } });
-      list.appendChild(div);
+    targets.forEach(container => {
+      container.innerHTML = '';
+      all.slice(0, 6).forEach(m => {
+        const pct  = m.percent_change ?? 0;
+        const isUp = pct >= 0;
+        const pctTxt = (pct >= 0 ? '+' : '') + pct.toFixed(2) + '%';
+        // Use mover-card style for desktop grid, movers-item style for mobile list
+        const isDesktop = container === desktopGrid;
+        const el = document.createElement('div');
+        if (isDesktop) {
+          el.className = 'mover-card';
+          el.innerHTML = `<div class="mover-head"><span class="mover-name">${esc(m.name || m.symbol)}</span><span class="mover-tag ${isUp ? 'text-green' : 'text-red'}">${pctTxt}</span></div><div class="mover-desc">${esc(m.description || (isUp ? 'Top gainer today.' : 'Top loser today.'))}</div>`;
+        } else {
+          el.className = 'movers-item';
+          el.innerHTML = '<span class="sym">' + esc(m.symbol) + '</span><span class="pct ' + (isUp ? 'text-green' : 'text-red') + '">' + pctTxt + '</span>';
+        }
+        el.setAttribute('role', 'button');
+        el.tabIndex = 0;
+        el.addEventListener('click', () => openDetailFromSymbol(m.symbol));
+        el.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openDetailFromSymbol(m.symbol); } });
+        container.appendChild(el);
+      });
     });
-  } catch (e) { list.innerHTML = '<div class="movers-loading">Could not load movers.</div>'; }
+  } catch (e) {
+    targets.forEach(t => { t.innerHTML = '<div class="movers-loading">Could not load movers.</div>'; });
+  }
 }
 async function loadFearGreed() {
-  const valEl = $('fear-greed-value');
-  const labelEl = $('fear-greed-label');
-  const needleEl = $('fear-greed-needle');
-  if (!valEl) return;
+  const valEls   = ['fear-greed-value', 'fear-greed-value-d'].map(id => $(id)).filter(Boolean);
+  const labelEls = ['fear-greed-label', 'fear-greed-label-d'].map(id => $(id)).filter(Boolean);
+  if (!valEls.length) return;
   try {
     const res = await apiFetch('/fear-greed');
     const data = await res?.json?.() || {};
     const v = Math.max(0, Math.min(100, Number(data.value) || 50));
-    valEl.textContent = v;
-    if (labelEl) labelEl.textContent = data.classification || 'Neutral';
-    if (needleEl) needleEl.style.transform = 'translate(-50%, -100%) rotate(' + (-90 + (v / 100) * 180) + 'deg)';
-  } catch (e) { valEl.textContent = '—'; if (labelEl) labelEl.textContent = '—'; }
+    // Needle rotation: -90deg (left) to +90deg (right) for semi-circle SVG gauge
+    const deg = -90 + (v / 100) * 180;
+    valEls.forEach(el => { el.textContent = v; });
+    labelEls.forEach(el => { el.textContent = data.classification || 'Neutral'; });
+    // Update SVG needle (new layout uses transform attribute, not style)
+    ['fg-needle-m', 'fg-needle-d'].forEach(id => {
+      const n = $(id);
+      if (n) n.setAttribute('transform', `rotate(${deg} 70 70)`);
+    });
+  } catch (e) {
+    valEls.forEach(el => { el.textContent = '—'; });
+    labelEls.forEach(el => { el.textContent = '—'; });
+  }
 }
 
 let globalSearchTimer = null;
@@ -1365,17 +1542,17 @@ async function fetchPortfolio() {
   await loadNetWorth();
   _checkConcentrationAlert();
 
-  if ($('allocationDonutChart')) buildAllocationDonut(data);
-  if ($('portfolio-overview-list')) buildPortfolioOverviewList(data.assets || []);
+  if ($('allocationDonutChart') || $('allocationDonutChartD')) buildAllocationDonut(data);
+  buildPortfolioOverviewList(data.assets || []);
 
   const list = $('assets-list');
   if (!list) {
     renderRebalanceTargets(data.assets || []);
     if (data.assets?.length) await loadBalancePerformance();
-    if ($('watchlist-cards')) loadWatchlistCards();
-    if ($('relevant-news-list')) loadRelevantNews();
-    if ($('top-movers-list')) loadTopMovers();
-    if ($('fear-greed-value')) loadFearGreed();
+    if ($('watchlist-cards') || $('watchlist-scroll')) loadWatchlistCards();
+    if ($('relevant-news-list') || $('relevant-news-list-d')) loadRelevantNews();
+    if ($('top-movers-list') || $('top-movers-list-d')) loadTopMovers();
+    if ($('fear-greed-value') || $('fear-greed-value-d')) loadFearGreed();
     return;
   }
   list.innerHTML = '';
@@ -1453,10 +1630,10 @@ async function fetchPortfolio() {
   applyVisibilityMask();
   loadDividendCard();
   loadAlerts();
-  if ($('watchlist-cards')) loadWatchlistCards();
-  if ($('relevant-news-list')) loadRelevantNews();
-  if ($('top-movers-list')) loadTopMovers();
-  if ($('fear-greed-value')) loadFearGreed();
+  if ($('watchlist-cards') || $('watchlist-scroll')) loadWatchlistCards();
+  if ($('relevant-news-list') || $('relevant-news-list-d')) loadRelevantNews();
+  if ($('top-movers-list') || $('top-movers-list-d')) loadTopMovers();
+  if ($('fear-greed-value') || $('fear-greed-value-d')) loadFearGreed();
 }
 
 // ── Concentration alert banner ────────────────────────────────────
@@ -3666,13 +3843,23 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
   document.addEventListener('click', e => {
-    if ($('search-autocomplete') && !e.target.closest('.dashboard-search-wrap'))
+    if ($('search-autocomplete') && !e.target.closest('.topbar-search-wrap') && !e.target.closest('.dashboard-search-wrap'))
       $('search-autocomplete').setAttribute('aria-hidden', 'true');
   });
-  $('btn-register-tx-overview')?.addEventListener('click', () => { window.location.href = '/home/add-asset'; });
-  $('btn-quick-register-tx')?.addEventListener('click', () => { window.location.href = '/home/add-asset'; });
-  $('btn-quick-ai')?.addEventListener('click', () => handlePortfolioAI());
-  $('btn-quick-watchlist')?.addEventListener('click', () => { window.location.href = '/home/market'; });
+  // Register transaction buttons (mobile + desktop overview cards)
+  ['btn-register-tx-overview', 'btn-register-tx-overview-d', 'btn-quick-register-tx', 'btn-quick-register-tx-mobile', 'btn-market-analysis-register', 'btn-market-analysis-register-d'].forEach(id => {
+    $(id)?.addEventListener('click', () => { window.location.href = '/home/add-asset'; });
+  });
+  // Quick action AI buttons
+  ['btn-quick-ai', 'btn-quick-ai-mobile'].forEach(id => {
+    $(id)?.addEventListener('click', () => handlePortfolioAI());
+  });
+  // Watchlist / market links
+  ['btn-quick-watchlist'].forEach(id => {
+    $(id)?.addEventListener('click', () => { window.location.href = '/home/market'; });
+  });
+  // FAB mobile — add asset
+  $('btn-fab-add')?.addEventListener('click', () => { window.location.href = '/home/add-asset'; });
   $('bottom-nav-search')?.addEventListener('click', () => { $('global-search')?.focus(); });
   $('bottom-nav-ai')?.addEventListener('click', () => handlePortfolioAI());
 
