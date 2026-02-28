@@ -1216,7 +1216,8 @@ function buildPortfolioOverviewList(assets) {
     const pct   = a.percent_change != null ? (a.percent_change >= 0 ? '+' : '') + a.percent_change.toFixed(2) + '%' : '—';
     const isUp  = (a.percent_change || 0) >= 0;
     const arrow = isUp ? '<span style="color:var(--green)">↑</span>' : '<span style="color:var(--red)">↓</span>';
-    return `<div class="portfolio-asset-row" onclick="openDetailFromSymbol('${esc(a.symbol)}')">
+    const symEsc = (esc(a.symbol) || '').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    return `<div class="portfolio-asset-row" data-symbol="${symEsc}" role="button" tabindex="0">
       <span class="sym">${esc(a.symbol)}</span>
       <div style="text-align:right">
         <div class="val sensitive-value">${formatUSD(a.current_price)} ${arrow}</div>
@@ -1224,7 +1225,15 @@ function buildPortfolioOverviewList(assets) {
       </div>
     </div>`;
   }).join('');
-  lists.forEach(l => { l.innerHTML = html; });
+  lists.forEach(l => {
+    l.innerHTML = html;
+    l.querySelectorAll('.portfolio-asset-row').forEach(row => {
+      const sym = row.dataset.symbol;
+      if (!sym) return;
+      row.addEventListener('click', () => openDetailFromSymbol(sym));
+      row.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openDetailFromSymbol(sym); } });
+    });
+  });
   applyVisibilityMask();
 }
 async function loadRelevantNews() {

@@ -532,11 +532,11 @@ def _create_verification_code(session: Session, user_id: int) -> str:
         session.add(v)
 
     code    = _generate_code()
-    expires = (datetime.utcnow() + timedelta(minutes=VERIFICATION_EXPIRE_MINUTES)).isoformat()
+    expires = (datetime.now(timezone.utc) + timedelta(minutes=VERIFICATION_EXPIRE_MINUTES)).isoformat()
     ev = EmailVerification(
         user_id=user_id, code=code,
         expires_at=expires, used=False,
-        created_at=datetime.utcnow().isoformat(),
+        created_at=datetime.now(timezone.utc).isoformat(),
     )
     session.add(ev)
     session.commit()
@@ -689,7 +689,7 @@ def get_session():
 
 
 def create_token(user_id: int) -> str:
-    exp = datetime.utcnow() + timedelta(minutes=TOKEN_EXPIRE)
+    exp = datetime.now(timezone.utc) + timedelta(minutes=TOKEN_EXPIRE)
     return jwt.encode({"sub": str(user_id), "exp": exp}, SECRET_KEY, algorithm=ALGORITHM)
 
 
@@ -927,7 +927,7 @@ def forgot_password(request: Request, data: ForgotPasswordInput, session: Sessio
     if not user or not user.email:
         return {"ok": True, "message": "If this email exists, a reset link will be sent."}
 
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     expires = now + timedelta(minutes=RESET_PASSWORD_EXPIRE_MINUTES)
     token = secrets.token_urlsafe(32)
     prt = PasswordResetToken(
@@ -962,7 +962,7 @@ def reset_password(request: Request, data: ResetPasswordInput, session: Session 
 
     try:
         expires = datetime.fromisoformat(prt.expires_at)
-        if datetime.utcnow() > expires:
+        if datetime.now(timezone.utc) > expires:
             prt.used = True
             session.add(prt)
             session.commit()
@@ -1016,7 +1016,7 @@ def verify_email(
     # Check expiry
     try:
         expires = datetime.fromisoformat(ev.expires_at)
-        if datetime.utcnow() > expires:
+        if datetime.now(timezone.utc) > expires:
             ev.used = True; session.add(ev); session.commit()
             raise HTTPException(400, "Code has expired. Please request a new one.")
     except ValueError:
@@ -1061,7 +1061,7 @@ def resend_verification(
     if recent:
         try:
             created = datetime.fromisoformat(recent.created_at)
-            elapsed = (datetime.utcnow() - created).total_seconds()
+            elapsed = (datetime.now(timezone.utc) - created).total_seconds()
             if elapsed < 60:
                 wait = int(60 - elapsed)
                 raise HTTPException(429, f"Please wait {wait} seconds before requesting a new code.")
@@ -1875,7 +1875,7 @@ def create_net_worth_entry(
         category=category,
         label=data.label.strip(),
         value=value,
-        updated_at=datetime.utcnow().isoformat(),
+        updated_at=datetime.now(timezone.utc).isoformat(),
     )
     session.add(entry)
     session.commit()
@@ -1906,7 +1906,7 @@ def update_net_worth_entry(
     entry.category = category
     entry.label = data.label.strip()
     entry.value = value
-    entry.updated_at = datetime.utcnow().isoformat()
+    entry.updated_at = datetime.now(timezone.utc).isoformat()
     session.add(entry)
     session.commit()
     session.refresh(entry)
@@ -2985,7 +2985,7 @@ def payment_cancelled():
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "api_ok": api_connection_ok, "timestamp": datetime.utcnow().isoformat()}
+    return {"status": "ok", "api_ok": api_connection_ok, "timestamp": datetime.now(timezone.utc).isoformat()}
 
 
 @app.post("/debug/test-email")
