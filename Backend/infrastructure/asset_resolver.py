@@ -23,7 +23,7 @@ from gateways.binance import (
     _COIN_META,
     _pct_from_series,
 )
-from gateways.yahoo import get_asset_data_yf, get_historical_data_yf, get_volume_history_yf
+from gateways.yahoo import get_asset_data_yf, get_historical_data_yf
 from gateways.coincap import get_asset_coincap, get_asset_finnhub
 
 

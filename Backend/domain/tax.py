@@ -117,18 +117,18 @@ def calculate_cost_basis(transactions: list[dict], method: str = "FIFO") -> dict
         remaining_to_sell = sell_amount
 
         if method == "FIFO":
-            ordered = sorted(lots, key=lambda l: l["date"])
+            ordered = sorted(lots, key=lambda lt: lt["date"])
         elif method == "LIFO":
-            ordered = sorted(lots, key=lambda l: l["date"], reverse=True)
+            ordered = sorted(lots, key=lambda lt: lt["date"], reverse=True)
         elif method == "HIFO":
-            ordered = sorted(lots, key=lambda l: l["price"], reverse=True)
+            ordered = sorted(lots, key=lambda lt: lt["price"], reverse=True)
         else:
             target_id = sell.get("lot_id")
             if target_id:
-                ordered = [l for l in lots if l.get("lot_id") == target_id] + \
-                          [l for l in lots if l.get("lot_id") != target_id]
+                ordered = [lt for lt in lots if lt.get("lot_id") == target_id] + \
+                          [lt for lt in lots if lt.get("lot_id") != target_id]
             else:
-                ordered = sorted(lots, key=lambda l: l["date"])
+                ordered = sorted(lots, key=lambda lt: lt["date"])
 
         for lot in ordered:
             if lot["remaining"] <= 0 or remaining_to_sell <= 1e-9:
@@ -142,8 +142,8 @@ def calculate_cost_basis(transactions: list[dict], method: str = "FIFO") -> dict
             lot["remaining"]  -= used
             remaining_to_sell -= used
 
-    open_lots  = [l for l in lots if l["remaining"] > 1e-9]
-    cost_basis = sum(l["remaining"] * l["price"] for l in open_lots)
+    open_lots  = [lt for lt in lots if lt["remaining"] > 1e-9]
+    cost_basis = sum(lt["remaining"] * lt["price"] for lt in open_lots)
 
     return {
         "cost_basis":      round(cost_basis, 2),
@@ -153,12 +153,12 @@ def calculate_cost_basis(transactions: list[dict], method: str = "FIFO") -> dict
         "method_used":     method,
         "open_lots": [
             {
-                "date":      l["date"],
-                "price":     round(l["price"],     6),
-                "remaining": round(l["remaining"], 8),
-                "cost":      round(l["remaining"] * l["price"], 2),
+                "date":      lt["date"],
+                "price":     round(lt["price"],     6),
+                "remaining": round(lt["remaining"], 8),
+                "cost":      round(lt["remaining"] * lt["price"], 2),
             }
-            for l in open_lots
+            for lt in open_lots
         ],
     }
 
@@ -216,11 +216,11 @@ def generate_form_8949(
         lots     = lots_by_sym.get(sym, [])
 
         if method == "FIFO":
-            ordered = sorted(lots, key=lambda l: l["date"])
+            ordered = sorted(lots, key=lambda lt: lt["date"])
         elif method == "LIFO":
-            ordered = sorted(lots, key=lambda l: l["date"], reverse=True)
+            ordered = sorted(lots, key=lambda lt: lt["date"], reverse=True)
         else:
-            ordered = sorted(lots, key=lambda l: l["price"], reverse=True)
+            ordered = sorted(lots, key=lambda lt: lt["price"], reverse=True)
 
         remaining_sell = sell_amount
         cost_total     = 0.0

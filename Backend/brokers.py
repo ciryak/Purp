@@ -3,7 +3,6 @@ Purp — Broker API integrations.
 Fetch portfolio and transactions from Coinbase, Binance and Kraken via API.
 Robinhood and Fidelity: CSV import only (no public API).
 """
-import os
 import time
 import hmac
 import hashlib

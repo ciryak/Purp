@@ -111,11 +111,9 @@ def check_and_trigger_alerts(session, send_email_callback) -> None:
     from models import PriceAlert, User, Asset
     from sqlmodel import select
     from infrastructure.asset_resolver import get_asset_data
-    from gateways.binance import _is_binance_crypto, _is_likely_stock
-
     try:
         active_alerts = session.exec(
-            select(PriceAlert).where(PriceAlert.active == True, PriceAlert.triggered == False)
+            select(PriceAlert).where(PriceAlert.active.is_(True), PriceAlert.triggered.is_(False))
         ).all()
 
         if not active_alerts:

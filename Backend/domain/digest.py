@@ -90,7 +90,7 @@ def generate_weekly_digest(user_id: int, session) -> dict:
     triggered_alerts = session.exec(
         select(PriceAlert).where(
             PriceAlert.user_id == user_id,
-            PriceAlert.triggered == True,
+            PriceAlert.triggered.is_(True),
         )
     ).all()
     alert_count = 0

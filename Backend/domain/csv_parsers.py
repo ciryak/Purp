@@ -123,9 +123,12 @@ def _parse_fidelity(rows: list[dict]) -> list[dict]:
     results = []
     for row in rows:
         action = (row.get("Action") or row.get("action") or "").strip().upper()
-        if   "BOUGHT" in action: tx_type = "buy"
-        elif "SOLD"   in action: tx_type = "sell"
-        else: continue
+        if "BOUGHT" in action:
+            tx_type = "buy"
+        elif "SOLD" in action:
+            tx_type = "sell"
+        else:
+            continue
         symbol    = (row.get("Symbol")   or row.get("symbol")   or "").strip().upper()
         qty_raw   = row.get("Quantity")  or row.get("quantity")  or "0"
         price_raw = row.get("Price ($)") or row.get("Price")     or row.get("price") or "0"
@@ -173,9 +176,12 @@ def _parse_schwab(rows: list[dict]) -> list[dict]:
     results = []
     for row in rows:
         action = (row.get("Action") or row.get("action") or "").strip().upper()
-        if   "BUY"  in action: tx_type = "buy"
-        elif "SELL" in action: tx_type = "sell"
-        else: continue
+        if "BUY" in action:
+            tx_type = "buy"
+        elif "SELL" in action:
+            tx_type = "sell"
+        else:
+            continue
         symbol    = (row.get("Symbol")   or row.get("symbol")   or "").strip().upper()
         qty_raw   = row.get("Quantity")  or row.get("quantity")  or "0"
         price_raw = row.get("Price")     or row.get("price")     or "0"

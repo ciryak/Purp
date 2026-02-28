@@ -3,14 +3,14 @@ from pathlib import Path
 
 os.chdir(Path(__file__).resolve().parent)
 
-import pytest
-import pytest_asyncio
-from httpx import AsyncClient, ASGITransport
-from sqlmodel import Session, SQLModel, create_engine, select
-from sqlalchemy.pool import StaticPool
+import pytest  # noqa: E402
+import pytest_asyncio  # noqa: E402
+from httpx import AsyncClient, ASGITransport  # noqa: E402
+from sqlmodel import Session, SQLModel, create_engine, select  # noqa: E402
+from sqlalchemy.pool import StaticPool  # noqa: E402
 
-import main
-from models import User, Asset, PriceAlert, Transaction, ProcessedEvent
+import main  # noqa: E402
+from models import User, Asset, PriceAlert, Transaction, ProcessedEvent  # noqa: E402
 
 
 @pytest.fixture()
@@ -98,7 +98,7 @@ def auth_headers(user_id: int):
 
 @pytest.mark.asyncio
 async def test_register_success(client):
-    response = await client.post("/auth/register", json={"username": "newuser", "password": "1234", "email": "new@user.com"})
+    response = await client.post("/auth/register", json={"full_name": "New User", "password": "SecureP@ss1!", "email": "new@user.com"})
     assert response.status_code == 200
     assert "token" in response.json()
 
@@ -106,21 +106,21 @@ async def test_register_success(client):
 @pytest.mark.asyncio
 async def test_register_duplicate_username(client, test_engine):
     create_user(test_engine, username="dupe", email="x1@example.com")
-    response = await client.post("/auth/register", json={"username": "dupe", "password": "1234", "email": "x2@example.com"})
+    response = await client.post("/auth/register", json={"full_name": "dupe", "password": "SecureP@ss1!", "email": "x2@example.com"})
     assert response.status_code == 400
 
 
 @pytest.mark.asyncio
 async def test_register_duplicate_email(client, test_engine):
-    create_user(test_engine, username="u1", email="dupe@example.com")
-    response = await client.post("/auth/register", json={"username": "u2", "password": "1234", "email": "dupe@example.com"})
+    create_user(test_engine, username="user one", email="dupe@example.com")
+    response = await client.post("/auth/register", json={"full_name": "user two", "password": "SecureP@ss1!", "email": "dupe@example.com"})
     assert response.status_code == 400
 
 
 @pytest.mark.asyncio
 async def test_login_success(client, test_engine):
     create_user(test_engine, username="loginok", email="loginok@example.com", password="pass123")
-    response = await client.post("/auth/login", json={"username": "loginok", "password": "pass123"})
+    response = await client.post("/auth/login", json={"email": "loginok@example.com", "password": "pass123"})
     assert response.status_code == 200
     assert "token" in response.json()
 
@@ -128,7 +128,7 @@ async def test_login_success(client, test_engine):
 @pytest.mark.asyncio
 async def test_login_wrong_password(client, test_engine):
     create_user(test_engine, username="loginbad", email="loginbad@example.com", password="pass123")
-    response = await client.post("/auth/login", json={"username": "loginbad", "password": "wrong"})
+    response = await client.post("/auth/login", json={"email": "loginbad@example.com", "password": "wrong"})
     assert response.status_code == 401
 
 
