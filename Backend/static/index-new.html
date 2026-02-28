@@ -1,0 +1,700 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Purp — AI-Powered Portfolio Tracking</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500;700&family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=Syne:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="landing-new.css" />
+</head>
+<body>
+  <nav id="nav">
+    <a href="/" class="nav-logo" aria-label="Purp home">
+      <img src="icons/icon16.png" alt="Purp" class="nav-logo-img" width="32" height="32" />
+      <span class="nav-logo-name">Purp</span>
+    </a>
+    <ul class="nav-links" role="list">
+      <li><a href="#features">Features</a></li>
+      <li><a href="#how">How it works</a></li>
+      <li><a href="#reviews">Reviews</a></li>
+      <li><a href="#tax-calc">Tax Calculator</a></li>
+      <li><a href="#pricing">Pricing</a></li>
+      <li><a href="#faq">FAQ</a></li>
+    </ul>
+    <div class="nav-actions">
+      <div id="nav-auth-btns">
+        <button type="button" class="btn-nav-ghost" data-auth="signin">Sign in</button>
+        <button type="button" class="btn-cta" data-auth="register">
+          Get started free
+          <i data-lucide="arrow-right" width="14" height="14"></i>
+        </button>
+      </div>
+      <button type="button" id="nav-user-btn" style="display:none;">
+        <div class="nav-avatar" id="nav-avatar-letter">U</div>
+        <span id="nav-user-name">User</span>
+        <i data-lucide="chevron-down" width="12" height="12"></i>
+      </button>
+    </div>
+    <button type="button" id="hamburger" aria-label="Menu" aria-expanded="false">
+      <span></span><span></span><span></span>
+    </button>
+  </nav>
+
+  <div id="drawer-overlay" role="button" tabindex="-1" aria-label="Close menu"></div>
+  <div id="mobile-drawer" role="dialog" aria-label="Navigation">
+    <a href="#features" class="mobile-nav-link">Features</a>
+    <a href="#how" class="mobile-nav-link">How it works</a>
+    <a href="#reviews" class="mobile-nav-link">Reviews</a>
+    <a href="#tax-calc" class="mobile-nav-link">Tax Calculator</a>
+    <a href="#pricing" class="mobile-nav-link">Pricing</a>
+    <a href="#faq" class="mobile-nav-link">FAQ</a>
+    <hr />
+    <button type="button" class="mobile-nav-link mobile-nav-btn" data-auth="signin">Sign in</button>
+    <button type="button" class="btn-cta mobile-drawer-cta" data-auth="register">Get started free</button>
+    <button type="button" class="mobile-nav-link mobile-nav-dashboard" style="display:none;">Go to Dashboard</button>
+  </div>
+
+  <div id="ticker-wrap" role="marquee" aria-label="Live market prices">
+    <div class="ticker-label">
+      <span class="ticker-live-dot"></span>
+      Live
+    </div>
+    <div class="ticker-track-outer">
+      <div class="ticker-shimmer" id="ticker-shimmer">
+        <div class="shimmer-block"></div>
+        <div class="shimmer-block" style="width:90px"></div>
+        <div class="shimmer-block" style="width:130px"></div>
+        <div class="shimmer-block" style="width:80px"></div>
+        <div class="shimmer-block" style="width:110px"></div>
+        <div class="shimmer-block" style="width:95px"></div>
+        <div class="shimmer-block"></div>
+      </div>
+      <div class="ticker-track" id="ticker-track"></div>
+    </div>
+  </div>
+
+  <section id="hero">
+    <div class="hero-orb orb-1"></div>
+    <div class="hero-orb orb-2"></div>
+    <div class="hero-orb orb-3"></div>
+    <div class="hero-inner">
+      <div>
+        <div class="hero-eyebrow">
+          <i data-lucide="sparkles" width="16" height="16" class="eyebrow-icon"></i>
+          AI-Powered Portfolio Tracking
+        </div>
+        <h1 class="hero-h1">
+          Your wealth,<br /><span>understood by AI</span>
+        </h1>
+        <p class="hero-p">
+          Track stocks, crypto and ETFs in one intelligent dashboard. Get Gemini AI insights, real-time price alerts, and tax-loss harvesting — all in a Chrome extension.
+        </p>
+        <div class="hero-btns">
+          <button type="button" class="btn-hero-primary" data-auth="register">
+            <i data-lucide="plus" width="18" height="18"></i>
+            Start for free
+          </button>
+          <button type="button" class="btn-hero-ghost" data-scroll="how">
+            <i data-lucide="play" width="16" height="16"></i>
+            See how it works
+          </button>
+        </div>
+        <div class="hero-trust">
+          <div class="hero-trust-item">
+            <i data-lucide="shield-check" width="14" height="14"></i>
+            Free plan, no credit card
+          </div>
+          <div class="hero-trust-item">
+            <i data-lucide="wifi" width="14" height="14"></i>
+            Real-time data
+          </div>
+          <div class="hero-trust-item">
+            <i data-lucide="box" width="14" height="14"></i>
+            Gemini AI analysis
+          </div>
+        </div>
+      </div>
+      <div class="hero-visual">
+        <div class="hero-float">
+          <div class="mock-browser">
+            <div class="mock-bar">
+              <div class="mock-dots">
+                <span class="mock-dot" style="background:#ef4444"></span>
+                <span class="mock-dot" style="background:#f59e0b"></span>
+                <span class="mock-dot" style="background:#10b981"></span>
+              </div>
+              <div class="mock-url">
+                <i data-lucide="lock" width="10" height="10"></i>
+                GetPurpAi.com
+              </div>
+              <div class="mock-ext">P</div>
+            </div>
+            <div class="mock-popup">
+              <div class="popup-header">
+                <div class="popup-logo">
+                  <img src="icons/icon16.png" alt="" width="20" height="20" class="popup-logo-img" />
+                  <span class="popup-logo-name">Purp</span>
+                </div>
+                <span class="popup-plan-badge">INVESTOR</span>
+              </div>
+              <div class="popup-balance">
+                <div class="balance-lbl">Total Balance</div>
+                <div class="balance-num">$61,284.40</div>
+                <div class="balance-change">↑ +$1,842 today (+3.1%)</div>
+                <div class="spark-wrap">
+                  <svg width="100%" height="40" viewBox="0 0 280 40" preserveAspectRatio="none">
+                    <defs>
+                      <linearGradient id="sg" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stop-color="#8b5cf6" stop-opacity="0.4" />
+                        <stop offset="100%" stop-color="#8b5cf6" stop-opacity="0" />
+                      </linearGradient>
+                    </defs>
+                    <path d="M0,32 C20,30 40,28 60,24 C80,20 100,26 120,22 C140,18 160,14 180,10 C200,6 220,8 240,6 C255,4 270,4 280,3" fill="none" stroke="#8b5cf6" stroke-width="2" />
+                    <path d="M0,32 C20,30 40,28 60,24 C80,20 100,26 120,22 C140,18 160,14 180,10 C200,6 220,8 240,6 C255,4 270,4 280,3 L280,40 L0,40 Z" fill="url(#sg)" />
+                  </svg>
+                </div>
+              </div>
+              <div class="popup-assets">
+                <div class="popup-asset">
+                  <div class="pa-left">
+                    <div class="pa-icon" style="background:rgba(247,147,26,0.15)">₿</div>
+                    <div>
+                      <div class="pa-sym">BTC</div>
+                      <div class="pa-name">Bitcoin</div>
+                    </div>
+                  </div>
+                  <div class="pa-right">
+                    <div class="pa-val">$28,440</div>
+                    <div class="pa-chg up">+4.2%</div>
+                  </div>
+                </div>
+                <div class="popup-asset">
+                  <div class="pa-left">
+                    <div class="pa-icon" style="background:rgba(98,126,234,0.15)">Ξ</div>
+                    <div>
+                      <div class="pa-sym">ETH</div>
+                      <div class="pa-name">Ethereum</div>
+                    </div>
+                  </div>
+                  <div class="pa-right">
+                    <div class="pa-val">$14,920</div>
+                    <div class="pa-chg up">+2.8%</div>
+                  </div>
+                </div>
+                <div class="popup-asset">
+                  <div class="pa-left">
+                    <div class="pa-icon" style="background:rgba(16,185,129,0.15);font-size:9px;font-weight:700">AAPL</div>
+                    <div>
+                      <div class="pa-sym">AAPL</div>
+                      <div class="pa-name">Apple Inc.</div>
+                    </div>
+                  </div>
+                  <div class="pa-right">
+                    <div class="pa-val">$17,924</div>
+                    <div class="pa-chg dn">−0.6%</div>
+                  </div>
+                </div>
+              </div>
+              <div class="popup-ai">
+                <span class="ai-badge">AI</span>
+                <div class="ai-insight">
+                  Portfolio up 3.1% driven by BTC recovery. Consider trimming ETH exposure — it's now 24% of holdings.
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="hero-badge">
+            <div class="badge-icon"><i data-lucide="piggy-bank" width="24" height="24"></i></div>
+            <div>
+              <div class="badge-title">Tax savings found</div>
+              <div class="badge-sub">$1,240 opportunity in TSLA</div>
+            </div>
+          </div>
+          <div class="hero-badge-right">
+            <div class="badge-icon"><i data-lucide="bell" width="24" height="24"></i></div>
+            <div>
+              <div class="badge-title">Alert triggered</div>
+              <div class="badge-sub">BTC crossed $94,000</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="stats">
+    <div class="stats-grid">
+      <div class="stat-item reveal">
+        <div class="stat-num" data-target="50000" data-format="int">0</div>
+        <div class="stat-lbl">Active investors</div>
+      </div>
+      <div class="stat-item reveal">
+        <div class="stat-num" data-target="3.2" data-format="money">$0</div>
+        <div class="stat-lbl">Tax savings generated</div>
+      </div>
+      <div class="stat-item reveal">
+        <div class="stat-num" data-target="15" data-format="int">0</div>
+        <div class="stat-lbl">Supported platforms</div>
+      </div>
+      <div class="stat-item reveal">
+        <div class="stat-num" data-target="4.8" data-format="decimal">0</div>
+        <div class="stat-lbl">Average rating</div>
+      </div>
+    </div>
+  </section>
+
+  <section id="features">
+    <div class="features-head reveal">
+      <div class="section-tag">Features</div>
+      <h2 class="section-h">Everything to invest <span class="grad">smarter</span></h2>
+      <p class="section-sub">One extension. Every market. Powered by Gemini AI to surface insights you'd otherwise miss.</p>
+    </div>
+    <div class="features-grid">
+      <div class="feature-card">
+        <div class="feat-icon feat-icon-v"><i data-lucide="puzzle" width="28" height="28"></i></div>
+        <h3 class="feat-h">Chrome Extension</h3>
+        <p class="feat-p">Works seamlessly in your browser. Click the icon on any portfolio page and get instant AI-powered analysis without leaving the site.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feat-icon feat-icon-a"><i data-lucide="bot" width="28" height="28"></i></div>
+        <h3 class="feat-h">Gemini AI Insights</h3>
+        <p class="feat-p">Google's Gemini 1.5 Flash analyzes each asset and your full portfolio in plain English — no jargon, just actionable guidance.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feat-icon feat-icon-v"><i data-lucide="download" width="28" height="28"></i></div>
+        <h3 class="feat-h">Broker CSV Import</h3>
+        <p class="feat-p">Import trade history from Coinbase, Robinhood, Fidelity, Kraken, and Schwab. Your entire history syncs in under 30 seconds.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feat-icon feat-icon-a"><i data-lucide="bell" width="28" height="28"></i></div>
+        <h3 class="feat-h">Smart Price Alerts</h3>
+        <p class="feat-p">Set price-above, price-below, or percentage-change alerts for any asset. Get emailed the instant your threshold is hit.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feat-icon feat-icon-v"><i data-lucide="trending-up" width="28" height="28"></i></div>
+        <h3 class="feat-h">Tax Loss Harvesting</h3>
+        <p class="feat-p">Our engine scans your portfolio for harvestable losses, calculates wash-sale safe dates, and estimates exact dollar savings for your bracket.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feat-icon feat-icon-a"><i data-lucide="bar-chart-2" width="28" height="28"></i></div>
+        <h3 class="feat-h">Portfolio Analytics</h3>
+        <p class="feat-p">Compare your performance against the S&P 500, Nasdaq, or Bitcoin across 1D to 2Y. FIFO, LIFO, and HIFO cost-basis methods included.</p>
+      </div>
+    </div>
+  </section>
+
+  <section id="how">
+    <div class="how-head reveal">
+      <div class="section-tag">How it works</div>
+      <h2 class="section-h">Up and running in <span class="grad">3 minutes</span></h2>
+      <p class="section-sub">No open-banking API keys. No account linking. Just install, add your holdings, and let the AI go to work.</p>
+    </div>
+    <div class="steps-grid">
+      <div class="step-card">
+        <div class="step-num step-num-v">1</div>
+        <div class="step-inner">
+          <h3 class="step-h">Install the extension</h3>
+          <p class="step-p">Add Purp to Chrome in one click. Create a free account with your email — no credit card required.</p>
+        </div>
+      </div>
+      <div class="step-card">
+        <div class="step-num step-num-a">2</div>
+        <div class="step-inner">
+          <h3 class="step-h">Add your assets</h3>
+          <p class="step-p">Type any ticker (BTC, AAPL, ETH) and enter your quantity and buy price — or import a full CSV from your broker in seconds.</p>
+        </div>
+      </div>
+      <div class="step-card">
+        <div class="step-num step-num-v">3</div>
+        <div class="step-inner">
+          <h3 class="step-h">Let AI optimize</h3>
+          <p class="step-p">Real-time prices, AI analysis, price alerts, and tax-saving recommendations. Your portfolio, finally working for you.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="reviews">
+    <div class="reviews-head reveal">
+      <div class="section-tag">Reviews</div>
+      <h2 class="section-h">Trusted by <span class="grad">real investors</span></h2>
+      <p class="section-sub">From hobbyist holders to full-time traders — here's what people are actually saying.</p>
+    </div>
+    <div class="review-meta reveal">
+      <div class="review-meta-stars">
+        <i data-lucide="star" width="22" height="22" fill="#fbbf24"></i>
+        <i data-lucide="star" width="22" height="22" fill="#fbbf24"></i>
+        <i data-lucide="star" width="22" height="22" fill="#fbbf24"></i>
+        <i data-lucide="star" width="22" height="22" fill="#fbbf24"></i>
+        <i data-lucide="star" width="22" height="22" fill="#fbbf24"></i>
+        <span class="review-meta-num">4.8</span>
+        <span class="review-meta-den">/ 5.0</span>
+      </div>
+      <span class="review-meta-txt">Based on <strong>2,341 reviews</strong> across Chrome Web Store &amp; Product Hunt</span>
+    </div>
+    <div class="reviews-grid">
+      <div class="review-card">
+        <div class="stars">
+          <i data-lucide="star" class="star filled" width="14" height="14"></i>
+          <i data-lucide="star" class="star filled" width="14" height="14"></i>
+          <i data-lucide="star" class="star filled" width="14" height="14"></i>
+          <i data-lucide="star" class="star filled" width="14" height="14"></i>
+          <i data-lucide="star" class="star filled" width="14" height="14"></i>
+        </div>
+        <p class="review-text">Skeptical at first — I've tried Kubera, Sharesight, all of them. But Purp's tax-loss harvesting found $3,100 in write-offs I completely missed. The subscription paid for itself in the first week.</p>
+        <div class="reviewer">
+          <div class="reviewer-av" style="background:linear-gradient(135deg,#7c3aed,#a78bfa)">RH</div>
+          <div>
+            <div class="reviewer-name">Ryan Harris</div>
+            <div class="reviewer-role">Software engineer, Austin TX · BTC, ETH, AAPL</div>
+          </div>
+          <span class="reviewer-platform">Chrome Web Store</span>
+        </div>
+      </div>
+      <div class="review-card">
+        <div class="stars">
+          <i data-lucide="star" class="star filled" width="14" height="14"></i>
+          <i data-lucide="star" class="star filled" width="14" height="14"></i>
+          <i data-lucide="star" class="star filled" width="14" height="14"></i>
+          <i data-lucide="star" class="star filled" width="14" height="14"></i>
+          <i data-lucide="star" class="star filled" width="14" height="14"></i>
+        </div>
+        <p class="review-text">When SOL dropped 14% last month the AI didn't just say "it's down." It explained the Binance outflow data, linked it to the macro move, and told me my position size was still within my own risk tolerance. Genuinely useful.</p>
+        <div class="reviewer">
+          <div class="reviewer-av" style="background:linear-gradient(135deg,#d97706,#fbbf24)">JW</div>
+          <div>
+            <div class="reviewer-name">Jake Williams</div>
+            <div class="reviewer-role">Day trader, Chicago IL · 18 assets tracked</div>
+          </div>
+          <span class="reviewer-platform">Product Hunt</span>
+        </div>
+      </div>
+      <div class="review-card">
+        <div class="stars">
+          <i data-lucide="star" class="star filled" width="14" height="14"></i>
+          <i data-lucide="star" class="star filled" width="14" height="14"></i>
+          <i data-lucide="star" class="star filled" width="14" height="14"></i>
+          <i data-lucide="star" class="star filled" width="14" height="14"></i>
+          <i data-lucide="star" class="star filled" width="14" height="14"></i>
+        </div>
+        <p class="review-text">Imported 3 years of Robinhood and Fidelity history in under a minute. Every other app I tried either choked on the CSV or mangled my cost basis. This just worked, first try.</p>
+        <div class="reviewer">
+          <div class="reviewer-av" style="background:linear-gradient(135deg,#059669,#34d399)">AJ</div>
+          <div>
+            <div class="reviewer-name">Ashley Johnson</div>
+            <div class="reviewer-role">Financial analyst, Seattle WA · Fidelity + Robinhood</div>
+          </div>
+          <span class="reviewer-platform">Twitter / X</span>
+        </div>
+      </div>
+      <div class="review-card">
+        <div class="stars">
+          <i data-lucide="star" class="star filled" width="14" height="14"></i>
+          <i data-lucide="star" class="star filled" width="14" height="14"></i>
+          <i data-lucide="star" class="star filled" width="14" height="14"></i>
+          <i data-lucide="star" class="star filled" width="14" height="14"></i>
+          <i data-lucide="star" class="star empty" width="14" height="14"></i>
+        </div>
+        <p class="review-text">Really solid product. The HIFO cost basis method alone saves me hours every April. Only reason it's not 5 stars is I'd love a native iOS app — the mobile web version works but a dedicated app would be perfect.</p>
+        <div class="reviewer">
+          <div class="reviewer-av" style="background:linear-gradient(135deg,#dc2626,#f87171)">BM</div>
+          <div>
+            <div class="reviewer-name">Brian Miller</div>
+            <div class="reviewer-role">Small business owner, Denver CO · Tax Pro plan</div>
+          </div>
+          <span class="reviewer-platform">Chrome Web Store</span>
+        </div>
+      </div>
+      <div class="review-card">
+        <div class="stars">
+          <i data-lucide="star" class="star filled" width="14" height="14"></i>
+          <i data-lucide="star" class="star filled" width="14" height="14"></i>
+          <i data-lucide="star" class="star filled" width="14" height="14"></i>
+          <i data-lucide="star" class="star filled" width="14" height="14"></i>
+          <i data-lucide="star" class="star filled" width="14" height="14"></i>
+        </div>
+        <p class="review-text">Been using it for four months. The AI knows I hold a lot of NVDA and gave me a rebalancing suggestion specific to my portfolio — not generic "diversify" advice. That kind of context is what I was paying a financial advisor for.</p>
+        <div class="reviewer">
+          <div class="reviewer-av" style="background:linear-gradient(135deg,#7c3aed,#ec4899)">ST</div>
+          <div>
+            <div class="reviewer-name">Sarah Thompson</div>
+            <div class="reviewer-role">Marketing manager, Nashville TN · crypto & stocks</div>
+          </div>
+          <span class="reviewer-platform">Product Hunt</span>
+        </div>
+      </div>
+      <div class="review-card">
+        <div class="stars">
+          <i data-lucide="star" class="star filled" width="14" height="14"></i>
+          <i data-lucide="star" class="star filled" width="14" height="14"></i>
+          <i data-lucide="star" class="star filled" width="14" height="14"></i>
+          <i data-lucide="star" class="star filled" width="14" height="14"></i>
+          <i data-lucide="star" class="star filled" width="14" height="14"></i>
+        </div>
+        <p class="review-text">Set a BTC price alert at $95k on a Friday night. Got the push notification at 11:42pm, literally seconds after it crossed. I've had alerts on Coinbase and Binance both fail to fire — this one was instant, every single time.</p>
+        <div class="reviewer">
+          <div class="reviewer-av" style="background:linear-gradient(135deg,#0284c7,#38bdf8)">KC</div>
+          <div>
+            <div class="reviewer-name">Kevin Clark</div>
+            <div class="reviewer-role">Investor, Phoenix AZ · 9 assets, 15 active alerts</div>
+          </div>
+          <span class="reviewer-platform">Chrome Web Store</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="brokers">
+    <div class="brokers-head reveal">
+      <span class="section-tag">CSV Import Partners</span>
+      <h2 class="section-h">Supported broker logos</h2>
+      <p class="section-sub">Import statements in seconds from the brokers our users rely on every day.</p>
+    </div>
+    <div class="broker-grid reveal">
+      <div class="broker-chip">
+        <div class="broker-mark bm-coinbase">C</div>
+        <div class="broker-name">Coinbase</div>
+      </div>
+      <div class="broker-chip">
+        <div class="broker-mark bm-robinhood">R</div>
+        <div class="broker-name">Robinhood</div>
+      </div>
+      <div class="broker-chip">
+        <div class="broker-mark bm-fidelity">F</div>
+        <div class="broker-name">Fidelity</div>
+      </div>
+      <div class="broker-chip">
+        <div class="broker-mark bm-kraken">K</div>
+        <div class="broker-name">Kraken</div>
+      </div>
+    </div>
+  </section>
+
+  <section id="tax-calc">
+    <div class="tax-calc-wrap reveal">
+      <div class="tax-panel">
+        <span class="section-tag">Tax Pro Preview</span>
+        <h3>How much could you save?</h3>
+        <div class="tax-input">
+          <label for="tax-portfolio">My portfolio value <output id="tax-portfolio-out">$50,000</output></label>
+          <input type="range" class="tax-range" id="tax-portfolio" min="1000" max="500000" step="1000" value="50000" />
+        </div>
+        <div class="tax-input">
+          <label for="tax-gains">Estimated gains this year <output id="tax-gains-out">$20,000</output></label>
+          <input type="range" class="tax-range" id="tax-gains" min="0" max="100000" step="500" value="20000" />
+        </div>
+        <div class="tax-input">
+          <label for="tax-bracket">Tax bracket</label>
+          <select id="tax-bracket" class="tax-select">
+            <option value="0.22">22%</option>
+            <option value="0.24">24%</option>
+            <option value="0.32">32%</option>
+            <option value="0.35">35%</option>
+            <option value="0.37">37%</option>
+          </select>
+        </div>
+      </div>
+      <div class="tax-panel">
+        <div class="tax-output-card">
+          <p class="tax-sub" style="margin-bottom:6px">Estimated tax savings with HIFO method:</p>
+          <div class="tax-big" id="tax-saved">$1,320/year</div>
+          <p class="tax-sub" id="tax-payback">Purp Tax Pro pays for itself in 3 months</p>
+        </div>
+        <p class="tax-sub" style="margin-top:12px">Illustrative estimate only. Actual tax outcomes depend on jurisdiction, holding period, and transaction history.</p>
+      </div>
+    </div>
+  </section>
+
+  <section id="pricing">
+    <div class="pricing-head reveal">
+      <div class="section-tag">Pricing</div>
+      <h2 class="section-h">Simple, honest <span class="grad">pricing</span></h2>
+      <p class="section-sub">Start free and upgrade when you're ready. No hidden fees, no annual commitment.</p>
+    </div>
+    <div class="pricing-grid">
+      <div class="plan-card">
+        <div class="plan-name">Free</div>
+        <div class="plan-desc">Track your first positions, no card needed</div>
+        <div class="plan-price">
+          <span class="plan-price-num">$0</span><span class="plan-price-cents">.00</span><span class="plan-price-per">/month</span>
+        </div>
+        <ul class="plan-features">
+          <li class="plan-feature"><span class="pf-check"><i data-lucide="check" width="14" height="14"></i></span><span>Up to 4 assets</span></li>
+          <li class="plan-feature"><span class="pf-check"><i data-lucide="check" width="14" height="14"></i></span><span>Real-time prices</span></li>
+          <li class="plan-feature"><span class="pf-check"><i data-lucide="check" width="14" height="14"></i></span><span>10 watchlist items</span></li>
+          <li class="plan-feature"><span class="pf-check"><i data-lucide="check" width="14" height="14"></i></span><span>2 price alerts</span></li>
+          <li class="plan-feature"><span class="pf-check"><i data-lucide="check" width="14" height="14"></i></span><span>30-day price history</span></li>
+          <li class="plan-feature"><span class="pf-x"><i data-lucide="x" width="14" height="14"></i></span><span>AI analysis</span></li>
+          <li class="plan-feature"><span class="pf-x"><i data-lucide="x" width="14" height="14"></i></span><span>CSV import</span></li>
+          <li class="plan-feature"><span class="pf-x"><i data-lucide="x" width="14" height="14"></i></span><span>Tax tools</span></li>
+        </ul>
+        <button type="button" class="btn-plan btn-plan-ghost" data-auth="register">Get started free</button>
+      </div>
+      <div class="plan-card featured">
+        <div class="plan-badge-top">Most popular</div>
+        <div class="plan-name">Investor</div>
+        <div class="plan-desc">Unlimited tracking with Gemini AI insights</div>
+        <div class="plan-price">
+          <span class="plan-price-num">$18</span><span class="plan-price-cents">.99</span><span class="plan-price-per">/month</span>
+        </div>
+        <p class="plan-trial">7-day free trial</p>
+        <ul class="plan-features">
+          <li class="plan-feature"><span class="pf-check"><i data-lucide="check" width="14" height="14"></i></span><span>Unlimited assets, watchlist & alerts</span></li>
+          <li class="plan-feature"><span class="pf-check"><i data-lucide="check" width="14" height="14"></i></span><span>Gemini AI per asset & portfolio</span></li>
+          <li class="plan-feature"><span class="pf-check"><i data-lucide="check" width="14" height="14"></i></span><span>CSV import (5 brokers)</span></li>
+          <li class="plan-feature"><span class="pf-check"><i data-lucide="check" width="14" height="14"></i></span><span>2-year price history</span></li>
+          <li class="plan-feature"><span class="pf-check"><i data-lucide="check" width="14" height="14"></i></span><span>Priority email support</span></li>
+        </ul>
+        <a href="https://buy.stripe.com/7sYfZj2ozh2z0Je4tf8og02" target="_blank" rel="noopener noreferrer" class="btn-plan btn-plan-primary" data-stripe="investor">Upgrade to Investor</a>
+      </div>
+      <div class="plan-card">
+        <div class="plan-badge-top plan-badge-violet">Max savings</div>
+        <div class="plan-name">Tax Pro</div>
+        <div class="plan-desc">Everything in Investor + full tax engine</div>
+        <div class="plan-price">
+          <span class="plan-price-num">$29</span><span class="plan-price-cents">.99</span><span class="plan-price-per">/month</span>
+        </div>
+        <p class="plan-trial">7-day free trial</p>
+        <ul class="plan-features">
+          <li class="plan-feature"><span class="pf-check"><i data-lucide="check" width="14" height="14"></i></span><span>Everything in Investor</span></li>
+          <li class="plan-feature"><span class="pf-check"><i data-lucide="check" width="14" height="14"></i></span><span>Tax Loss Harvesting engine</span></li>
+          <li class="plan-feature"><span class="pf-check"><i data-lucide="check" width="14" height="14"></i></span><span>FIFO / LIFO / HIFO cost basis</span></li>
+          <li class="plan-feature"><span class="pf-check"><i data-lucide="check" width="14" height="14"></i></span><span>Wash-sale rule guidance</span></li>
+          <li class="plan-feature"><span class="pf-check"><i data-lucide="check" width="14" height="14"></i></span><span>Form 8949 export</span></li>
+          <li class="plan-feature"><span class="pf-check"><i data-lucide="check" width="14" height="14"></i></span><span>Replacement asset suggestions</span></li>
+        </ul>
+        <a href="https://buy.stripe.com/00wfZjfblh2z63ye3P8og03" target="_blank" rel="noopener noreferrer" class="btn-plan btn-plan-gold" data-stripe="taxpro">Upgrade to Tax Pro</a>
+      </div>
+    </div>
+  </section>
+
+  <section id="faq">
+    <div class="faq-head reveal">
+      <span class="section-tag">FAQ</span>
+      <h2 class="section-h">Common questions</h2>
+    </div>
+    <div class="faq-wrap reveal">
+      <div class="faq-item">
+        <button type="button" class="faq-q"><span>Is Purp a financial advisor?</span><i data-lucide="plus" width="18" height="18"></i></button>
+        <div class="faq-a">No. Purp provides portfolio tracking, analytics, and tax tools only. It does not provide personalized financial advice or fiduciary recommendations.</div>
+      </div>
+      <div class="faq-item">
+        <button type="button" class="faq-q"><span>Is my data secure?</span><i data-lucide="plus" width="18" height="18"></i></button>
+        <div class="faq-a">We use authenticated API access, encrypted transport (HTTPS), and isolated backend processing for portfolio operations. Sensitive actions are token-protected and account-scoped.</div>
+      </div>
+      <div class="faq-item">
+        <button type="button" class="faq-q"><span>Which brokers are supported for CSV import?</span><i data-lucide="plus" width="18" height="18"></i></button>
+        <div class="faq-a">Purp currently supports CSV import for Coinbase, Robinhood, Fidelity, Kraken, and Schwab.</div>
+      </div>
+      <div class="faq-item">
+        <button type="button" class="faq-q"><span>Does Purp file my taxes?</span><i data-lucide="plus" width="18" height="18"></i></button>
+        <div class="faq-a">No. Purp does not file taxes directly, but Tax Pro exports IRS Form 8949 data so you or your accountant can file faster.</div>
+      </div>
+      <div class="faq-item">
+        <button type="button" class="faq-q"><span>Can I cancel anytime?</span><i data-lucide="plus" width="18" height="18"></i></button>
+        <div class="faq-a">Yes. Subscriptions are managed via Stripe and can be canceled at any time from your billing settings.</div>
+      </div>
+    </div>
+  </section>
+
+  <section id="cta">
+    <div class="cta-orb"></div>
+    <h2 class="cta-h">Ready to invest smarter?</h2>
+    <p class="cta-p">Join 50,000+ investors using Purp's AI to understand their portfolios and save on taxes. Free plan — no card needed.</p>
+    <div class="cta-btns">
+      <button type="button" class="btn-hero-primary" data-auth="register">
+        <i data-lucide="plus" width="18" height="18"></i>
+        Create free account
+      </button>
+      <a href="#pricing" class="btn-hero-ghost" style="text-decoration:none">View plans</a>
+    </div>
+  </section>
+
+  <footer>
+    <div class="footer-top">
+      <div class="footer-brand">
+        <a href="/" class="nav-logo" aria-label="Purp home">
+          <img src="icons/icon16.png" alt="Purp" class="nav-logo-img" width="32" height="32" />
+          <span class="nav-logo-name">Purp</span>
+        </a>
+        <p>AI-powered Chrome extension that tracks crypto &amp; stocks, analyzes your portfolio with Gemini AI, and finds real tax savings.</p>
+        <div class="footer-socials">
+          <a href="#" class="social-btn" aria-label="Twitter"><i data-lucide="twitter" width="18" height="18"></i></a>
+          <a href="#" class="social-btn" aria-label="Instagram"><i data-lucide="instagram" width="18" height="18"></i></a>
+          <a href="#" class="social-btn" aria-label="LinkedIn"><i data-lucide="linkedin" width="18" height="18"></i></a>
+        </div>
+      </div>
+      <div class="footer-col">
+        <h4>Product</h4>
+        <ul>
+          <li><a href="#features">Features</a></li>
+          <li><a href="#pricing">Pricing</a></li>
+          <li><a href="#how">How it works</a></li>
+          <li><a href="#reviews">Reviews</a></li>
+        </ul>
+      </div>
+      <div class="footer-col">
+        <h4>Company</h4>
+        <ul>
+          <li><a href="#">About</a></li>
+          <li><a href="#">Blog</a></li>
+          <li><a href="#">Careers</a></li>
+          <li><a href="#">Contact</a></li>
+        </ul>
+      </div>
+      <div class="footer-col">
+        <h4>Legal</h4>
+        <ul>
+          <li><a href="#">Privacy policy</a></li>
+          <li><a href="#">Terms of service</a></li>
+          <li><a href="#">Cookie policy</a></li>
+        </ul>
+      </div>
+    </div>
+    <div class="footer-bottom">
+      <p class="footer-copy">© 2026 <strong style="color:var(--violet-ll)">André Soluções LTDA</strong>. All rights reserved.</p>
+      <p class="footer-copy">Made with <i data-lucide="heart" width="14" height="14" style="display:inline-block;vertical-align:middle;fill:var(--red)"></i> in Brazil</p>
+    </div>
+  </footer>
+
+  <!-- Auth Modal -->
+  <div id="auth-modal" class="modal-bg" aria-hidden="true">
+    <div class="modal-box">
+      <button type="button" class="modal-close" aria-label="Close"><i data-lucide="x" width="20" height="20"></i></button>
+      <div id="auth-modal-content"></div>
+    </div>
+  </div>
+
+  <!-- Verify Modal -->
+  <div id="verify-modal" class="modal-bg" aria-hidden="true">
+    <div class="modal-box">
+      <button type="button" class="modal-close verify-close" aria-label="Close"><i data-lucide="x" width="20" height="20"></i></button>
+      <div class="modal-header">
+        <img src="icons/icon16.png" alt="" width="32" height="32" class="modal-mark-img" />
+        <h2 class="modal-title">Verify your email</h2>
+        <p class="modal-sub">We sent a 6-digit code to <strong id="verify-masked-email"></strong></p>
+      </div>
+      <div class="modal-form">
+        <div id="verify-error" class="error-msg" style="display:none"></div>
+        <div class="verify-inputs" id="verify-inputs">
+          <input type="text" inputmode="numeric" maxlength="1" class="form-input verify-digit" data-idx="0" />
+          <input type="text" inputmode="numeric" maxlength="1" class="form-input verify-digit" data-idx="1" />
+          <input type="text" inputmode="numeric" maxlength="1" class="form-input verify-digit" data-idx="2" />
+          <input type="text" inputmode="numeric" maxlength="1" class="form-input verify-digit" data-idx="3" />
+          <input type="text" inputmode="numeric" maxlength="1" class="form-input verify-digit" data-idx="4" />
+          <input type="text" inputmode="numeric" maxlength="1" class="form-input verify-digit" data-idx="5" />
+        </div>
+        <p class="verify-resend-p">
+          Didn't receive it? <button type="button" class="modal-link" id="verify-resend">Resend code</button>
+          <span id="verify-cooldown" style="display:none"></span>
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+  <script src="app-landing.js"></script>
+</body>
+</html>

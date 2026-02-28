@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Purp — Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500;700&family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700&family=Syne:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="dashboard-new.css" />
+</head>
+<body class="dashboard-body">
+  <header class="dashboard-header">
+    <div class="header-left">
+      <a href="index-new.html" class="header-logo" aria-label="Purp home">
+        <img src="icons/icon16.png" alt="Purp" class="header-logo-img" width="32" height="32" />
+        <span class="header-logo-name">purp</span>
+      </a>
+    </div>
+    <div class="header-search-wrap">
+      <div class="header-search">
+        <i data-lucide="search" width="16" height="16" class="search-icon"></i>
+        <input type="text" id="header-search-input" placeholder="Buscar ticker..." autocomplete="off" />
+      </div>
+      <div id="header-search-dropdown" class="header-search-dropdown" aria-hidden="true"></div>
+    </div>
+    <div class="header-actions">
+      <div class="header-dropdown-wrap">
+        <button type="button" class="header-btn" id="btn-screenshot" title="Compartilhar carteira"><i data-lucide="share-2" width="20" height="20"></i></button>
+        <div id="screenshot-menu" class="header-dropdown" aria-hidden="true">
+          <button type="button" id="btn-share-wallet">Compartilhar carteira (PNG)</button>
+        </div>
+      </div>
+      <div class="header-dropdown-wrap">
+        <button type="button" class="header-btn" id="btn-notifications" title="Notificações"><i data-lucide="bell" width="20" height="20"></i><span id="notif-badge" class="notif-badge" style="display:none">0</span></button>
+        <div id="notifications-panel" class="header-dropdown notifications-panel" aria-hidden="true"></div>
+      </div>
+      <button type="button" class="header-btn" id="btn-theme" title="Tema"><i data-lucide="sun" width="20" height="20"></i></button>
+      <button type="button" class="header-btn" id="btn-settings" title="Configurações"><i data-lucide="settings" width="20" height="20"></i></button>
+      <button type="button" class="header-btn" id="btn-toggle-values" title="Ocultar valores"><i data-lucide="eye" width="20" height="20"></i></button>
+      <div class="header-dropdown-wrap">
+        <button type="button" class="header-btn header-user-btn" id="btn-user">
+          <span id="header-user-letter">U</span>
+        </button>
+        <div id="user-menu" class="header-dropdown" aria-hidden="true">
+          <div class="user-menu-name" id="user-menu-name">User</div>
+          <div class="user-menu-email" id="user-menu-email"></div>
+          <hr />
+          <button type="button" data-action="account">Minha conta</button>
+          <button type="button" data-action="logout">Sair</button>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <main class="dashboard-main" data-dashboard-content>
+    <div class="dashboard-grid">
+      <section class="widget widget-portfolio" id="widget-portfolio">
+        <div class="widget-head">
+          <h3>Portfolio Overview</h3>
+          <button type="button" class="widget-link" data-open-transaction>+ Register Transaction</button>
+        </div>
+        <div id="portfolio-empty" class="widget-empty">
+          <p>Nenhum ativo</p>
+          <p class="widget-empty-desc">Registre transações para ver seu portfólio.</p>
+          <button type="button" class="widget-cta" data-open-transaction>+ Register Transaction</button>
+        </div>
+        <div id="portfolio-content" class="widget-body" style="display:none">
+          <div class="portfolio-pie-wrap" id="portfolio-pie"></div>
+          <ul id="portfolio-positions"></ul>
+          <div class="portfolio-total">
+            <span>Total</span>
+            <span id="portfolio-total-value">$0.00</span>
+          </div>
+        </div>
+      </section>
+
+      <section class="widget widget-watchlist" id="widget-watchlist">
+        <div class="widget-head">
+          <h3>My Watchlist</h3>
+          <div class="widget-head-actions">
+            <button type="button" class="widget-icon-btn" data-open-transaction title="Nova transação"><i data-lucide="plus" width="16" height="16"></i></button>
+            <button type="button" class="widget-icon-btn" data-open-asset title="AI Analysis"><i data-lucide="sparkles" width="16" height="16"></i></button>
+          </div>
+        </div>
+        <div id="watchlist-empty" class="widget-empty-inline">Adicione ativos na busca ou no header.</div>
+        <ul id="watchlist-list" class="watchlist-list"></ul>
+      </section>
+
+      <section class="widget widget-score" id="widget-score">
+        <h3>Portfolio Score</h3>
+        <div class="score-gauge-wrap">
+          <div class="score-gauge" id="score-gauge"><span class="score-gauge-inner"><span id="score-value">0</span>/100</span></div>
+        </div>
+        <p class="score-class" id="score-class">—</p>
+      </section>
+
+      <section class="widget widget-news" id="widget-news">
+        <h3>Relevant News</h3>
+        <div id="news-empty" class="widget-empty-inline">Nenhuma notícia.</div>
+        <ul id="news-list" class="news-list"></ul>
+      </section>
+
+      <section class="widget widget-analysis" id="widget-analysis">
+        <h3>Market Analysis</h3>
+        <p class="widget-empty-inline">Em breve.</p>
+      </section>
+
+      <section class="widget widget-movers" id="widget-movers">
+        <h3>Top Market Movers</h3>
+        <ul id="movers-list" class="movers-list"></ul>
+      </section>
+    </div>
+  </main>
+
+  <!-- Transaction Modal -->
+  <div id="transaction-modal" class="dashboard-modal" aria-hidden="true">
+    <div class="modal-backdrop"></div>
+    <div class="modal-box modal-transaction">
+      <div class="modal-head">
+        <h2>Nova transação</h2>
+        <button type="button" class="modal-close" aria-label="Fechar"><i data-lucide="x" width="20" height="20"></i></button>
+      </div>
+      <form id="transaction-form" class="modal-form">
+        <div class="tx-type-row">
+          <button type="button" class="tx-type-btn active" data-type="buy">Comprar</button>
+          <button type="button" class="tx-type-btn" data-type="sell">Vender</button>
+        </div>
+        <input type="hidden" id="tx-type" name="type" value="buy" />
+        <div class="form-group">
+          <label for="tx-ticker">Ticker</label>
+          <input type="text" id="tx-ticker" name="ticker" placeholder="AAPL, BTC..." autocomplete="off" />
+          <div id="tx-ticker-dropdown" class="tx-dropdown"></div>
+        </div>
+        <div class="form-group">
+          <label for="tx-quantity">Quantidade</label>
+          <input type="number" id="tx-quantity" name="quantity" step="any" min="0" required />
+        </div>
+        <div class="form-group">
+          <label for="tx-price">Preço</label>
+          <input type="number" id="tx-price" name="price" step="0.01" min="0" required />
+        </div>
+        <div class="form-group">
+          <label for="tx-date">Data</label>
+          <input type="date" id="tx-date" name="date" required />
+        </div>
+        <div class="form-group">
+          <label for="tx-notes">Notas (opcional)</label>
+          <textarea id="tx-notes" name="notes" rows="2"></textarea>
+        </div>
+        <div class="form-actions">
+          <button type="button" class="btn-secondary" id="tx-cancel">Cancelar</button>
+          <button type="submit" class="btn-primary">Registrar</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Asset Detail Panel (simplified) -->
+  <div id="asset-panel" class="asset-panel" aria-hidden="true">
+    <div class="asset-panel-backdrop"></div>
+    <div class="asset-panel-content">
+      <div class="asset-panel-head">
+        <h2 id="asset-panel-title">Ativo</h2>
+        <button type="button" class="modal-close asset-panel-close" aria-label="Fechar"><i data-lucide="x" width="20" height="20"></i></button>
+      </div>
+      <div id="asset-panel-body"></div>
+    </div>
+  </div>
+
+  <!-- Settings Drawer -->
+  <div id="settings-drawer" class="settings-drawer" aria-hidden="true">
+    <div class="settings-backdrop"></div>
+    <div class="settings-content">
+      <div class="settings-head">
+        <h2>Configurações</h2>
+        <button type="button" class="modal-close settings-close" aria-label="Fechar"><i data-lucide="x" width="20" height="20"></i></button>
+      </div>
+      <div class="settings-body">
+        <div class="settings-row">
+          <span>Tema</span>
+          <button type="button" class="header-btn" id="settings-theme-btn"><i data-lucide="sun" width="18" height="18"></i></button>
+        </div>
+        <div class="settings-row">
+          <span>Ocultar valores</span>
+          <button type="button" class="settings-toggle" id="settings-values-btn">Off</button>
+        </div>
+        <h3 class="settings-section">Dados</h3>
+        <button type="button" class="settings-action" id="settings-export-csv"><i data-lucide="download" width="18" height="18"></i> Exportar portfólio (CSV)</button>
+        <button type="button" class="settings-action" id="settings-import-csv"><i data-lucide="upload" width="18" height="18"></i> Importar portfólio (CSV)</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Import CSV Modal -->
+  <div id="import-modal" class="dashboard-modal" aria-hidden="true">
+    <div class="modal-backdrop"></div>
+    <div class="modal-box">
+      <div class="modal-head">
+        <h2>Importar CSV</h2>
+        <button type="button" class="modal-close import-close" aria-label="Fechar"><i data-lucide="x" width="20" height="20"></i></button>
+      </div>
+      <div class="modal-form">
+        <p class="text-muted">Formato: Date,Ticker,Type,Quantity,Price,Notes</p>
+        <div class="form-group">
+          <label for="import-file">Arquivo CSV</label>
+          <input type="file" id="import-file" accept=".csv" />
+        </div>
+        <div id="import-result" class="import-result"></div>
+        <button type="button" class="btn-primary" id="import-do">Importar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Mobile bottom bar -->
+  <nav class="dashboard-mobile-nav" id="mobile-nav">
+    <button type="button" class="mobile-nav-btn" data-open-transaction><i data-lucide="plus" width="24" height="24"></i><span>Invest</span></button>
+    <button type="button" class="mobile-nav-btn"><i data-lucide="arrow-left-right" width="24" height="24"></i><span>Transfer</span></button>
+    <button type="button" class="mobile-nav-btn" data-focus-watchlist><i data-lucide="star" width="24" height="24"></i><span>Watchlist</span></button>
+    <button type="button" class="mobile-nav-btn" data-open-asset><i data-lucide="sparkles" width="24" height="24"></i><span>AI</span></button>
+  </nav>
+
+  <!-- Share card modal (viral style, no $ values) -->
+  <div id="share-modal" class="dashboard-modal share-modal" aria-hidden="true">
+    <div class="modal-backdrop share-modal-backdrop"></div>
+    <div class="modal-box">
+      <div class="modal-head">
+        <h2>Compartilhar carteira</h2>
+        <button type="button" class="modal-close share-modal-close" aria-label="Fechar"><i data-lucide="x" width="20" height="20"></i></button>
+      </div>
+      <div id="share-card-wrap">
+        <div id="share-card"></div>
+      </div>
+      <p class="text-muted" style="text-align:center;margin-top:8px">Nenhum valor em dinheiro é exibido no compartilhamento.</p>
+      <div class="share-actions">
+        <button type="button" class="btn-primary" id="share-download-png">Baixar PNG</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://unpkg.com/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+  <script src="app-dashboard.js"></script>
+</body>
+</html>

@@ -596,7 +596,11 @@ def create_db() -> None:
 app = FastAPI(title="Purp API", version="7.0", on_startup=[create_db, validate_api_on_startup])
 
 _allowed_origins_raw = os.getenv("ALLOWED_ORIGINS", "")
-_ALLOWED_ORIGINS = [o.strip() for o in _allowed_origins_raw.split(",") if o.strip()] if _allowed_origins_raw else ["*"]
+# Com allow_credentials=True o browser não aceita "*"; precisamos de origens explícitas.
+# Sempre incluir localhost para desenvolvimento local contra a API em produção.
+_origin_list = [o.strip() for o in _allowed_origins_raw.split(",") if o.strip()] if _allowed_origins_raw else []
+_dev_origins = ["http://localhost:3000", "http://127.0.0.1:3000"]
+_ALLOWED_ORIGINS = list(dict.fromkeys(_origin_list + _dev_origins)) if _origin_list else _dev_origins
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_ALLOWED_ORIGINS,
@@ -648,16 +652,30 @@ async def add_security_headers(request: Request, call_next):
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
 @app.get("/")
-async def read_index():
+async def read_index(request: Request):
+    """Quando FRONTEND_URL está definida, redireciona para o app Next.js (novo design)."""
+    if FRONTEND_URL:
+        path = "/"
+        if request.url.query:
+            path += "?" + request.url.query
+        return RedirectResponse(url=FRONTEND_URL + path, status_code=302)
     return FileResponse("static/index.html")
 
 @app.get("/reset-password")
-async def reset_password_page():
-    """Serve a mesma SPA para o usuário abrir o link do email e ver o formulário de redefinição."""
+async def reset_password_page(request: Request):
+    """Link de redefinição de senha: redireciona para o Next.js com query (token/reset) preservada."""
+    if FRONTEND_URL:
+        path = "/"
+        if request.url.query:
+            path += "?" + request.url.query
+        return RedirectResponse(url=FRONTEND_URL + path, status_code=302)
     return FileResponse("static/index.html")
 
 @app.get("/home")
-async def home_dashboard():
+async def home_dashboard(request: Request):
+    """Dashboard: redireciona para o app Next.js em /home."""
+    if FRONTEND_URL:
+        return RedirectResponse(url=FRONTEND_URL.rstrip("/") + "/home", status_code=302)
     return FileResponse("static/home.html")
 
 # Cada seção é uma página separada para melhor organização da área logada.
@@ -672,7 +690,10 @@ HOME_SECTION_FILES = {
 }
 
 @app.get("/home/{section}")
-async def home_section(section: str):
+async def home_section(request: Request, section: str):
+    """Seções do dashboard legado: redireciona para /home no Next.js (uma única SPA)."""
+    if FRONTEND_URL:
+        return RedirectResponse(url=FRONTEND_URL.rstrip("/") + "/home", status_code=302)
     section_file = HOME_SECTION_FILES.get(section)
     if not section_file:
         raise HTTPException(404, "Section not found")
