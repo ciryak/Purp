@@ -3,9 +3,10 @@
 
   var AUTH_CONFIG = {
     get API_BASE() {
-      return typeof window !== "undefined" && window.location.origin.startsWith("http://localhost")
-        ? "/api/purp"
-        : "https://purp-production.up.railway.app";
+      if (typeof window === "undefined") return "https://purp-production.up.railway.app";
+      var o = window.location.origin;
+      if (o.startsWith("http://localhost") || o.startsWith("http://127.0.0.1")) return "";
+      return "https://purp-production.up.railway.app";
     },
     ENDPOINTS: {
       register: "/auth/register",
@@ -126,7 +127,8 @@
       .catch(function () {})
       .then(function () {
         return Promise.all(AUTH_CONFIG.STOCK_LIST.map(function (s) {
-          return fetch("https://corsproxy.io/?url=https://query1.finance.yahoo.com/v8/finance/chart/" + s.sym + "?range=1d&interval=1d")
+          var base = AUTH_CONFIG.API_BASE || "";
+          return fetch(base + "/api/proxy/yahoo-chart?symbol=" + encodeURIComponent(s.sym))
             .then(function (res) { return res.json(); })
             .then(function (json) {
               var meta = json && json.chart && json.chart.result && json.chart.result[0] && json.chart.result[0].meta;
@@ -387,7 +389,7 @@
             if (r.ok) {
               closeAuth();
               saveSession(r.data.token, r.data.user);
-              window.location.href = "home-new.html";
+              window.location.href = "/home";
             } else {
               if (r.data.detail && (r.data.detail.indexOf("not verified") !== -1 || r.data.detail.indexOf("verificado") !== -1)) {
                 closeAuth();
@@ -420,7 +422,7 @@
               } else {
                 closeAuth();
                 saveSession(r.data.token, r.data.user);
-                window.location.href = "home-new.html";
+                window.location.href = "/home";
               }
             } else showErr(r.data.detail || "Falha no registro");
           })
@@ -580,8 +582,8 @@
       if (target) target.scrollIntoView({ behavior: "smooth" });
     });
   });
-  navUserBtn && navUserBtn.addEventListener("click", function () { window.location.href = "home-new.html"; });
-  mobileNavDashboard && mobileNavDashboard.addEventListener("click", function () { closeDrawer(); window.location.href = "home-new.html"; });
+  navUserBtn && navUserBtn.addEventListener("click", function () { window.location.href = "/home"; });
+  mobileNavDashboard && mobileNavDashboard.addEventListener("click", function () { closeDrawer(); window.location.href = "/home"; });
 
   document.querySelectorAll("[data-stripe]").forEach(function (a) {
     a.addEventListener("click", function (e) {

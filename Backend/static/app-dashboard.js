@@ -66,8 +66,13 @@
     if (typeof lucide !== "undefined" && lucide.createIcons) lucide.createIcons();
   }
 
+  function getApiBase() {
+    if (typeof window !== "undefined" && (window.location.origin.startsWith("http://localhost") || window.location.origin.startsWith("http://127.0.0.1"))) return "";
+    return "https://purp-production.up.railway.app";
+  }
+
   if (!getAuthToken()) {
-    window.location.href = "index-new.html";
+    window.location.href = "/";
     throw new Error("redirect");
   }
 
@@ -168,7 +173,8 @@
         .catch(checkDone);
     }
     stocks.forEach(function (sym) {
-      fetch("https://corsproxy.io/?url=https://query1.finance.yahoo.com/v8/finance/chart/" + sym + "?range=1d&interval=1d")
+      var base = getApiBase();
+      fetch(base + "/api/proxy/yahoo-chart?symbol=" + encodeURIComponent(sym))
         .then(function (r) { return r.json(); })
         .then(function (json) {
           var meta = json && json.chart && json.chart.result && json.chart.result[0] && json.chart.result[0].meta;
@@ -297,8 +303,8 @@
 
   function fetchNews() {
     var tickers = allTickers();
-    var url = "https://min-api.cryptocompare.com/data/v2/news/?lang=EN&limit=15";
-    fetch("https://corsproxy.io/?url=" + encodeURIComponent(url))
+    var base = getApiBase();
+    fetch(base + "/api/proxy/news")
       .then(function (r) { return r.json(); })
       .then(function (data) {
         var list = (data && data.Data) ? data.Data : [];
@@ -669,7 +675,7 @@
         document.getElementById("user-menu").setAttribute("aria-hidden", "true");
         if (btn.getAttribute("data-action") === "logout") {
           clearSession();
-          window.location.href = "index-new.html";
+          window.location.href = "/";
         }
       });
     });

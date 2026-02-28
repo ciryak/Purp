@@ -19,6 +19,7 @@ import logging
 import threading
 import traceback
 import concurrent.futures
+from pathlib import Path
 import requests
 from datetime import date, datetime, timedelta, timezone
 import sentry_sdk
@@ -82,6 +83,15 @@ if _SENTRY_DSN:
         environment=os.getenv("ENVIRONMENT", "production"),
     )
 
+# Load .env from Backend directory or project root (so root .env is used when running from Backend)
+try:
+    from dotenv import load_dotenv
+    _basedir = Path(__file__).resolve().parent
+    load_dotenv(_basedir / ".env")
+    load_dotenv(_basedir.parent / ".env")
+except ImportError:
+    pass
+
 # ── Config ─────────────────────────────────────────────────────────────────────
 SECRET_KEY   = os.getenv("SECRET_KEY", "")
 ALGORITHM    = os.getenv("ALGORITHM", "HS256")
@@ -121,9 +131,9 @@ FROM_EMAIL     = os.getenv("FROM_EMAIL", "Purp <noreply@getpurpai.com>")
 
 if RESEND_API_KEY:
     resend.api_key = RESEND_API_KEY
-    print("✅ Resend configured")
+    print("[OK] Resend configured")
 else:
-    print("⚠️  RESEND_API_KEY not set — emails disabled")
+    print("WARN: RESEND_API_KEY not set - emails disabled")
 
 FRONTEND_URL = os.getenv("FRONTEND_URL", "").rstrip("/")  # ex: https://getpurpai.com — link do email de reset
 
@@ -230,7 +240,7 @@ def require_tax_pro(user: User) -> None:
 
 def _send_email(to_email: str, subject: str, html: str) -> None:
     if not RESEND_API_KEY:
-        print("⚠️  Email skipped — RESEND_API_KEY not configured")
+        print("WARN: Email skipped - RESEND_API_KEY not configured")
         return
     try:
         resp = resend.Emails.send({
@@ -239,7 +249,7 @@ def _send_email(to_email: str, subject: str, html: str) -> None:
             "subject": subject,
             "html":    html,
         })
-        print(f"✅ Email sent → {to_email} | id={resp.get('id')}")
+        print(f"[OK] Email sent -> {to_email} | id={resp.get('id')}")
     except Exception as e:
         print(f"❌ Resend error ({to_email}): {e}")
 
@@ -555,13 +565,13 @@ def validate_api_on_startup() -> None:
         api_connection_ok = data is not None and (data.get("current_price") or 0) > 0
     except Exception as e:
         api_connection_ok = False
-        print(f"⚠️  API connection check failed: {e}")
-    print("✅ API connection OK" if api_connection_ok else "⚠️  API connection check failed — fallbacks will be used at runtime")
+        print(f"WARN: API connection check failed: {e}")
+    print("API connection OK" if api_connection_ok else "WARN: API connection check failed - fallbacks will be used at runtime")
 
 
 def create_db() -> None:
     global PRICE_PLAN_MAP
-    print(f"🗄️  DB: {DATABASE_URL[:50]}…")
+    print(f"DB: {DATABASE_URL[:50]}...")
 
     try:
         from alembic.config import Config as AlembicConfig
@@ -570,11 +580,11 @@ def create_db() -> None:
         alembic_cfg = AlembicConfig(os.path.join(os.path.dirname(__file__), "alembic.ini"))
         alembic_cfg.set_main_option("sqlalchemy.url", DATABASE_URL)
         alembic_command.upgrade(alembic_cfg, "head")
-        print("✅ Alembic migrations applied")
+        print("[OK] Alembic migrations applied")
     except Exception as e:
-        print(f"⚠️  Alembic migration failed ({e}), falling back to create_all")
+        print(f"WARN: Alembic migration failed ({e}), falling back to create_all")
         SQLModel.metadata.create_all(engine)
-        print("✅ Tables OK (create_all fallback)")
+        print("[OK] Tables OK (create_all fallback)")
 
     try:
         with Session(engine) as s:
@@ -586,10 +596,10 @@ def create_db() -> None:
                     u.is_verified = True
                 s.add(u); s.commit()
     except Exception as e:
-        print(f"⚠️  Owner plan check: {e}")
+        print(f"WARN: Owner plan check: {e}")
 
     PRICE_PLAN_MAP = _build_price_plan_map()
-    print(f"💳 Price→plan map: {PRICE_PLAN_MAP}")
+    print(f"Price->plan map: {PRICE_PLAN_MAP}")
 
 # ── App ────────────────────────────────────────────────────────────────────────
 
@@ -597,10 +607,10 @@ app = FastAPI(title="Purp API", version="7.0", on_startup=[create_db, validate_a
 
 _allowed_origins_raw = os.getenv("ALLOWED_ORIGINS", "")
 # Com allow_credentials=True o browser não aceita "*"; precisamos de origens explícitas.
-# Sempre incluir localhost para desenvolvimento local contra a API em produção.
 _origin_list = [o.strip() for o in _allowed_origins_raw.split(",") if o.strip()] if _allowed_origins_raw else []
-_dev_origins = ["http://localhost:3000", "http://127.0.0.1:3000"]
-_ALLOWED_ORIGINS = list(dict.fromkeys(_origin_list + _dev_origins)) if _origin_list else _dev_origins
+_dev_origins = ["http://localhost:3000", "http://127.0.0.1:3000", "http://localhost:8000", "http://127.0.0.1:8000"]
+_prod_origins = ["https://getpurpai.com", "https://www.getpurpai.com"]
+_ALLOWED_ORIGINS = list(dict.fromkeys(_origin_list + _dev_origins + _prod_origins))
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_ALLOWED_ORIGINS,
@@ -619,6 +629,53 @@ async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
         status_code=429,
         content={"detail": "Too many requests. Please wait a moment and try again."},
     )
+
+
+# ── Proxy para Yahoo / CryptoCompare (evitar CORS e 403 do corsproxy.io em produção) ──
+YAHOO_CHART_URL = "https://query1.finance.yahoo.com/v8/finance/chart/{symbol}?range=1d&interval=1d"
+YAHOO_SPARK_URL = "https://query1.finance.yahoo.com/v8/finance/spark?symbols={symbols}&range=1d&interval=1d"
+CRYPTOCOMPARE_NEWS_URL = "https://min-api.cryptocompare.com/data/v2/news/?lang=EN&limit=15"
+
+
+@app.get("/api/proxy/yahoo-chart")
+def proxy_yahoo_chart(symbol: str = Query(..., min_length=1, max_length=20)):
+    """Proxy para Yahoo Finance chart (um símbolo). Evita CORS e 403 do corsproxy.io."""
+    url = YAHOO_CHART_URL.format(symbol=symbol.upper())
+    try:
+        r = requests.get(url, timeout=10, headers={"User-Agent": "Purp/1.0"})
+        r.raise_for_status()
+        return r.json()
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Upstream error: {str(e)[:100]}")
+
+
+@app.get("/api/proxy/yahoo-spark")
+def proxy_yahoo_spark(symbols: str = Query(..., min_length=1, max_length=200)):
+    """Proxy para Yahoo Finance spark (vários símbolos). Evita CORS e 403 do corsproxy.io."""
+    url = YAHOO_SPARK_URL.format(symbols=symbols.replace(" ", "").upper())
+    try:
+        r = requests.get(url, timeout=10, headers={"User-Agent": "Purp/1.0"})
+        r.raise_for_status()
+        data = r.json()
+        # Normalizar: Yahoo devolve chartPreviousClose; o frontend usa previousClose
+        if isinstance(data, dict):
+            for k, v in data.items():
+                if isinstance(v, dict) and "chartPreviousClose" in v and "previousClose" not in v:
+                    data[k] = {**v, "previousClose": v["chartPreviousClose"]}
+        return data
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Upstream error: {str(e)[:100]}")
+
+
+@app.get("/api/proxy/news")
+def proxy_news():
+    """Proxy para CryptoCompare news. Evita CORS e 403 do corsproxy.io."""
+    try:
+        r = requests.get(CRYPTOCOMPARE_NEWS_URL, timeout=10, headers={"User-Agent": "Purp/1.0"})
+        r.raise_for_status()
+        return r.json()
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Upstream error: {str(e)[:100]}")
 
 
 @app.middleware("http")
@@ -659,7 +716,7 @@ async def read_index(request: Request):
         if request.url.query:
             path += "?" + request.url.query
         return RedirectResponse(url=FRONTEND_URL + path, status_code=302)
-    return FileResponse("static/index.html")
+    return FileResponse("static/index-new.html")
 
 @app.get("/reset-password")
 async def reset_password_page(request: Request):
@@ -669,14 +726,14 @@ async def reset_password_page(request: Request):
         if request.url.query:
             path += "?" + request.url.query
         return RedirectResponse(url=FRONTEND_URL + path, status_code=302)
-    return FileResponse("static/index.html")
+    return FileResponse("static/index-new.html")
 
 @app.get("/home")
 async def home_dashboard(request: Request):
     """Dashboard: redireciona para o app Next.js em /home."""
     if FRONTEND_URL:
         return RedirectResponse(url=FRONTEND_URL.rstrip("/") + "/home", status_code=302)
-    return FileResponse("static/home.html")
+    return FileResponse("static/home-new.html")
 
 # Cada seção é uma página separada para melhor organização da área logada.
 HOME_SECTION_FILES = {
@@ -2759,7 +2816,7 @@ def fear_greed():
             "classification": d.get("value_classification", "Neutral"),
         }
     except Exception as e:
-        print(f"⚠️ Fear & Greed: {e}")
+        print(f"WARN Fear & Greed: {e}")
         return {"value": 50, "classification": "Neutral"}
 
 
@@ -2958,7 +3015,7 @@ async def stripe_webhook(request: Request, session: Session = Depends(get_sessio
                         u = session.exec(select(User).where(User.email == email)).first()
                         if u: user_id = u.id
                 except Exception as e:
-                    print(f"⚠️  Stripe customer retrieve: {e}")
+                    print(f"WARN: Stripe customer retrieve: {e}")
         if user_id:
             u = session.get(User, user_id)
             if u and has_plan(u, "investor", "tax_pro"):
@@ -2981,7 +3038,7 @@ async def stripe_webhook(request: Request, session: Session = Depends(get_sessio
                         u.plan = new_plan; u.is_premium = True
                         session.add(u); session.commit()
         except Exception as e:
-            print(f"⚠️  subscription.updated handler: {e}")
+            print(f"WARN: subscription.updated handler: {e}")
 
     return {"ok": True}
 
