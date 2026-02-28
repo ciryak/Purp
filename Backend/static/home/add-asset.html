@@ -3,6 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="api-base" content="https://purp-production.up.railway.app">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;0,9..40,800&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/static/home/home-style.css">
@@ -38,7 +39,7 @@
 
 <div id="app-shell" class="app-shell hidden">
   <aside id="sidebar" class="sidebar" aria-label="Main navigation">
-    <a href="/home" class="sidebar-brand" aria-label="Go to dashboard home"><div class="sidebar-brand-icon">P</div><span class="sidebar-brand-name">Purp</span></a>
+    <a href="/home" class="sidebar-brand" aria-label="Go to home"><div class="sidebar-brand-icon">P</div><span class="sidebar-brand-name">Purp</span></a>
     <div class="sidebar-profile">
       <div class="sidebar-avatar" id="profile-avatar">U</div>
       <div class="sidebar-profile-info">
@@ -97,7 +98,7 @@
             <label class="field-label">Purchase date (optional)</label>
             <input type="date" id="date-input">
           </div>
-          <button type="button" id="btn-save-asset" class="btn-primary" style="margin-top:4px;">Save Asset</button>
+          <button type="button" id="btn-save-asset" class="btn-primary" style="margin-top:4px;">Salvar Ativo</button>
         </div>
       </div>
     </section>
@@ -107,7 +108,7 @@
 <!-- Detail overlay (asset info + news + AI) -->
 <div id="detail-view" class="overlay-screen" role="dialog" aria-label="Asset detail" aria-modal="true">
   <div class="detail-nav">
-    <button class="back-btn" id="btn-back" aria-label="Voltar"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M19 12H5M12 5l-7 7 7 7"/></svg>Voltar</button>
+    <button class="back-btn" id="btn-back" aria-label="Back"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M19 12H5M12 5l-7 7 7 7"/></svg>Back</button>
     <span id="holding-badge" class="holding-badge">—</span>
   </div>
   <div class="detail-hero">
@@ -129,17 +130,17 @@
   <div class="detail-chart-wrap"><canvas id="detailChart"></canvas></div>
   <div class="detail-extra">
     <div class="detail-section">
-      <h4 class="detail-section-title">Últimas notícias</h4>
-      <div id="detail-news-list" class="detail-news-list">Carregando…</div>
+      <h4 class="detail-section-title">Latest news</h4>
+      <div id="detail-news-list" class="detail-news-list">Loading…</div>
     </div>
     <div class="detail-section">
       <h4 class="detail-section-title">Insight AI</h4>
-      <p id="detail-ai-text" class="detail-ai-text">Carregando…</p>
-      <button type="button" id="detail-ai-refresh" class="btn-ghost btn-sm">Atualizar insight</button>
+      <p id="detail-ai-text" class="detail-ai-text">Loading…</p>
+      <button type="button" id="detail-ai-refresh" class="btn-ghost btn-sm">Refresh insight</button>
     </div>
     <div id="detail-actions-guest" class="detail-actions-guest">
-      <button type="button" id="btn-detail-add-portfolio" class="btn-primary">Adicionar à carteira</button>
-      <button type="button" id="btn-detail-add-watchlist" class="btn-ghost">Adicionar à watchlist</button>
+      <button type="button" id="btn-detail-add-portfolio" class="btn-primary">Add to portfolio</button>
+      <button type="button" id="btn-detail-add-watchlist" class="btn-ghost">Add to watchlist</button>
     </div>
   </div>
 </div>
@@ -161,11 +162,13 @@
     </div>
     <div class="modal-actions">
       <button class="btn-ghost" id="btn-upgrade-cancel">Maybe later</button>
-      <button class="btn-primary btn-gold" id="btn-upgrade-confirm">Get Premium</button>
+      <button class="btn-primary btn-gold" id="btn-upgrade-confirm">Go Premium</button>
     </div>
   </div>
 </div>
 
+<script src="/static/home/config.js" defer></script>
+<script src="/static/home/dom-helpers.js" defer></script>
 <script src="/static/home/_base.js" defer></script>
 </body>
 </html>

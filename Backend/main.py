@@ -10,15 +10,20 @@ import io
 import os
 import csv
 import re
+import json
+import time
 import random
 import string
 import secrets
+import logging
 import threading
 import traceback
 import concurrent.futures
 import requests
 from datetime import date, datetime, timedelta, timezone
 import sentry_sdk
+from sentry_sdk.integrations.fastapi import FastApiIntegration
+from sentry_sdk.integrations.starlette import StarletteIntegration
 import resend
 from fastapi import FastAPI, HTTPException, Depends, Header, Request, BackgroundTasks, UploadFile, File, Query
 from fastapi.middleware.cors import CORSMiddleware
@@ -30,13 +35,15 @@ import bcrypt
 import stripe
 from jose import JWTError, jwt
 from fastapi.staticfiles import StaticFiles
-
-import sentry_sdk
-from sentry_sdk.integrations.fastapi import FastApiIntegration
-from sentry_sdk.integrations.starlette import StarletteIntegration
 from slowapi import Limiter
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
+
+logger = logging.getLogger("purp")
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
+)
 
 from models import Asset, User, Transaction, PriceAlert, WatchlistItem, ProcessedEvent, Dividend, EmailVerification, NetWorthEntry, PasswordResetToken
 from services import (
@@ -66,12 +73,14 @@ from gateways.alpaca import (
 )
 from brokers import fetch_broker_data
 
-sentry_sdk.init(
-    dsn=os.getenv("SENTRY_DSN", ""),
-    integrations=[FastApiIntegration(), StarletteIntegration()],
-    traces_sample_rate=float(os.getenv("SENTRY_TRACES_SAMPLE_RATE", "0.1")),
-    environment=os.getenv("ENVIRONMENT", "production"),
-)
+_SENTRY_DSN = os.getenv("SENTRY_DSN", "")
+if _SENTRY_DSN:
+    sentry_sdk.init(
+        dsn=_SENTRY_DSN,
+        integrations=[FastApiIntegration(), StarletteIntegration()],
+        traces_sample_rate=float(os.getenv("SENTRY_TRACES_SAMPLE_RATE", "0.1")),
+        environment=os.getenv("ENVIRONMENT", "production"),
+    )
 
 # ── Config ─────────────────────────────────────────────────────────────────────
 SECRET_KEY   = os.getenv("SECRET_KEY", "")
@@ -89,9 +98,17 @@ if not SECRET_KEY or SECRET_KEY.lower().strip() in _INSECURE_KEYS or len(SECRET_
     )
     sys.exit(1)
 
+ENVIRONMENT = os.getenv("ENVIRONMENT", "production")
+_IS_PRODUCTION = ENVIRONMENT.lower() in ("production", "prod")
+
 CRON_SECRET = os.getenv("CRON_SECRET", "")
 if not CRON_SECRET:
-    print("WARNING: CRON_SECRET is not set — cron endpoints are unprotected.")
+    if _IS_PRODUCTION:
+        import sys
+        print("FATAL: CRON_SECRET is required in production. Set it and restart.")
+        sys.exit(1)
+    else:
+        print("WARNING: CRON_SECRET is not set — cron endpoints are unprotected.")
 
 stripe.api_key = os.getenv("STRIPE_SECRET_KEY", "")
 
@@ -545,55 +562,26 @@ def validate_api_on_startup() -> None:
 def create_db() -> None:
     global PRICE_PLAN_MAP
     print(f"🗄️  DB: {DATABASE_URL[:50]}…")
-    
-    # 1. Cria as tabelas baseadas nos modelos (se não existirem)
+
     try:
+        from alembic.config import Config as AlembicConfig
+        from alembic import command as alembic_command
+
+        alembic_cfg = AlembicConfig(os.path.join(os.path.dirname(__file__), "alembic.ini"))
+        alembic_cfg.set_main_option("sqlalchemy.url", DATABASE_URL)
+        alembic_command.upgrade(alembic_cfg, "head")
+        print("✅ Alembic migrations applied")
+    except Exception as e:
+        print(f"⚠️  Alembic migration failed ({e}), falling back to create_all")
         SQLModel.metadata.create_all(engine)
-        print("✅ Tables OK")
-    except Exception as e:
-        print(f"❌ FATAL table creation failed: {e}")
-        raise
+        print("✅ Tables OK (create_all fallback)")
 
-    # 2. Cria o índice único de email (se não existir)
-    try:
-        with engine.connect() as conn:
-            if _is_postgres:
-                conn.exec_driver_sql(
-                    'CREATE UNIQUE INDEX IF NOT EXISTS ix_user_email_unique ON "user"(email)'
-                )
-            else:
-                conn.exec_driver_sql(
-                    "CREATE UNIQUE INDEX IF NOT EXISTS ix_user_email_unique ON user(email)"
-                )
-            conn.commit()
-    except Exception as e:
-        print(f"⚠️  Email index: {e}")
-
-    # 3. Migração da coluna notification_digest (CORRIGIDO)
-    try:
-        with engine.connect() as conn:
-            if _is_postgres:
-                # No Postgres, usamos IF NOT EXISTS para evitar o erro de 'already exists'
-                conn.exec_driver_sql('ALTER TABLE "user" ADD COLUMN IF NOT EXISTS notification_digest BOOLEAN DEFAULT TRUE')
-            else:
-                # No SQLite, tentamos adicionar normalmente (o try/except captura se já existir)
-                conn.exec_driver_sql('ALTER TABLE user ADD COLUMN notification_digest BOOLEAN DEFAULT 1')
-            conn.commit()
-            print("✅ Checked notification_digest column")
-    except Exception as e:
-        # Se cair aqui, é porque a coluna já existe (no caso do SQLite) ou houve erro de conexão
-        # Usamos uma mensagem mais informativa e menos "assustadora"
-        if "already exists" in str(e).lower():
-            print("ℹ️  notification_digest column already present.")
-        else:
-            print(f"ℹ️  notification_digest migration note: {e}")
     try:
         with Session(engine) as s:
             u = s.get(User, 1)
             if u and u.plan == "free":
                 u.plan = "investor"
                 u.is_premium = True
-                # Owner is always verified
                 if not u.is_verified:
                     u.is_verified = True
                 s.add(u); s.commit()
@@ -606,8 +594,15 @@ def create_db() -> None:
 # ── App ────────────────────────────────────────────────────────────────────────
 
 app = FastAPI(title="Purp API", version="7.0", on_startup=[create_db, validate_api_on_startup])
+
+_allowed_origins_raw = os.getenv("ALLOWED_ORIGINS", "")
+_ALLOWED_ORIGINS = [o.strip() for o in _allowed_origins_raw.split(",") if o.strip()] if _allowed_origins_raw else ["*"]
 app.add_middleware(
-    CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"]
+    CORSMiddleware,
+    allow_origins=_ALLOWED_ORIGINS,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 limiter = Limiter(key_func=get_remote_address)
@@ -620,6 +615,24 @@ async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
         status_code=429,
         content={"detail": "Too many requests. Please wait a moment and try again."},
     )
+
+
+@app.middleware("http")
+async def request_logging_middleware(request: Request, call_next):
+    start = time.monotonic()
+    response = await call_next(request)
+    elapsed_ms = round((time.monotonic() - start) * 1000, 1)
+    path = request.url.path
+    if not path.startswith("/static") and not path.startswith("/extension-assets"):
+        logger.info(json.dumps({
+            "method": request.method, "path": path,
+            "status": response.status_code, "ms": elapsed_ms,
+        }))
+    if response.status_code >= 500:
+        sentry_sdk.capture_message(
+            f"5xx on {request.method} {path}", level="error",
+        )
+    return response
 
 
 @app.middleware("http")
@@ -884,7 +897,7 @@ def login(request: Request, data: LoginInput, session: Session = Depends(get_ses
 
     # 2. Valida credenciais
     if not user or not verify_pw(data.password, user.password_hash):
-        raise HTTPException(401, "E-mail ou senha incorretos")
+        raise HTTPException(401, "Incorrect email or password")
 
     # 3. Gera o token (necessário para autorizar a verificação posterior)
     token = create_token(user.id)
@@ -1325,8 +1338,14 @@ def check_alerts_endpoint(request: Request, background_tasks: BackgroundTasks):
 
 
 def _run_alert_check():
-    with Session(engine) as session:
-        check_and_trigger_alerts(session, send_alert_email_async)
+    start = time.monotonic()
+    try:
+        with Session(engine) as session:
+            check_and_trigger_alerts(session, send_alert_email_async)
+        logger.info(json.dumps({"cron": "alert_check", "status": "ok", "ms": round((time.monotonic() - start) * 1000, 1)}))
+    except Exception as e:
+        logger.error(json.dumps({"cron": "alert_check", "status": "error", "error": str(e)}))
+        sentry_sdk.capture_exception(e)
 
 
 @app.post("/digest/send-weekly")
@@ -1341,6 +1360,7 @@ def send_weekly_digest(request: Request, session: Session = Depends(get_session)
         )
     ).all()
 
+    start = time.monotonic()
     sent = 0
     skipped = 0
     for user in users:
@@ -1352,6 +1372,7 @@ def send_weekly_digest(request: Request, session: Session = Depends(get_session)
         send_weekly_digest_email_async(user.email, user.username, digest_data)
         sent += 1
 
+    logger.info(json.dumps({"cron": "weekly_digest", "sent": sent, "skipped": skipped, "ms": round((time.monotonic() - start) * 1000, 1)}))
     return {"sent": sent, "skipped": skipped}
 
 
@@ -2969,6 +2990,8 @@ def health():
 
 @app.post("/debug/test-email")
 def test_email(user_id: int = Depends(get_current_user), session: Session = Depends(get_session)):
+    if _IS_PRODUCTION:
+        raise HTTPException(404, "Not found")
     user = session.get(User, user_id)
     if not user:
         raise HTTPException(404, "User not found")
@@ -2978,6 +3001,8 @@ def test_email(user_id: int = Depends(get_current_user), session: Session = Depe
 
 @app.get("/debug")
 def debug_db():
+    if _IS_PRODUCTION:
+        raise HTTPException(404, "Not found")
     from sqlalchemy import text as sa_text
     result = {
         "db_url_prefix": DATABASE_URL[:40], "is_postgres": _is_postgres,

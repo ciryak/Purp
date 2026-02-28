@@ -5,12 +5,8 @@
   "description": "Track your crypto & stock portfolio with Gemini AI insights.",
   "permissions": ["storage", "alarms", "notifications", "tabs"],
   "host_permissions": [
-    "https://purp-backend.railway.app/*",
     "https://purp-production.up.railway.app/*",
-    "https://*.railway.app/*",
-    "https://fonts.googleapis.com/*",
-    "https://fonts.gstatic.com/*",
-    "https://*.sentry.io/*" 
+    "https://*.sentry.io/*"
   ],
   "action": {
     "default_popup": "popup.html",

@@ -30,13 +30,16 @@ COPY gateways/ gateways/
 COPY domain/ domain/
 COPY infrastructure/ infrastructure/
 
+# Alembic migrations
+COPY alembic.ini .
+COPY alembic/ alembic/
+
 # Cria o diretório /data para SQLite — no Railway, monte um Volume em /data via dashboard
 # A instrução VOLUME é proibida no Railway; o mount é configurado na interface do Railway
 RUN mkdir -p /data
 
-# Fallback: usa SQLite em /data se DATABASE_URL não estiver definida
-# (Railway injeta DATABASE_URL apontando para Postgres automaticamente)
-ENV DATABASE_URL=sqlite:////data/database.db
+# Railway injeta DATABASE_URL apontando para Postgres.
+# Não definimos fallback aqui para forçar configuração explícita em produção.
 
 # Porta exposta
 EXPOSE 8080

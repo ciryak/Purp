@@ -3,6 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="api-base" content="https://purp-production.up.railway.app">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;0,9..40,800;1,9..40,400&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/static/home/home-style.css">
@@ -74,7 +75,7 @@
   <aside id="sidebar" class="sidebar" aria-label="Main navigation">
 
     <!-- Logo / Brand -->
-    <a href="/home" class="sidebar-brand" aria-label="Go to dashboard home">
+    <a href="/home" class="sidebar-brand" aria-label="Go to dashboard">
       <div class="sidebar-brand-icon">P</div>
       <span class="sidebar-brand-name">Purp</span>
     </a>
@@ -123,7 +124,7 @@
       </a>
       <a href="/home/profile" class="nav-item" id="nav-profile">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-        <span>My profile</span>
+        <span>My Profile</span>
       </a>
       <a href="/home/settings" class="nav-item" id="nav-settings">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
@@ -186,10 +187,10 @@
         </div>
       </header>
 
-      <!-- Grade 3 colunas: Esquerda | Centro | Direita -->
+      <!-- Grade 3 colunas: Left (Carteira) | Center (Watchlist/Notícias) | Right (Insights) -->
       <div class="dash-grid dash-grid-16x9">
 
-        <!-- ── COLUNA ESQUERDA: Visão geral ────────────────────────── -->
+        <!-- ── COLUNA ESQUERDA: Carteira ───────────────────────────── -->
         <div class="dash-col dash-col-left">
           <article class="premium-card card-portfolio-overview">
             <header class="card-header">
@@ -208,18 +209,9 @@
               Register Transaction
             </button>
           </article>
-
-          <article class="premium-card card-news">
-            <header class="card-header">
-              <span class="card-label">Relevant News</span>
-            </header>
-            <div id="relevant-news-list" class="news-list">
-              <div class="news-loading">Loading news…</div>
-            </div>
-          </article>
         </div>
 
-        <!-- ── COLUNA CENTRAL: Watchlist + Market Analysis ─────────── -->
+        <!-- ── COLUNA CENTRAL: Watchlist + Notícias ────────────────── -->
         <div class="dash-col dash-col-center">
           <section class="watchlist-section" aria-label="My Watchlist">
             <h2 class="section-heading">My Watchlist</h2>
@@ -240,20 +232,12 @@
             </div>
           </section>
 
-          <article class="premium-card card-market-analysis" id="market-analysis-card">
-            <header class="market-analysis-header">
-              <div class="ai-badge">AI</div>
-              <div>
-                <h3 class="card-title">Market Analysis</h3>
-                <p class="card-sub">Detailed asset and sentiment analysis</p>
-              </div>
+          <article class="premium-card card-news">
+            <header class="card-header">
+              <span class="card-label">Relevant News</span>
             </header>
-            <p id="market-analysis-placeholder" class="market-analysis-placeholder">Select an asset from the watchlist or search to see analysis.</p>
-            <div id="market-analysis-content" class="market-analysis-content" style="display:none;">
-              <div id="market-analysis-symbol" class="market-analysis-symbol"></div>
-              <div id="market-analysis-price" class="market-analysis-price"></div>
-              <p id="market-analysis-text" class="market-analysis-text"></p>
-              <button type="button" id="btn-market-analysis-register" class="btn-register-tx">Register Transaction</button>
+            <div id="relevant-news-list" class="news-list">
+              <div class="news-loading">Loading news…</div>
             </div>
           </article>
         </div>
@@ -264,7 +248,7 @@
             <header class="score-header-row">
               <div>
                 <h3 class="score-title">Portfolio Score</h3>
-                <p class="score-sub">Diversification, risk &amp; consistency</p>
+                <p class="score-sub">Diversification, risk & consistency</p>
               </div>
               <div id="score-grade" class="score-grade" aria-label="Grade">—</div>
             </header>
@@ -289,6 +273,23 @@
             <div id="score-change-30d" class="score-change-30d">+0%</div>
           </article>
 
+          <article class="premium-card card-market-analysis" id="market-analysis-card">
+            <header class="market-analysis-header">
+              <div class="ai-badge">AI</div>
+              <div>
+                <h3 class="card-title">Market Analysis</h3>
+                <p class="card-sub">Detailed asset and sentiment analysis</p>
+              </div>
+            </header>
+            <p id="market-analysis-placeholder" class="market-analysis-placeholder">Select an asset from the watchlist or search to see analysis.</p>
+            <div id="market-analysis-content" class="market-analysis-content" style="display:none;">
+              <div id="market-analysis-symbol" class="market-analysis-symbol"></div>
+              <div id="market-analysis-price" class="market-analysis-price"></div>
+              <p id="market-analysis-text" class="market-analysis-text"></p>
+              <button type="button" id="btn-market-analysis-register" class="btn-register-tx">Register Transaction</button>
+            </div>
+          </article>
+
           <article class="premium-card card-movers">
             <header class="card-header">
               <span class="card-label">Top Market Movers</span>
@@ -300,7 +301,7 @@
 
           <article class="premium-card card-fear-greed">
             <header class="card-header">
-              <span class="card-label">Fear &amp; Greed Index</span>
+              <span class="card-label">Fear & Greed Index</span>
             </header>
             <div class="fear-greed-wrap">
               <div class="fear-greed-gauge" role="img" aria-label="Fear and Greed">
@@ -336,7 +337,7 @@
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 17l6-6 4 4 7-7"/><path d="M14 8h6v6"/></svg>
           <span>Market</span>
         </a>
-        <button type="button" class="bottom-nav-item" id="bottom-nav-ai" aria-label="AI">
+        <button type="button" class="bottom-nav-item" id="bottom-nav-ai" aria-label="IA">
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a2 2 0 0 1 2 2c0 .74-.4 1.39-1 1.73V7h1a7 7 0 0 1 7 7h1a1 1 0 0 1 1 1v3a1 1 0 0 1-1 1h-1v1a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-1H2a1 1 0 0 1-1-1v-3a1 1 0 0 1 1-1h1a7 7 0 0 1 7-7h1V5.73c-.6-.34-1-.99-1-1.73a2 2 0 0 1 2-2z"/></svg>
           <span>AI</span>
         </button>
@@ -378,24 +379,24 @@
   <div class="detail-chart-wrap"><canvas id="detailChart"></canvas></div>
   <div class="detail-extra">
     <div class="detail-section">
-      <h4 class="detail-section-title">Últimas notícias</h4>
-      <div id="detail-news-list" class="detail-news-list">Carregando…</div>
+      <h4 class="detail-section-title">Latest News</h4>
+      <div id="detail-news-list" class="detail-news-list">Loading…</div>
     </div>
     <div class="detail-section">
       <h4 class="detail-section-title">Insight AI</h4>
-      <p id="detail-ai-text" class="detail-ai-text">Carregando…</p>
-      <button type="button" id="detail-ai-refresh" class="btn-ghost btn-sm">Atualizar insight</button>
+      <p id="detail-ai-text" class="detail-ai-text">Loading…</p>
+      <button type="button" id="detail-ai-refresh" class="btn-ghost btn-sm">Refresh insight</button>
     </div>
     <div id="detail-actions-guest" class="detail-actions-guest" style="display:none;">
-      <button type="button" id="btn-detail-add-portfolio" class="btn-primary">Adicionar à carteira</button>
-      <button type="button" id="btn-detail-add-watchlist" class="btn-ghost">Adicionar à watchlist</button>
+      <button type="button" id="btn-detail-add-portfolio" class="btn-primary">Add to portfolio</button>
+      <button type="button" id="btn-detail-add-watchlist" class="btn-ghost">Add to watchlist</button>
     </div>
   </div>
 </div>
 
 <!-- ═══ MODALS ═══ -->
 <!-- Sell -->
-<div id="modal-sell" class="modal-overlay" role="dialog" aria-label="Sell position" aria-modal="true">
+<div id="modal-sell" class="modal-overlay" role="dialog" aria-label="Close position" aria-modal="true">
   <div class="modal-box">
     <h2 class="modal-title">Close Position</h2>
     <div class="field-group">
@@ -423,8 +424,8 @@
     <div class="upgrade-price-card">
       <div class="upgrade-price">$19<span class="upgrade-per">/mo</span></div>
       <ul class="upgrade-list">
-        <li>✓ Unlimited assets, watchlist &amp; alerts</li>
-        <li>✓ AI analysis per asset &amp; portfolio</li>
+        <li>✓ Unlimited assets, watchlist & alerts</li>
+        <li>✓ AI analysis per asset & portfolio</li>
         <li>✓ CSV import from brokers</li>
         <li>✓ 2-year price history</li>
         <li>✓ Priority support</li>
@@ -438,7 +439,7 @@
 </div>
 
 <!-- Tax Pro Upgrade -->
-<div id="modal-upgrade-tax-pro" class="modal-overlay" role="dialog" aria-label="Tax Pro plan" aria-modal="true">
+<div id="modal-upgrade-tax-pro" class="modal-overlay" role="dialog" aria-label="Tax Pro Plan" aria-modal="true">
   <div class="modal-box">
     <div class="upgrade-star">💼</div>
     <h2 class="modal-title">Tax Pro Plan</h2>
@@ -466,7 +467,7 @@
   <div class="modal-box">
     <h2 class="modal-title">📥 Import Transactions</h2>
     <p style="font-size:12px;color:var(--text2);text-align:center;margin:-8px 0 16px;">
-      Import your buy &amp; sell history from a broker CSV file.
+      Import your buy & sell history from a broker CSV file.
     </p>
     <div class="field-group" style="margin-bottom:12px;">
       <label class="field-label">Broker / Exchange</label>
@@ -531,6 +532,8 @@
   </div>
 </div>
 
+<script src="/static/home/config.js" defer></script>
+<script src="/static/home/dom-helpers.js" defer></script>
 <script src="/static/home/_base.js" defer></script>
 
 </body>

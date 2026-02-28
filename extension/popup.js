@@ -4,7 +4,9 @@
    ════════════════════════════════════════════════════════════════ */
 
 // ── Config ───────────────────────────────────────────────────────
-const API_BASE         = 'https://purp-production.up.railway.app';
+const API_BASE         = (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.getManifest)
+  ? (chrome.runtime.getManifest().purp_api_base || 'https://purp-production.up.railway.app')
+  : 'https://purp-production.up.railway.app';
 const FREE_ASSET_LIMIT = 4;
 const REFRESH_MS       = 60_000;
 

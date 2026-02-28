@@ -4,10 +4,8 @@
    Sem chrome.storage, sem chrome.runtime — 100% localStorage + fetch.
    ════════════════════════════════════════════════════════════════ */
 
-// ── Config ───────────────────────────────────────────────────────
-const API_BASE         = 'https://purp-production.up.railway.app';
-const FREE_ASSET_LIMIT = 4;
-const REFRESH_MS       = 60_000;
+// ── Config (loaded from config.js) ───────────────────────────────
+// API_BASE, FREE_ASSET_LIMIT, REFRESH_MS are defined in config.js
 
 // ── Helpers ──────────────────────────────────────────────────────
 const $  = (id) => document.getElementById(id);
@@ -827,7 +825,7 @@ function hideTaxProUpgradeModal() { closeGateModal(); }
 async function createCheckout(plan) {
   if (!authToken) { window.location.href = '/'; return; }
   const btn = $('btn-upgrade-confirm') || $('btn-taxpro-confirm');
-  if (btn) { btn.disabled = true; btn.textContent = 'Carregando…'; }
+  if (btn) { btn.disabled = true; btn.textContent = 'Loading…'; }
   try {
     const res = await apiFetch('/stripe/create-checkout', {
       method:  'POST',
@@ -1205,7 +1203,7 @@ async function loadWatchlistCards() {
     const card = document.createElement('div');
     card.className = 'watchlist-card';
     card.dataset.symbol = sym;
-    card.innerHTML = '<div class="watchlist-card-logo"><img src="' + logoUrl + '" alt="" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'block\';this.nextElementSibling.textContent=\'' + sym.slice(0,2) + '\';"><span style="display:none;font-size:11px;"></span></div><div class="watchlist-card-info"><div class="watchlist-card-ticker">' + sym + '</div><div class="watchlist-card-price sensitive-value">' + formatUSD(price) + '</div><div class="watchlist-card-pct ' + (isUp ? 'text-green' : 'text-red') + '">' + (pct >= 0 ? '+' : '') + (pct || 0).toFixed(2) + '%</div></div><div class="watchlist-card-spark"><canvas id="watch-spark-' + sym + '"></canvas></div>';
+    card.innerHTML = '<div class="watchlist-card-logo"><img src="' + logoUrl + '" alt="" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'block\';this.nextElementSibling.textContent=\'' + sym.slice(0,2) + '\';"><span style="display:none;font-size:11px;"></span></div><div class="watchlist-card-info"><div class="watchlist-card-ticker">' + sym + '</div><div class="watchlist-card-price">' + formatUSD(price) + '</div><div class="watchlist-card-pct ' + (isUp ? 'text-green' : 'text-red') + '">' + (pct >= 0 ? '+' : '') + (pct || 0).toFixed(2) + '%</div></div><div class="watchlist-card-spark"><canvas id="watch-spark-' + sym + '"></canvas></div>';
     card.addEventListener('click', () => openDetailFromSymbol(sym));
     container.appendChild(card);
     if (history.length && typeof Chart !== 'undefined') setTimeout(() => renderSpark('watch-spark-' + sym, history, isUp ? '#10b981' : '#ef4444'), 50);
@@ -1567,7 +1565,7 @@ let _detailLastChange = 0;
 
 async function loadDetailNews(symbol) {
   const list = $('detail-news-list'); if (!list) return;
-  list.innerHTML = 'Carregando…';
+  list.innerHTML = 'Loading…';
   try {
     const res = await apiFetch('/news?symbols=' + encodeURIComponent(symbol || '') + '&limit=8');
     const data = res?.ok ? await res.json() : {};
@@ -1580,12 +1578,12 @@ async function loadDetailNews(symbol) {
       const title = escapeHtml((n.headline || n.title || '').slice(0, 80)) + ((n.headline || n.title || '').length > 80 ? '…' : '');
       return `<a href="${safeUrl}" target="_blank" rel="noopener noreferrer" class="news-item">${title}</a>`;
     }).join('');
-  } catch (e) { list.innerHTML = 'Não foi possível carregar notícias.'; }
+  } catch (e) { list.innerHTML = 'Could not load news.'; }
 }
 
 async function loadDetailAI(symbol, change) {
   const el = $('detail-ai-text'); if (!el) return;
-  el.textContent = 'Carregando…';
+  el.textContent = 'Loading…';
   try {
     const res = await apiFetch('/analysis/' + encodeURIComponent(symbol || '') + '?change=' + (change ?? 0), { headers: authHeaders() });
     const data = res?.ok ? await res.json() : {};
@@ -1612,8 +1610,8 @@ async function openDetailFromSymbol(symbol) {
   const iconSrc = assetIconUrl('/logo/' + sym, sym);
   if (iconSrc && imgEl) { imgEl.src = iconSrc; imgEl.style.display = 'block'; if (fbEl) fbEl.style.display = 'none'; imgEl.onerror = () => { imgEl.style.display = 'none'; if (fbEl) fbEl.style.display = 'flex'; }; }
 
-  $('detail-news-list').innerHTML = 'Carregando…';
-  $('detail-ai-text').textContent = 'Carregando…';
+  $('detail-news-list').innerHTML = 'Loading…';
+  $('detail-ai-text').textContent = 'Loading…';
 
   detailChartMode = 'line';
   qsa('.chart-type-btn').forEach(b => { b.classList.remove('active'); if (b.dataset.type === 'line') b.classList.add('active'); });
@@ -1627,7 +1625,6 @@ async function openDetailFromSymbol(symbol) {
   _detailLastChange = snap?.percent_change ?? 0;
   if (snap && snap.current_price != null && $('detail-price')) {
     $('detail-price').textContent = formatUSD(snap.current_price);
-    $('detail-price').classList.add('sensitive-value');
     if ((snap.percent_change || 0) >= 0) $('detail-price').classList.add('text-green'); else $('detail-price').classList.add('text-red');
   }
   loadDetailNews(sym);
@@ -1867,7 +1864,7 @@ function renderMarketRows(containerId, rows) {
         </div>
       </div>
       <div class="market-right">
-        <span class="market-price sensitive-value">${formatUSD(item.price)}</span>
+        <span class="market-price">${formatUSD(item.price)}</span>
         <span class="market-change ${isUp ? 'text-green' : 'text-red'}">${formatPct(item.pct)}</span>
         <button type="button" class="btn-watchlist-add ${inWatchlist ? 'in-watchlist' : ''}" data-symbol="${item.symbol}" data-type="${isStocks ? 'stock' : 'crypto'}" aria-label="${inWatchlist ? 'Remove from watchlist' : 'Add to watchlist'}">${inWatchlist ? '✓ In Watchlist' : '+ Watchlist'}</button>
       </div>`;
@@ -1933,7 +1930,7 @@ async function loadWatchlist() {
               </div>
             </div>
             <div class="market-right">
-              <span class="market-price sensitive-value">${formatUSD(price)}</span>
+              <span class="market-price">${formatUSD(price)}</span>
               <span class="market-change ${isUp ? 'text-green' : 'text-red'}">${formatPct(pct)}</span>
               <button type="button" class="btn-watchlist-add in-watchlist btn-watchlist-remove" data-id="${w.id}" data-symbol="${w.symbol}" aria-label="Remove from watchlist">✕ Remover</button>
             </div>
@@ -3160,7 +3157,7 @@ async function handleDownload8949() {
   const year   = $('f49-year-select')?.value   || new Date().getFullYear();
   const method = $('f49-method-select')?.value || 'FIFO';
   const btn    = $('btn-download-8949');
-  if (btn) { btn.disabled = true; btn.textContent = '⏳ Gerando…'; }
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Generating…'; }
 
   try {
     const res = await apiFetch(`/tax/form-8949?year=${year}&method=${method}`, { headers: authHeaders() });
@@ -3261,7 +3258,7 @@ async function loadTaxLossHarvesting() {
   if (!listEl) return;
 
   const bracket = $('tlh-bracket-select')?.value || '0.22';
-  if (badgeEl) { badgeEl.textContent = 'Carregando…'; badgeEl.classList.add('loading'); }
+  if (badgeEl) { badgeEl.textContent = 'Loading…'; badgeEl.classList.add('loading'); }
   listEl.innerHTML = '<div class="tlh-empty"><div class="tlh-empty-icon">⏳</div>Buscando preços…</div>';
 
   const res = await apiFetch(`/portfolio/tax-loss-harvesting?tax_bracket=${bracket}`, { headers: authHeaders() });
@@ -3719,7 +3716,7 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   $('detail-ai-refresh')?.addEventListener('click', () => {
     const sym = _detailSymbolForGuest || $('detail-symbol')?.textContent?.trim();
-    if (sym) { $('detail-ai-text').textContent = 'Carregando…'; loadDetailAI(sym, _detailLastChange); }
+    if (sym) { $('detail-ai-text').textContent = 'Loading…'; loadDetailAI(sym, _detailLastChange); }
   });
   qsa('.time-btn').forEach(btn => {
     btn.addEventListener('click', e => {
