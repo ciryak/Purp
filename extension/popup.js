@@ -527,6 +527,12 @@ async function apiFetch(path, opts = {}) {
   } catch (e) { console.error('Network error:', e); return null; }
 }
 
+function assetIconUrl(icon, symbol) {
+  const sym = (symbol || '').toUpperCase() || '';
+  if (icon && icon.startsWith('http')) return icon;
+  return API_BASE + (icon && icon.startsWith('/') ? icon : '/logo/' + sym);
+}
+
 function startRefresh() {
   stopRefresh();
   refreshTimer = setInterval(() => {
@@ -899,8 +905,9 @@ async function performSearch(q) {
     if (!results.length) { box.style.display = 'none'; return; }
     results.forEach((item) => {
       const sym2 = (item.symbol || '').substring(0, 2).toUpperCase();
-      let iconHtml = item.icon
-        ? `<img class="search-item-icon" src="${item.icon}" alt="${item.symbol}" onerror="this.style.display='none';this.nextElementSibling.style.display='flex';"><div class="search-item-fb" style="display:none;">${sym2}</div>`
+      const iconSrc = assetIconUrl(item.icon, item.symbol);
+      let iconHtml = iconSrc
+        ? `<img class="search-item-icon" src="${iconSrc}" alt="${item.symbol}" onerror="this.style.display='none';this.nextElementSibling.style.display='flex';"><div class="search-item-fb" style="display:none;">${sym2}</div>`
         : `<div class="search-item-fb">${sym2}</div>`;
       const row = document.createElement('div');
       row.className = 'search-item';
@@ -1269,8 +1276,9 @@ async function fetchPortfolio() {
     const isProfit = profit >= 0;
     const pctTxt   = asset.percent_change != null ? `${asset.percent_change >= 0 ? '+' : ''}${asset.percent_change.toFixed(2)}%` : '';
     const sym2     = (asset.symbol || '').substring(0, 2).toUpperCase();
-    let iconHtml = asset.icon
-      ? `<img class="asset-icon-img" src="${asset.icon}" alt="${asset.symbol}" onerror="this.style.display='none';this.nextElementSibling.style.display='flex';"><div class="asset-icon-fb" style="display:none;">${sym2}</div>`
+    const iconSrc  = assetIconUrl(asset.icon, asset.symbol);
+    let iconHtml = iconSrc
+      ? `<img class="asset-icon-img" src="${iconSrc}" alt="${asset.symbol}" onerror="this.style.display='none';this.nextElementSibling.style.display='flex';"><div class="asset-icon-fb" style="display:none;">${sym2}</div>`
       : `<div class="asset-icon-fb">${sym2}</div>`;
     const wrapper = document.createElement('div');
     wrapper.className = 'asset-wrapper';
@@ -1313,8 +1321,9 @@ function openDetail(asset) {
   $('holding-badge').textContent = `${asset.days_held ?? 0} days held`;
   const imgEl = $('detail-icon-img'), fbEl = $('detail-icon-fb');
   fbEl.textContent = (asset.symbol || '').substring(0, 2).toUpperCase();
-  if (asset.icon) {
-    imgEl.src = asset.icon; imgEl.style.display = 'block'; fbEl.style.display = 'none';
+  const iconSrc = assetIconUrl(asset.icon, asset.symbol);
+  if (iconSrc) {
+    imgEl.src = iconSrc; imgEl.style.display = 'block'; fbEl.style.display = 'none';
     imgEl.onerror = () => { imgEl.style.display = 'none'; fbEl.style.display = 'flex'; };
   } else { imgEl.style.display = 'none'; fbEl.style.display = 'flex'; }
   detailChartMode = 'line';

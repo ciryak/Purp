@@ -62,7 +62,7 @@ def get_ai_analysis(symbol: str, change: float) -> str:
 
     try:
         res = _gemini_client.models.generate_content(
-            model="gemini-1.5-flash",
+            model="gemini-2.0-flash",
             contents=prompt,
         )
         return _extract_gemini_text(res) or "Análise temporariamente indisponível."
@@ -91,7 +91,7 @@ def get_portfolio_ai_analysis(portfolio_change: float, assets: list[dict]) -> st
 
     try:
         res = _gemini_client.models.generate_content(
-            model="gemini-1.5-flash",
+            model="gemini-2.0-flash",
             contents=prompt,
         )
         return _extract_gemini_text(res) or "Análise de portfólio temporariamente indisponível."

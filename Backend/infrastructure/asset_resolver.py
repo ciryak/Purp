@@ -21,7 +21,6 @@ from gateways.binance import (
     _binance_pairs_loaded,
     _load_binance_pairs,
     _COIN_META,
-    _coin_icon,
     _pct_from_series,
 )
 from gateways.yahoo import get_asset_data_yf, get_historical_data_yf, get_volume_history_yf
@@ -31,7 +30,7 @@ from gateways.coincap import get_asset_coincap, get_asset_finnhub
 def get_asset_data(symbol: str) -> dict | None:
     """
     Fetch current price, 24h change, sparkline, name and icon for any asset.
-    Uses a 60-second TTL cache to avoid redundant API calls.
+    Uses a 15-second TTL cache to avoid redundant API calls.
     """
     if not symbol:
         return None
@@ -58,7 +57,7 @@ def get_asset_data(symbol: str) -> dict | None:
                     "percent_change": change if change is not None else _pct_from_series(spark),
                     "history":        spark[-40:] if spark else [price],
                     "type":           "crypto",
-                    "icon":           _coin_icon(base),
+                    "icon":           "/logo/" + base,
                 }
                 price_cache.set(f"asset_{base}", result)
                 return result
@@ -68,6 +67,7 @@ def get_asset_data(symbol: str) -> dict | None:
     # 2) Yahoo Finance fallback (stocks, indices, coins not on Binance)
     result = get_asset_data_yf(symbol)
     if result:
+        result["icon"] = result.get("icon") or "/logo/" + base
         price_cache.set(f"asset_{base}", result)
         return result
 
@@ -75,6 +75,7 @@ def get_asset_data(symbol: str) -> dict | None:
     if not _is_likely_stock(base):
         result = get_asset_coincap(base)
         if result:
+            result["icon"] = result.get("icon") or "/logo/" + base
             price_cache.set(f"asset_{base}", result)
             return result
 
@@ -82,6 +83,7 @@ def get_asset_data(symbol: str) -> dict | None:
     if _is_likely_stock(base):
         result = get_asset_finnhub(base)
         if result:
+            result["icon"] = result.get("icon") or "/logo/" + base
             price_cache.set(f"asset_{base}", result)
             return result
 
@@ -133,11 +135,11 @@ def search_symbols(query: str) -> list[dict]:
         seen.add(sym)
         meta = _COIN_META.get(sym, {})
         results.append({
-            "symbol": sym,
-            "name":   meta.get("name", sym),
-            "type":   "CRYPTO",
-            "icon":   _coin_icon(sym),
-        })
+                "symbol": sym,
+                "name":   meta.get("name", sym),
+                "type":   "CRYPTO",
+                "icon":   "/logo/" + sym,
+            })
 
     # 2) Yahoo Finance stock/ETF search
     try:
@@ -156,7 +158,7 @@ def search_symbols(query: str) -> list[dict]:
                 "symbol": sym,
                 "name":   q.get("shortname") or q.get("longname") or sym,
                 "type":   "STOCK" if qtype in ("EQUITY", "ETF", "INDEX") else qtype or "STOCK",
-                "icon":   "",
+                "icon":   "/logo/" + sym,
             })
     except Exception as e:
         print(f"⚠️  Yahoo search: {e}")

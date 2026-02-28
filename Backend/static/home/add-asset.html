@@ -104,6 +104,46 @@
   </main>
 </div>
 
+<!-- Detail overlay (asset info + news + AI) -->
+<div id="detail-view" class="overlay-screen" role="dialog" aria-label="Asset detail" aria-modal="true">
+  <div class="detail-nav">
+    <button class="back-btn" id="btn-back" aria-label="Voltar"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M19 12H5M12 5l-7 7 7 7"/></svg>Voltar</button>
+    <span id="holding-badge" class="holding-badge">—</span>
+  </div>
+  <div class="detail-hero">
+    <div class="detail-icon-wrap">
+      <img id="detail-icon-img" src="" alt="" style="display:none;">
+      <div id="detail-icon-fb" class="asset-icon-fb"></div>
+    </div>
+    <div>
+      <div class="detail-symbol" id="detail-symbol">—</div>
+      <div class="detail-price" id="detail-price">—</div>
+    </div>
+  </div>
+  <div class="time-row" role="group">
+    <button class="time-btn" data-period="1d">24H</button>
+    <button class="time-btn active" data-period="1mo">1M</button>
+    <button class="time-btn" data-period="6mo">6M</button>
+    <button class="time-btn" data-period="1y">1Y</button>
+  </div>
+  <div class="detail-chart-wrap"><canvas id="detailChart"></canvas></div>
+  <div class="detail-extra">
+    <div class="detail-section">
+      <h4 class="detail-section-title">Últimas notícias</h4>
+      <div id="detail-news-list" class="detail-news-list">Carregando…</div>
+    </div>
+    <div class="detail-section">
+      <h4 class="detail-section-title">Insight AI</h4>
+      <p id="detail-ai-text" class="detail-ai-text">Carregando…</p>
+      <button type="button" id="detail-ai-refresh" class="btn-ghost btn-sm">Atualizar insight</button>
+    </div>
+    <div id="detail-actions-guest" class="detail-actions-guest">
+      <button type="button" id="btn-detail-add-portfolio" class="btn-primary">Adicionar à carteira</button>
+      <button type="button" id="btn-detail-add-watchlist" class="btn-ghost">Adicionar à watchlist</button>
+    </div>
+  </div>
+</div>
+
 <div id="modal-upgrade" class="modal-overlay" role="dialog" aria-modal="true">
   <div class="modal-box">
     <div class="upgrade-star">⭐</div>

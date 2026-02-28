@@ -219,6 +219,12 @@ function authHeaders(extra = {}) {
   };
 }
 
+function assetIconUrl(icon, symbol) {
+  const sym = (symbol || '').toUpperCase() || '';
+  if (icon && icon.startsWith('http')) return icon;
+  return API_BASE + (icon && icon.startsWith('/') ? icon : '/logo/' + sym);
+}
+
 // ════════════════════════════════════════════════════════════════
 // TOAST
 // ════════════════════════════════════════════════════════════════
@@ -660,6 +666,8 @@ function updateProfileBar() {
   if (nameEl) nameEl.textContent = name;
   const avatarEl = $('profile-avatar') || $('shell-avatar');
   if (avatarEl) avatarEl.textContent = name.charAt(0).toUpperCase();
+  const headerAvatar = $('profile-avatar-header');
+  if (headerAvatar) headerAvatar.textContent = name.charAt(0).toUpperCase();
 
   const plan    = currentUser?.plan || 'free';
   const planEl  = $('profile-plan') || $('shell-plan-badge');
@@ -1088,6 +1096,216 @@ async function loadPortfolioScore() {
       ? items.map(txt => `<li>${txt}</li>`).join('')
       : '<li>Seu portfólio está estável. Continue monitorando diversificação e consistência.</li>';
   }
+  const labelEl = $('score-label');
+  if (labelEl) {
+    const g = (score.grade || '').toUpperCase();
+    labelEl.textContent = { A: 'Excellent', B: 'Good', C: 'Fair', D: 'Poor' }[g] || g || '—';
+  }
+  if ($('score-risk-level')) $('score-risk-level').textContent = 'Moderate';
+  const change30El = $('score-change-30d');
+  if (change30El) {
+    apiFetch('/portfolio/history?period=1mo', { headers: authHeaders() }).then(r => {
+      if (!r || !r.ok) return r;
+      return r.json().then(d => {
+        const p = d.portfolio || [];
+        if (p.length >= 2 && p[0]) {
+          const ch = ((p[p.length - 1] - p[0]) / p[0]) * 100;
+          change30El.textContent = (ch >= 0 ? '+' : '') + ch.toFixed(1) + '%';
+          change30El.className = 'score-change-30d ' + (ch >= 0 ? 'text-green' : 'text-red');
+        }
+        return r;
+      });
+    }).catch(() => {});
+  }
+}
+
+let allocationDonutChart = null;
+function buildAllocationDonut(balanceData) {
+  const canvas = $('allocationDonutChart');
+  const legendEl = $('allocation-legend');
+  if (!canvas || typeof Chart === 'undefined') return;
+  const assets = balanceData.assets || [];
+  let stocks = 0, crypto = 0, cash = 0;
+  assets.forEach(a => {
+    const val = parseFloat(a.position_value) || 0;
+    const t = (a.type || '').toLowerCase();
+    if (t === 'crypto') crypto += val; else if (t === 'cash') cash += val; else stocks += val;
+  });
+  const total = stocks + crypto + cash || 1;
+  const data = [
+    { label: 'Stocks', value: (stocks / total) * 100, color: '#7B3FE4' },
+    { label: 'Crypto', value: (crypto / total) * 100, color: '#14b8a6' },
+    { label: 'Cash', value: (cash / total) * 100, color: 'rgba(255,255,255,0.25)' },
+  ].filter(d => d.value > 0);
+  if (allocationDonutChart) allocationDonutChart.destroy();
+  if (legendEl) legendEl.innerHTML = data.length ? data.map(d => `<span style="display:flex;align-items:center;gap:6px;margin-bottom:4px;"><span style="width:8px;height:8px;border-radius:50%;background:${d.color};"></span>${d.label} ${d.value.toFixed(0)}%</span>`).join('') : '';
+  if (!data.length) return;
+  allocationDonutChart = new Chart(canvas.getContext('2d'), {
+    type: 'doughnut',
+    data: {
+      labels: data.map(d => d.label),
+      datasets: [{ data: data.map(d => d.value), backgroundColor: data.map(d => d.color), borderWidth: 0 }],
+    },
+    options: { responsive: true, maintainAspectRatio: true, cutout: '65%', plugins: { legend: { display: false } } },
+  });
+}
+function buildPortfolioOverviewList(assets) {
+  const list = $('portfolio-overview-list');
+  if (!list) return;
+  if (!assets || !assets.length) {
+    list.innerHTML = '<div class="empty-sub" style="padding:8px 0;">No assets yet.</div>';
+    return;
+  }
+  list.innerHTML = assets.slice(0, 5).map(a => {
+    const pct = a.percent_change != null ? (a.percent_change >= 0 ? '+' : '') + a.percent_change.toFixed(2) + '%' : '—';
+    const isUp = (a.percent_change || 0) >= 0;
+    const esc = (s) => (s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    return `<div class="overview-item"><span class="sym">${esc(a.symbol)}</span><span class="price sensitive-value">${formatUSD(a.current_price)}</span><span class="pct ${isUp ? 'text-green' : 'text-red'}">${pct}</span></div>`;
+  }).join('');
+  applyVisibilityMask();
+}
+async function loadRelevantNews() {
+  const list = $('relevant-news-list');
+  if (!list) return;
+  try {
+    const res = await apiFetch('/news?limit=6');
+    const data = await res?.json?.() || {};
+    const news = data.news || [];
+    if (!news.length) { list.innerHTML = '<div class="news-loading">No news available.</div>'; return; }
+    const escapeHtml = (s) => (s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    list.innerHTML = news.map(n => {
+      const sym = (n.symbols || [])[0] || '';
+      const url = (n.url || '#').trim();
+      const safeUrl = url.startsWith('http://') || url.startsWith('https://') ? url : '#';
+      const title = escapeHtml((n.headline || '').slice(0, 60)) + ((n.headline || '').length > 60 ? '…' : '');
+      return `<a href="${safeUrl}" target="_blank" rel="noopener noreferrer" class="news-item"><span class="news-item-icon">${escapeHtml(sym) || 'N'}</span><span class="news-item-title">${title}</span><span class="news-item-arrow">→</span></a>`;
+    }).join('');
+  } catch (e) { list.innerHTML = '<div class="news-loading">Could not load news.</div>'; }
+}
+async function loadWatchlistCards() {
+  const container = $('watchlist-cards');
+  if (!container || !authToken) return;
+  const res = await apiFetch('/watchlist', { headers: authHeaders() });
+  if (!res || !res.ok) { container.innerHTML = '<div class="empty-sub">Could not load watchlist.</div>'; return; }
+  const items = (await res.json()).items || [];
+  watchlistSymbols = new Set(items.map(i => (i.symbol || '').toUpperCase()));
+  items.forEach(i => { watchlistIdBySymbol[(i.symbol || '').toUpperCase()] = i.id; });
+  if (!items.length) { container.innerHTML = '<div class="empty-sub">Add assets from Market or search to track them here.</div>'; return; }
+  container.innerHTML = '';
+  for (const w of items.slice(0, 8)) {
+    const sym = (w.symbol || '').toUpperCase();
+    const snapRes = await apiFetch('/snapshot/' + encodeURIComponent(sym));
+    const d = snapRes?.ok ? await snapRes.json() : null;
+    const price = d?.current_price ?? w.current_price ?? 0;
+    const pct = d?.percent_change ?? w.percent_change ?? 0;
+    const history = d?.history || [];
+    const isUp = pct >= 0;
+    const iconPath = d?.icon || '/logo/' + sym;
+    const logoUrl = (iconPath && iconPath.startsWith('http')) ? iconPath : (API_BASE + (iconPath.startsWith('/') ? iconPath : '/logo/' + sym));
+    const card = document.createElement('div');
+    card.className = 'watchlist-card';
+    card.dataset.symbol = sym;
+    card.innerHTML = '<div class="watchlist-card-logo"><img src="' + logoUrl + '" alt="" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'block\';this.nextElementSibling.textContent=\'' + sym.slice(0,2) + '\';"><span style="display:none;font-size:11px;"></span></div><div class="watchlist-card-info"><div class="watchlist-card-ticker">' + sym + '</div><div class="watchlist-card-price sensitive-value">' + formatUSD(price) + '</div><div class="watchlist-card-pct ' + (isUp ? 'text-green' : 'text-red') + '">' + (pct >= 0 ? '+' : '') + (pct || 0).toFixed(2) + '%</div></div><div class="watchlist-card-spark"><canvas id="watch-spark-' + sym + '"></canvas></div>';
+    card.addEventListener('click', () => openDetailFromSymbol(sym));
+    container.appendChild(card);
+    if (history.length && typeof Chart !== 'undefined') setTimeout(() => renderSpark('watch-spark-' + sym, history, isUp ? '#10b981' : '#ef4444'), 50);
+  }
+  applyVisibilityMask();
+}
+async function loadMarketAnalysisForSymbol(symbol) {
+  const placeholder = $('market-analysis-placeholder');
+  const content = $('market-analysis-content');
+  const symEl = $('market-analysis-symbol');
+  const priceEl = $('market-analysis-price');
+  const textEl = $('market-analysis-text');
+  if (!content || !symEl) return;
+  if (placeholder) placeholder.style.display = 'none';
+  content.style.display = 'block';
+  symEl.textContent = symbol || '—';
+  if (priceEl) { priceEl.textContent = '—'; priceEl.className = 'market-analysis-price'; }
+  if (textEl) textEl.textContent = 'Loading…';
+  const snapRes = await apiFetch('/snapshot/' + encodeURIComponent(symbol));
+  const snap = snapRes?.ok ? await snapRes.json() : null;
+  if (snap && snap.current_price != null && priceEl) {
+    priceEl.textContent = formatUSD(snap.current_price);
+    priceEl.classList.add((snap.percent_change || 0) >= 0 ? 'text-green' : 'text-red');
+  }
+  const analysisRes = await apiFetch('/analysis/' + encodeURIComponent(symbol) + '?change=' + (snap?.percent_change || 0), { headers: authHeaders() });
+  const analysis = analysisRes?.ok ? await analysisRes.json() : null;
+  if (textEl) textEl.textContent = analysis?.analysis || 'No AI analysis available for this asset.';
+  const btn = $('btn-market-analysis-register');
+  if (btn) btn.onclick = () => { window.location.href = '/home/add-asset'; };
+}
+async function loadTopMovers() {
+  const list = $('top-movers-list');
+  if (!list) return;
+  try {
+    const res = await apiFetch('/movers');
+    const data = await res?.json?.() || {};
+    const all = data.all || (data.gainers || []).concat(data.losers || []);
+    if (!all.length) { list.innerHTML = '<div class="movers-loading">No movers data.</div>'; return; }
+    const esc = (s) => (s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    list.innerHTML = '';
+    all.slice(0, 8).forEach(m => {
+      const pct = m.percent_change ?? 0;
+      const isUp = pct >= 0;
+      const div = document.createElement('div');
+      div.className = 'movers-item';
+      div.setAttribute('role', 'button');
+      div.tabIndex = 0;
+      div.innerHTML = '<span class="sym">' + esc(m.symbol) + '</span><span class="pct ' + (isUp ? 'text-green' : 'text-red') + '">' + (pct >= 0 ? '+' : '') + pct.toFixed(2) + '%</span>';
+      div.addEventListener('click', () => openDetailFromSymbol(m.symbol));
+      div.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openDetailFromSymbol(m.symbol); } });
+      list.appendChild(div);
+    });
+  } catch (e) { list.innerHTML = '<div class="movers-loading">Could not load movers.</div>'; }
+}
+async function loadFearGreed() {
+  const valEl = $('fear-greed-value');
+  const labelEl = $('fear-greed-label');
+  const needleEl = $('fear-greed-needle');
+  if (!valEl) return;
+  try {
+    const res = await apiFetch('/fear-greed');
+    const data = await res?.json?.() || {};
+    const v = Math.max(0, Math.min(100, Number(data.value) || 50));
+    valEl.textContent = v;
+    if (labelEl) labelEl.textContent = data.classification || 'Neutral';
+    if (needleEl) needleEl.style.transform = 'translate(-50%, -100%) rotate(' + (-90 + (v / 100) * 180) + 'deg)';
+  } catch (e) { valEl.textContent = '—'; if (labelEl) labelEl.textContent = '—'; }
+}
+
+let globalSearchTimer = null;
+async function performGlobalSearch(q) {
+  const box = $('search-autocomplete');
+  if (!q || q.length < 1) {
+    if (box) { box.setAttribute('aria-hidden', 'true'); box.innerHTML = ''; }
+    return;
+  }
+  try {
+    const res = await apiFetch('/search?q=' + encodeURIComponent(q));
+    if (!res || !res.ok) { if (box) box.setAttribute('aria-hidden', 'true'); return; }
+    const results = await res.json();
+    if (!box) return;
+    box.innerHTML = '';
+    if (!results.length) { box.setAttribute('aria-hidden', 'true'); return; }
+    results.slice(0, 10).forEach((item) => {
+      const row = document.createElement('div');
+      row.className = 'autocomplete-item';
+      row.setAttribute('role', 'option');
+      row.setAttribute('aria-selected', 'false');
+      const esc = (s) => (s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      row.innerHTML = '<span class="autocomplete-sym">' + esc(item.symbol) + '</span><span class="autocomplete-name">' + esc(item.name || item.symbol || '') + '</span>';
+      row.addEventListener('click', () => {
+        const sym = (item.symbol || '').toUpperCase();
+        if ($('global-search')) $('global-search').value = sym;
+        box.setAttribute('aria-hidden', 'true');
+        openDetailFromSymbol(sym);
+      });
+      box.appendChild(row);
+    });
+    box.setAttribute('aria-hidden', 'false');
+  } catch (e) { if (box) box.setAttribute('aria-hidden', 'true'); }
 }
 
 // ════════════════════════════════════════════════════════════════
@@ -1114,6 +1332,8 @@ function _renderAssetSkeletons(count = 3) {
 function _renderBalanceSkeleton() {
   const el = $('total-balance');
   if (el) el.innerHTML = '<span class="skeleton skeleton-title" style="width:160px;display:inline-block;"></span>';
+  const premiumEl = $('portfolio-total-balance');
+  if (premiumEl) premiumEl.innerHTML = '<span class="skeleton skeleton-title" style="width:100px;display:inline-block;"></span>';
 }
 
 async function fetchPortfolio() {
@@ -1129,6 +1349,11 @@ async function fetchPortfolio() {
     balanceEl.textContent = formatUSD(data.total_balance_usd);
     balanceEl.classList.add('sensitive-value');
   }
+  const premiumBalance = $('portfolio-total-balance');
+  if (premiumBalance) {
+    premiumBalance.textContent = formatUSD(data.total_balance_usd);
+    premiumBalance.classList.add('sensitive-value');
+  }
   const summaryEl = $('portfolio-summary');
   if (summaryEl) {
     const n = (data.assets || []).length;
@@ -1142,8 +1367,19 @@ async function fetchPortfolio() {
   await loadNetWorth();
   _checkConcentrationAlert();
 
+  if ($('allocationDonutChart')) buildAllocationDonut(data);
+  if ($('portfolio-overview-list')) buildPortfolioOverviewList(data.assets || []);
+
   const list = $('assets-list');
-  if (!list) return;
+  if (!list) {
+    renderRebalanceTargets(data.assets || []);
+    if (data.assets?.length) await loadBalancePerformance();
+    if ($('watchlist-cards')) loadWatchlistCards();
+    if ($('relevant-news-list')) loadRelevantNews();
+    if ($('top-movers-list')) loadTopMovers();
+    if ($('fear-greed-value')) loadFearGreed();
+    return;
+  }
   list.innerHTML = '';
 
   if (!data.assets?.length) {
@@ -1170,8 +1406,9 @@ async function fetchPortfolio() {
     const pctTxt   = asset.percent_change != null
       ? `${asset.percent_change >= 0 ? '+' : ''}${asset.percent_change.toFixed(2)}%` : '';
     const sym2 = (asset.symbol || '').substring(0, 2).toUpperCase();
-    const iconHtml = asset.icon
-      ? `<img class="asset-icon-img" src="${asset.icon}" alt="${asset.symbol}"
+    const iconSrc = assetIconUrl(asset.icon, asset.symbol);
+    const iconHtml = iconSrc
+      ? `<img class="asset-icon-img" src="${iconSrc}" alt="${asset.symbol}"
             onerror="this.style.display='none';this.nextElementSibling.style.display='flex';">
          <div class="asset-icon-fb" style="display:none;">${sym2}</div>`
       : `<div class="asset-icon-fb">${sym2}</div>`;
@@ -1218,6 +1455,10 @@ async function fetchPortfolio() {
   applyVisibilityMask();
   loadDividendCard();
   loadAlerts();
+  if ($('watchlist-cards')) loadWatchlistCards();
+  if ($('relevant-news-list')) loadRelevantNews();
+  if ($('top-movers-list')) loadTopMovers();
+  if ($('fear-greed-value')) loadFearGreed();
 }
 
 // ── Concentration alert banner ────────────────────────────────────
@@ -1296,12 +1537,14 @@ function openDetail(asset) {
   if ($('detail-symbol')) $('detail-symbol').textContent = asset.symbol;
   const priceEl = $('detail-price');
   if (priceEl) { priceEl.textContent = formatUSD(asset.current_price); priceEl.classList.add('sensitive-value'); }
-  if ($('holding-badge')) $('holding-badge').textContent = `${asset.days_held ?? 0} dias em carteira`;
+  if ($('holding-badge')) { $('holding-badge').textContent = `${asset.days_held ?? 0} dias em carteira`; $('holding-badge').style.display = ''; }
+  const guestActions = $('detail-actions-guest'); if (guestActions) guestActions.style.display = 'none';
 
   const imgEl = $('detail-icon-img'), fbEl = $('detail-icon-fb');
   if (fbEl) fbEl.textContent = (asset.symbol || '').substring(0, 2).toUpperCase();
-  if (imgEl && asset.icon) {
-    imgEl.src = asset.icon; imgEl.style.display = 'block';
+  const iconSrc = assetIconUrl(asset.icon, asset.symbol);
+  if (imgEl && iconSrc) {
+    imgEl.src = iconSrc; imgEl.style.display = 'block';
     if (fbEl) fbEl.style.display = 'none';
     imgEl.onerror = () => { imgEl.style.display = 'none'; if (fbEl) fbEl.style.display = 'flex'; };
   } else {
@@ -1315,6 +1558,80 @@ function openDetail(asset) {
   qs('.time-btn[data-period="1mo"]')?.classList.add('active');
   _detailPeriod = '1mo';
   loadDetailChart(asset.real_symbol || asset.symbol, '1mo');
+  loadDetailNews(asset.symbol);
+  loadDetailAI(asset.symbol, asset.percent_change);
+}
+
+let _detailSymbolForGuest = null;
+let _detailLastChange = 0;
+
+async function loadDetailNews(symbol) {
+  const list = $('detail-news-list'); if (!list) return;
+  list.innerHTML = 'Carregando…';
+  try {
+    const res = await apiFetch('/news?symbols=' + encodeURIComponent(symbol || '') + '&limit=8');
+    const data = res?.ok ? await res.json() : {};
+    const news = data.news || [];
+    if (!news.length) { list.innerHTML = 'Nenhuma notícia recente para este ativo.'; return; }
+    const escapeHtml = (s) => (s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    list.innerHTML = news.map(n => {
+      const url = (n.url || '#').trim();
+      const safeUrl = url.startsWith('http') ? url : '#';
+      const title = escapeHtml((n.headline || n.title || '').slice(0, 80)) + ((n.headline || n.title || '').length > 80 ? '…' : '');
+      return `<a href="${safeUrl}" target="_blank" rel="noopener noreferrer" class="news-item">${title}</a>`;
+    }).join('');
+  } catch (e) { list.innerHTML = 'Não foi possível carregar notícias.'; }
+}
+
+async function loadDetailAI(symbol, change) {
+  const el = $('detail-ai-text'); if (!el) return;
+  el.textContent = 'Carregando…';
+  try {
+    const res = await apiFetch('/analysis/' + encodeURIComponent(symbol || '') + '?change=' + (change ?? 0), { headers: authHeaders() });
+    const data = res?.ok ? await res.json() : {};
+    el.textContent = data.analysis || 'Insight AI indisponível para este ativo.';
+  } catch (e) { el.textContent = 'Não foi possível carregar o insight AI.'; }
+}
+
+async function openDetailFromSymbol(symbol) {
+  const view = $('detail-view'); if (!view) return;
+  const sym = (symbol || '').toUpperCase().trim();
+  if (!sym) return;
+
+  view.classList.add('active');
+  _detailSymbolForGuest = sym;
+
+  if ($('detail-symbol')) $('detail-symbol').textContent = sym;
+  if ($('detail-price')) { $('detail-price').textContent = '—'; $('detail-price').className = 'detail-price'; }
+  if ($('holding-badge')) { $('holding-badge').textContent = '—'; $('holding-badge').style.display = 'none'; }
+  const guestActions = $('detail-actions-guest'); if (guestActions) guestActions.style.display = 'flex';
+
+  const imgEl = $('detail-icon-img'), fbEl = $('detail-icon-fb');
+  if (fbEl) fbEl.textContent = sym.substring(0, 2);
+  if (imgEl) { imgEl.style.display = 'none'; if (fbEl) fbEl.style.display = 'flex'; }
+  const iconSrc = assetIconUrl('/logo/' + sym, sym);
+  if (iconSrc && imgEl) { imgEl.src = iconSrc; imgEl.style.display = 'block'; if (fbEl) fbEl.style.display = 'none'; imgEl.onerror = () => { imgEl.style.display = 'none'; if (fbEl) fbEl.style.display = 'flex'; }; }
+
+  $('detail-news-list').innerHTML = 'Carregando…';
+  $('detail-ai-text').textContent = 'Carregando…';
+
+  detailChartMode = 'line';
+  qsa('.chart-type-btn').forEach(b => { b.classList.remove('active'); if (b.dataset.type === 'line') b.classList.add('active'); });
+  qsa('.time-btn').forEach(b => b.classList.remove('active'));
+  qs('.time-btn[data-period="1mo"]')?.classList.add('active');
+  _detailPeriod = '1mo';
+  loadDetailChart(sym, '1mo');
+
+  const snapRes = await apiFetch('/snapshot/' + encodeURIComponent(sym));
+  const snap = snapRes?.ok ? await snapRes.json() : null;
+  _detailLastChange = snap?.percent_change ?? 0;
+  if (snap && snap.current_price != null && $('detail-price')) {
+    $('detail-price').textContent = formatUSD(snap.current_price);
+    $('detail-price').classList.add('sensitive-value');
+    if ((snap.percent_change || 0) >= 0) $('detail-price').classList.add('text-green'); else $('detail-price').classList.add('text-red');
+  }
+  loadDetailNews(sym);
+  loadDetailAI(sym, _detailLastChange);
 }
 
 // ════════════════════════════════════════════════════════════════
@@ -1458,8 +1775,9 @@ async function performSearch(q) {
     if (!results.length) { box.style.display = 'none'; return; }
     results.forEach(item => {
       const sym2 = (item.symbol || '').substring(0, 2).toUpperCase();
-      const iconHtml = item.icon
-        ? `<img class="search-item-icon" src="${item.icon}" alt="${item.symbol}"
+      const iconSrc = assetIconUrl(item.icon, item.symbol);
+      const iconHtml = iconSrc
+        ? `<img class="search-item-icon" src="${iconSrc}" alt="${item.symbol}"
               onerror="this.style.display='none';this.nextElementSibling.style.display='flex';">
            <div class="search-item-fb" style="display:none;">${sym2}</div>`
         : `<div class="search-item-fb">${sym2}</div>`;
@@ -1468,8 +1786,15 @@ async function performSearch(q) {
       row.innerHTML = `${iconHtml}
         <span class="search-item-name">${item.symbol}</span>
         <span class="search-item-sub">${item.name || ''}</span>
-        <span class="search-tag">${item.type || ''}</span>`;
-      row.addEventListener('click', () => {
+        <span class="search-tag">${item.type || ''}</span>
+        <button type="button" class="search-item-detalhes" aria-label="Ver detalhes">Detalhes</button>`;
+      row.addEventListener('click', (e) => {
+        if (e.target.classList.contains('search-item-detalhes')) {
+          e.preventDefault(); e.stopPropagation();
+          openDetailFromSymbol(item.symbol);
+          box.style.display = 'none';
+          return;
+        }
         if ($('symbol-input')) $('symbol-input').value = item.symbol;
         selectedAddAssetType =
           (item.type || '').toUpperCase().includes('CRYPTO') ? 'crypto' : 'stock';
@@ -2330,8 +2655,9 @@ function _buildAllocationPreview(assets) {
   const rows = top6.map((a, i) => {
     const pct  = ((a.position_value || 0) / total * 100).toFixed(1);
     const sym2 = (a.symbol || '').substring(0, 2).toUpperCase();
-    const iconHtml = a.icon
-      ? `<img src="${a.icon}" alt="${a.symbol}" style="width:20px;height:20px;border-radius:6px;object-fit:cover;" onerror="this.style.display='none'">`
+    const iconSrc = assetIconUrl(a.icon, a.symbol);
+    const iconHtml = iconSrc
+      ? `<img src="${iconSrc}" alt="${a.symbol}" style="width:20px;height:20px;border-radius:6px;object-fit:cover;" onerror="this.style.display='none'">`
       : `<span style="width:20px;height:20px;border-radius:6px;background:${PALETTE[i % PALETTE.length]};display:inline-flex;align-items:center;justify-content:center;font-size:8px;font-weight:800;color:#fff;">${sym2}</span>`;
     return `
       <div style="display:flex;align-items:center;gap:8px;">
@@ -2997,7 +3323,10 @@ async function loadTaxLossHarvesting() {
 
 function ensureDividendCard() {
   if ($('div-income-card')) return;
-  const assetsList = $('assets-list'); if (!assetsList) return;
+  const assetsList = $('assets-list');
+  const colLeft = document.querySelector('.dash-col-left');
+  const parent = assetsList?.parentNode || colLeft || null;
+  if (!parent) return;
 
   const card = document.createElement('div');
   card.id = 'div-income-card'; card.className = 'div-card';
@@ -3012,7 +3341,10 @@ function ensureDividendCard() {
       <div class="shimmer-line" style="width:85%"></div>
     </div>`;
 
-  assetsList.parentNode.insertBefore(card, assetsList.nextSibling);
+  if (assetsList && assetsList.nextSibling)
+    assetsList.parentNode.insertBefore(card, assetsList.nextSibling);
+  else
+    parent.appendChild(card);
   $('btn-div-refresh')?.addEventListener('click', () => loadDividendCard(true));
   _divCardBuilt = true;
 }
@@ -3323,6 +3655,30 @@ document.addEventListener('DOMContentLoaded', () => {
   // Export CSV
   $('btn-export-csv')?.addEventListener('click', exportPortfolioCsv);
 
+  // Dashboard premium: global search, quick actions, bottom nav
+  const globalSearchInput = $('global-search');
+  if (globalSearchInput) {
+    globalSearchInput.addEventListener('input', () => {
+      clearTimeout(globalSearchTimer);
+      const v = globalSearchInput.value.trim();
+      globalSearchTimer = setTimeout(() => performGlobalSearch(v), 280);
+    });
+    globalSearchInput.addEventListener('focus', () => {
+      if (globalSearchInput.value.trim() && $('search-autocomplete')?.children?.length)
+        $('search-autocomplete')?.setAttribute('aria-hidden', 'false');
+    });
+  }
+  document.addEventListener('click', e => {
+    if ($('search-autocomplete') && !e.target.closest('.dashboard-search-wrap'))
+      $('search-autocomplete').setAttribute('aria-hidden', 'true');
+  });
+  $('btn-register-tx-overview')?.addEventListener('click', () => { window.location.href = '/home/add-asset'; });
+  $('btn-quick-register-tx')?.addEventListener('click', () => { window.location.href = '/home/add-asset'; });
+  $('btn-quick-ai')?.addEventListener('click', () => handlePortfolioAI());
+  $('btn-quick-watchlist')?.addEventListener('click', () => { window.location.href = '/home/market'; });
+  $('bottom-nav-search')?.addEventListener('click', () => { $('global-search')?.focus(); });
+  $('bottom-nav-ai')?.addEventListener('click', () => handlePortfolioAI());
+
   // Portfolio AI
   $('btn-portfolio-ai')?.addEventListener('click',      handlePortfolioAI);
   $('btn-share-performance')?.addEventListener('click', sharePerformanceCard);
@@ -3339,7 +3695,32 @@ document.addEventListener('DOMContentLoaded', () => {
   $('btn-rebalance-calc')?.addEventListener('click', calculateRebalance);
 
   // Detail view
-  $('btn-back')?.addEventListener('click', () => $('detail-view')?.classList.remove('active'));
+  $('btn-back')?.addEventListener('click', () => {
+    $('detail-view')?.classList.remove('active');
+    _detailSymbolForGuest = null;
+  });
+  $('btn-detail-add-portfolio')?.addEventListener('click', () => {
+    if (_detailSymbolForGuest)
+      window.location.href = '/home/add-asset?symbol=' + encodeURIComponent(_detailSymbolForGuest);
+  });
+  $('btn-detail-add-watchlist')?.addEventListener('click', async () => {
+    if (!_detailSymbolForGuest || !authToken) { toast('Faça login para adicionar à watchlist.', 'warning'); return; }
+    try {
+      const res = await apiFetch('/watchlist', { method: 'POST', headers: authHeaders(), body: JSON.stringify({ symbol: _detailSymbolForGuest }) });
+      if (res?.ok) {
+        toast(`${_detailSymbolForGuest} adicionado à watchlist.`, 'success');
+        watchlistSymbols.add(_detailSymbolForGuest);
+        if ($('watchlist-cards')) loadWatchlistCards();
+      } else {
+        const err = await res?.json().catch(() => ({}));
+        toast(err?.detail?.msg || err?.detail || 'Não foi possível adicionar.', 'error');
+      }
+    } catch (e) { toast('Erro ao adicionar à watchlist.', 'error'); }
+  });
+  $('detail-ai-refresh')?.addEventListener('click', () => {
+    const sym = _detailSymbolForGuest || $('detail-symbol')?.textContent?.trim();
+    if (sym) { $('detail-ai-text').textContent = 'Carregando…'; loadDetailAI(sym, _detailLastChange); }
+  });
   qsa('.time-btn').forEach(btn => {
     btn.addEventListener('click', e => {
       qsa('.time-btn').forEach(b => b.classList.remove('active'));
@@ -3411,6 +3792,12 @@ document.addEventListener('DOMContentLoaded', () => {
     if (v.length < 2) { if ($('search-dropdown')) $('search-dropdown').style.display = 'none'; return; }
     searchTimer = setTimeout(() => performSearch(v), 380);
   });
+
+  if (window.location.pathname.includes('add-asset')) {
+    const params = new URLSearchParams(window.location.search);
+    const symParam = params.get('symbol')?.trim().toUpperCase();
+    if (symParam && $('symbol-input')) { $('symbol-input').value = symParam; resolveSymbolType(symParam).then(t => { if (t) { selectedAddAssetType = t; setAddAmountInputMode(t); } }); }
+  }
 
   $('amount-input')?.addEventListener('blur', () => {
     const val = parseFloat($('amount-input')?.value);

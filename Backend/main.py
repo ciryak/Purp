@@ -16,12 +16,13 @@ import secrets
 import threading
 import traceback
 import concurrent.futures
+import requests
 from datetime import date, datetime, timedelta, timezone
 import sentry_sdk
 import resend
 from fastapi import FastAPI, HTTPException, Depends, Header, Request, BackgroundTasks, UploadFile, File, Query
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, StreamingResponse, JSONResponse
+from fastapi.responses import FileResponse, StreamingResponse, JSONResponse, RedirectResponse, Response
 from PIL import Image, ImageDraw, ImageFont
 from sqlmodel import Session, select, create_engine, SQLModel
 from pydantic import BaseModel, EmailStr
@@ -53,6 +54,15 @@ from services import (
     get_dividend_data,
     generate_weekly_digest,
     calculate_portfolio_score,
+)
+from gateways.alpaca import (
+    alpaca_available,
+    get_news as alpaca_get_news,
+    get_snapshot as alpaca_get_snapshot,
+    search_assets_alpaca,
+    get_top_movers as alpaca_get_movers,
+    get_logo_image,
+    get_asset_logo_url as alpaca_fallback_logo_url,
 )
 from brokers import fetch_broker_data
 
@@ -1368,12 +1378,14 @@ def create_asset(
     m = get_asset_data(sym)
     if not m:
         raise HTTPException(404, f"Asset '{sym}' not found.")
-    real_sym = m["real_symbol"]
+    real_sym = m.get("real_symbol", m.get("symbol", sym))
     p_date   = data.purchase_date if data.purchase_date and len(data.purchase_date) >= 10 else str(date.today())
     existing = session.exec(select(Asset).where(Asset.symbol == real_sym, Asset.user_id == user_id)).first()
     if existing:
         total_cost = existing.amount * existing.purchase_price + data.amount * data.purchase_price
         total_qty  = existing.amount + data.amount
+        if total_qty <= 0:
+            raise HTTPException(400, "Invalid quantity after merge.")
         existing.amount         = total_qty
         existing.purchase_price = total_cost / total_qty
         session.add(existing)
@@ -1389,7 +1401,7 @@ def create_asset(
         if count >= FREE_ASSET_LIMIT:
             raise HTTPException(402, f"Free plan limit reached ({FREE_ASSET_LIMIT} assets).")
     asset = Asset(
-        symbol=real_sym, amount=data.amount, type=m["type"],
+        symbol=real_sym, amount=data.amount, type=m.get("type", "stock"),
         purchase_price=data.purchase_price, purchase_date=p_date, user_id=user_id,
     )
     session.add(asset); session.commit()
@@ -1430,7 +1442,7 @@ def sell_asset(
         raise HTTPException(400, f"For stocks, sell quantity must be a whole number.")
 
     m             = get_asset_data(asset.symbol)
-    current_price = m["current_price"] if m else asset.purchase_price
+    current_price = (m.get("current_price") if m else None) or asset.purchase_price
     sell_total    = data.amount * current_price
     pnl           = sell_total - data.amount * asset.purchase_price
     new_amt       = round(asset.amount - data.amount, 8)
@@ -1584,7 +1596,7 @@ async def import_csv(
         if tx_type == "buy":
             if price <= 0:
                 mkt = get_asset_data(sym)
-                price = mkt["current_price"] if mkt else 0.0
+                price = (mkt.get("current_price") if mkt else None) or 0.0
             if price <= 0:
                 errors.append(f"Row {i+1} [{sym}]: could not determine price — skipped.")
                 skipped += 1; continue
@@ -1593,15 +1605,20 @@ async def import_csv(
                 if not m:
                     errors.append(f"Row {i+1} [{sym}]: symbol not found — skipped.")
                     skipped += 1; continue
-                real_sym = m["real_symbol"]
+                real_sym = m.get("real_symbol", m.get("symbol", sym))
                 existing = session.exec(select(Asset).where(Asset.symbol == real_sym, Asset.user_id == user_id)).first()
                 if existing:
                     total_cost = existing.amount * existing.purchase_price + amount * price
                     total_qty  = existing.amount + amount
-                    existing.amount = total_qty; existing.purchase_price = total_cost / total_qty
+                    if total_qty <= 0:
+                        errors.append(f"Row {i+1} [{sym}]: invalid quantity (total would be ≤ 0) — skipped.")
+                        skipped += 1
+                        continue
+                    existing.amount = total_qty
+                    existing.purchase_price = total_cost / total_qty
                     session.add(existing)
                 else:
-                    session.add(Asset(symbol=real_sym, amount=amount, type=m["type"],
+                    session.add(Asset(symbol=real_sym, amount=amount, type=m.get("type", "stock"),
                                       purchase_price=price, purchase_date=tx_date, user_id=user_id))
                 session.add(Transaction(user_id=user_id, symbol=real_sym, type="buy",
                     amount=amount, price=price, total_usd=amount * price,
@@ -1613,9 +1630,9 @@ async def import_csv(
         elif tx_type == "sell":
             try:
                 m        = get_asset_data(sym)
-                real_sym = m["real_symbol"] if m else sym
+                real_sym = m.get("real_symbol", m.get("symbol", sym)) if m else sym
                 if price <= 0:
-                    price = m["current_price"] if m else 0.0
+                    price = (m.get("current_price") if m else None) or 0.0
                 asset  = session.exec(select(Asset).where(Asset.symbol == real_sym, Asset.user_id == user_id)).first()
                 realized_pnl: float | None = None
                 if asset:
@@ -1680,7 +1697,9 @@ def portfolio_balance(user_id: int = Depends(get_current_user), session: Session
     for r in results:
         if not r: continue
         a, m = r
-        val    = m["current_price"] * a.amount
+        price = m.get("current_price")
+        if price is None: continue
+        val    = price * a.amount
         profit = val - a.purchase_price * a.amount
         total += val
         days   = 0
@@ -1690,11 +1709,11 @@ def portfolio_balance(user_id: int = Depends(get_current_user), session: Session
             except Exception:
                 pass
         details.append({
-            "id": a.id, "symbol": m["symbol"], "real_symbol": a.symbol,
-            "amount": a.amount, "current_price": m["current_price"],
+            "id": a.id, "symbol": m.get("symbol", a.symbol), "real_symbol": a.symbol,
+            "amount": a.amount, "current_price": price,
             "purchase_price": a.purchase_price, "position_value": val,
-            "profit": profit, "percent_change": m["percent_change"],
-            "history": m["history"], "icon": m.get("icon", ""),
+            "profit": profit, "percent_change": m.get("percent_change"),
+            "history": m.get("history", []), "icon": m.get("icon", ""),
             "days_held": days, "type": m.get("type", "stock"),
         })
     return {"total_balance_usd": total, "assets": details}
@@ -1730,7 +1749,7 @@ def portfolio_history(
     return {
         "dates":     final_dates if series else [],
         "portfolio": series or [],
-        "benchmark": bench["prices"][:len(final_dates)] if series else [],
+        "benchmark": (bench.get("prices") or [])[:len(final_dates)] if series else [],
     }
 
 
@@ -2058,7 +2077,7 @@ def portfolio_concentration_alert(
                 "and suggest generic diversification strategies (without recommending specific assets). "
                 "Be concise, practical and professional. Respond in English."
             )
-            res = _gemini_client.models.generate_content(model="gemini-1.5-flash", contents=prompt)
+            res = _gemini_client.models.generate_content(model="gemini-2.0-flash", contents=prompt)
             ai_message = _extract_gemini_text(res) or ""
     except Exception as e:
         print(f"[WARN] concentration-alert AI: {e}")
@@ -2260,13 +2279,15 @@ def tax_loss_harvesting(user_id: int = Depends(get_current_user), session: Sessi
     for r in results:
         if not r: continue
         a, m = r
-        current_value  = m["current_price"] * a.amount
+        price = m.get("current_price")
+        if price is None: continue
+        current_value  = price * a.amount
         cost_basis     = a.purchase_price * a.amount
         unrealised_pnl = current_value - cost_basis
         if unrealised_pnl < 0:
             opportunities.append({
-                "id": a.id, "symbol": m["symbol"], "amount": a.amount,
-                "current_price": m["current_price"], "purchase_price": a.purchase_price,
+                "id": a.id, "symbol": m.get("symbol", a.symbol), "amount": a.amount,
+                "current_price": price, "purchase_price": a.purchase_price,
                 "unrealised_loss": unrealised_pnl, "cost_basis": cost_basis,
             })
     opportunities.sort(key=lambda x: x["unrealised_loss"])
@@ -2595,7 +2616,113 @@ def dividend_history(user_id: int = Depends(get_current_user), session: Session 
 def search(q: str):
     if not q or len(q.strip()) < 1:
         return []
-    return search_symbols(sanitize_search_query(q))
+    q_clean = sanitize_search_query(q)
+    # Prefer Alpaca when available for stocks; merge with existing search
+    if alpaca_available():
+        alpaca_results = search_assets_alpaca(q_clean)
+        if alpaca_results:
+            existing = search_symbols(q_clean)
+            seen = {r["symbol"] for r in alpaca_results}
+            for item in existing:
+                if item.get("symbol") not in seen:
+                    alpaca_results.append(item)
+                    seen.add(item.get("symbol"))
+            return alpaca_results[:15]
+    return search_symbols(q_clean)
+
+
+@app.get("/news")
+def news(symbols: str = Query("", description="Comma-separated symbols"), limit: int = Query(10, ge=1, le=50)):
+    """Relevant news from Alpaca (or empty when Alpaca not configured)."""
+    sym_list = [s.strip().upper() for s in symbols.split(",") if s.strip()][:20] or None
+    return {"news": alpaca_get_news(sym_list, limit=limit)}
+
+
+@app.get("/logo/{symbol}")
+def logo(symbol: str):
+    """Serve asset logo from Alpaca Logo API when available, otherwise redirect to CDN (TradingView)."""
+    sym = sanitize_symbol(symbol)
+    if not sym:
+        raise HTTPException(400, "Invalid symbol")
+    img, content_type = get_logo_image(sym)
+    if img and content_type:
+        return Response(content=img, media_type=content_type)
+    fallback = alpaca_fallback_logo_url(sym)
+    if fallback:
+        return RedirectResponse(url=fallback, status_code=302)
+    raise HTTPException(404, "Logo not found")
+
+
+@app.get("/snapshot/{symbol}")
+def snapshot(symbol: str):
+    """Latest price/snapshot for symbol (Alpaca when available, else get_asset_data)."""
+    sym = sanitize_symbol(symbol)
+    if alpaca_available():
+        snap = alpaca_get_snapshot(sym)
+        if snap:
+            hist = get_historical_data(sym, "1d")
+            if hist.get("prices"):
+                snap["history"] = hist["prices"][-40:]
+            snap["icon"] = "/logo/" + sym
+            return snap
+    data = get_asset_data(sym)
+    if data:
+        return {
+            "symbol": data.get("symbol", sym),
+            "current_price": data.get("current_price"),
+            "percent_change": data.get("percent_change"),
+            "type": data.get("type", "stock"),
+            "name": data.get("name"),
+            "history": data.get("history"),
+            "icon": data.get("icon") or "/logo/" + sym,
+        }
+    raise HTTPException(404, "Asset not found")
+
+
+@app.get("/movers")
+def movers(symbols: str = Query("", description="Comma-separated symbols; default top tickers")):
+    """Top gainers/losers. Uses Alpaca when available, else fallback from get_asset_data for default list."""
+    if symbols.strip():
+        sym_list = [s.strip().upper() for s in symbols.split(",") if s.strip()][:30]
+    else:
+        sym_list = ["AAPL", "MSFT", "NVDA", "AMZN", "TSLA", "GOOGL", "META", "JPM", "V", "JNJ"]
+    if alpaca_available():
+        out = alpaca_get_movers(sym_list)
+        if out:
+            for m in out:
+                m["icon"] = "/logo/" + (m.get("symbol") or "")
+            return {"gainers": out[:5], "losers": out[-5:][::-1], "all": out}
+    # Fallback: fetch each via get_asset_data
+    out = []
+    for sym in sym_list:
+        d = get_asset_data(sym)
+        if d and d.get("current_price"):
+            out.append({
+                "symbol": d.get("symbol", sym),
+                "current_price": d["current_price"],
+                "percent_change": d.get("percent_change"),
+                "type": d.get("type", "stock"),
+                "icon": d.get("icon") or "/logo/" + sym,
+            })
+    out.sort(key=lambda x: (x.get("percent_change") or 0), reverse=True)
+    return {"gainers": out[:5], "losers": out[-5:][::-1], "all": out}
+
+
+@app.get("/fear-greed")
+def fear_greed():
+    """Fear & Greed Index from Alternative.me (crypto)."""
+    try:
+        r = requests.get("https://api.alternative.me/fng/?limit=1", timeout=5)
+        r.raise_for_status()
+        data = r.json()
+        d = (data.get("data") or [{}])[0]
+        return {
+            "value": int(d.get("value", 50)),
+            "classification": d.get("value_classification", "Neutral"),
+        }
+    except Exception as e:
+        print(f"⚠️ Fear & Greed: {e}")
+        return {"value": 50, "classification": "Neutral"}
 
 
 @app.get("/history/{symbol}")
@@ -2628,9 +2755,11 @@ def ai_portfolio(user_id: int = Depends(get_current_user), session: Session = De
     for r in results:
         if not r: continue
         a, m = r
-        val = m["current_price"] * a.amount
+        price = m.get("current_price")
+        if price is None: continue
+        val = price * a.amount
         total_val += val
-        enriched.append({"symbol": m["symbol"], "type": m["type"], "value": val, "change_pct": m["percent_change"]})
+        enriched.append({"symbol": m.get("symbol", a.symbol), "type": m.get("type", "stock"), "value": val, "change_pct": m.get("percent_change")})
 
     if not enriched or total_val <= 0:
         return {"analysis": "Could not compute portfolio performance.", "change_pct": 0.0}
@@ -2638,9 +2767,9 @@ def ai_portfolio(user_id: int = Depends(get_current_user), session: Session = De
     weighted, ai_assets = 0.0, []
     for item in enriched:
         w = item["value"] / total_val
-        weighted += w * item["change_pct"]
+        weighted += w * (item.get("change_pct") or 0)
         ai_assets.append({"symbol": item["symbol"], "type": item["type"],
-                           "allocation_pct": w * 100, "change_pct": item["change_pct"]})
+                           "allocation_pct": w * 100, "change_pct": item.get("change_pct")})
     try:
         text = get_portfolio_ai_analysis(weighted, ai_assets)
     except Exception as e:
