@@ -408,10 +408,11 @@
         if (last.length < AUTH_CONFIG.MIN_NAME) { showErr("Sobrenome deve ter pelo menos 2 caracteres"); if (btn) btn.disabled = false; return; }
         if (!isValidEmail(email)) { showErr("Email inválido"); if (btn) btn.disabled = false; return; }
         if (getPasswordStrength(password).score < 5) { showErr("Senha não atende todos os requisitos"); if (btn) btn.disabled = false; return; }
+        var ref = (typeof window !== "undefined" && window.location && window.location.search) ? new URLSearchParams(window.location.search).get("ref") : null;
         fetch(apiUrl("register"), {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ first_name: first, last_name: last, full_name: (first + " " + last).trim(), email: email, password: password }),
+          body: JSON.stringify({ first_name: first, last_name: last, full_name: (first + " " + last).trim(), email: email, password: password, ref: ref || undefined }),
         })
           .then(function (res) { return res.json().then(function (data) { return { ok: res.ok, data: data }; }); })
           .then(function (r) {

@@ -563,6 +563,41 @@
   cursor: pointer;
 }
 .settings-toggle:hover { background: var(--card-h); color: var(--txt); }
+.settings-select {
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--card);
+  color: var(--txt);
+  font-size: 14px;
+  font-family: var(--font-body);
+}
+.settings-desc { font-size: 12px; color: var(--txt3); margin-top: 4px; margin-bottom: 12px; }
+.account-section { margin-bottom: 24px; }
+.account-section h3 { font-size: 14px; font-weight: 700; color: var(--txt); margin-bottom: 4px; }
+.account-desc { font-size: 12px; color: var(--txt3); margin-bottom: 10px; }
+.account-value { font-size: 18px; font-weight: 700; color: var(--txt); }
+.account-change { font-size: 12px; font-weight: 500; }
+.account-change.positive { color: var(--positive); }
+.account-change.negative { color: var(--negative); }
+.account-danger { color: var(--negative); border-color: var(--negative); }
+
+/* Mobile transactions panel */
+.mobile-panel { position: fixed; inset: 0; z-index: 1000; display: flex; align-items: flex-end; justify-content: center; pointer-events: none; }
+.mobile-panel[aria-hidden="true"] { pointer-events: none; }
+.mobile-panel[aria-hidden="false"] { pointer-events: auto; }
+.mobile-panel-backdrop { position: absolute; inset: 0; background: rgba(0,0,0,0.5); }
+.mobile-panel-content { position: relative; width: 100%; max-height: 85vh; background: var(--bg); border-radius: 20px 20px 0 0; display: flex; flex-direction: column; box-shadow: 0 -4px 20px rgba(0,0,0,0.2); }
+.mobile-panel-head { display: flex; align-items: center; justify-content: space-between; padding: 20px; border-bottom: 1px solid var(--border); }
+.mobile-panel-head h2 { font-size: 18px; font-weight: 700; color: var(--txt); }
+.mobile-panel-body { overflow-y: auto; padding: 16px; flex: 1; }
+.mobile-panel-body .tx-item { display: flex; justify-content: space-between; align-items: center; padding: 12px 0; border-bottom: 1px solid var(--border); font-size: 14px; }
+.mobile-panel-body .tx-item:last-child { border-bottom: none; }
+.mobile-panel-body .tx-date { color: var(--txt3); }
+.mobile-panel-body .tx-ticker { font-weight: 600; color: var(--txt); }
+.mobile-panel-body .tx-type-buy { color: var(--positive); }
+.mobile-panel-body .tx-type-sell { color: var(--negative); }
+.mobile-panel-footer { padding: 16px; border-top: 1px solid var(--border); }
 
 /* Mobile nav */
 .dashboard-mobile-nav {
@@ -654,3 +689,31 @@
 .share-modal .modal-box { max-width: 520px; }
 .share-modal .share-actions { margin-top: 20px; display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
 .share-modal .share-actions .btn-primary { flex: 0 0 auto; }
+
+.session-item { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--border); }
+.session-item .session-info { font-size: 13px; color: var(--txt2); flex: 1; }
+.goal-item { margin-bottom: 16px; padding: 12px; background: var(--bg2); border-radius: 8px; }
+.goal-item .goal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+.goal-item .goal-progress { height: 8px; background: var(--border); border-radius: 4px; overflow: hidden; margin-bottom: 6px; }
+.goal-item .goal-progress-bar { height: 100%; background: var(--violet); border-radius: 4px; transition: width 0.2s; }
+.goal-item .goal-values { font-size: 13px; color: var(--txt2); }
+.btn-small { padding: 4px 10px; font-size: 12px; }
+.account-danger { background: var(--red, #c00); color: #fff; border-color: var(--red, #c00); }
+.account-danger:hover { filter: brightness(1.1); }
+
+.score-explanation { font-size: 12px; color: var(--txt2); margin-top: 4px; }
+.score-insights { margin-top: 8px; }
+.score-insight-title { font-size: 12px; font-weight: 600; color: var(--txt); margin-bottom: 4px; }
+.score-insight-list { font-size: 12px; color: var(--txt2); margin: 0; padding-left: 18px; }
+.widget-goals-list { margin-top: 8px; }
+.widget-goal-item { margin-bottom: 12px; }
+.widget-goal-item .goal-progress { height: 6px; margin: 4px 0; }
+.widget-goal-label { font-size: 13px; font-weight: 600; color: var(--txt); }
+.widget-goal-values { font-size: 12px; color: var(--txt2); }
+.alert-item { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 8px 0; border-bottom: 1px solid var(--border); }
+.alert-item .alert-info { font-size: 13px; color: var(--txt); flex: 1; min-width: 120px; }
+.alert-item .alert-status { font-size: 12px; color: var(--txt2); }
+.widget-head-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.widget-sort-select { font-size: 12px; padding: 4px 8px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg2); color: var(--txt); }
+.header-sync { display: inline-flex; align-items: center; justify-content: center; color: var(--txt2); padding: 6px; margin-right: 4px; }
+.header-sync[title*="sincronizados"] { color: var(--violet); }

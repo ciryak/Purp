@@ -7,6 +7,11 @@ class User(SQLModel, table=True):
     username: str = Field(unique=True, index=True)
     password_hash: str
     email: Optional[str] = Field(default=None, index=True, unique=True)
+    full_name: Optional[str] = Field(default=None)
+
+    # Locale and currency for dashboard
+    locale: Optional[str] = Field(default="pt-BR")
+    currency: Optional[str] = Field(default="BRL")
 
     # ── Plan management ──────────────────────────────────────────
     plan: str = Field(default="free")                          # "free" | "investor" | "tax_pro"
@@ -26,6 +31,34 @@ class User(SQLModel, table=True):
     notification_email: bool = Field(default=True)
     notification_digest: bool = Field(default=True)
     notification_browser: bool = Field(default=True)
+
+    # Referral / indication
+    referral_code: Optional[str] = Field(default=None, unique=True, index=True)
+    referred_by_id: Optional[int] = Field(default=None)
+
+
+class UserSession(SQLModel, table=True):
+    """Active sessions per device (jti from JWT)."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    user_id: int = Field(foreign_key="user.id", index=True)
+    jti: str = Field(unique=True, index=True, max_length=64)
+    created_at: str = Field()  # ISO datetime
+    user_agent: Optional[str] = Field(default=None)
+
+
+class RevokedJti(SQLModel, table=True):
+    """Blacklist of revoked JWT IDs (logout, revoke session)."""
+    jti: str = Field(primary_key=True, max_length=64)
+
+
+class InvestmentGoal(SQLModel, table=True):
+    """User investment goals (e.g. target value by date)."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    user_id: int = Field(foreign_key="user.id", index=True)
+    label: str = Field()
+    target_value: float = Field()
+    target_date: Optional[str] = Field(default=None)  # ISO date
+    created_at: Optional[str] = Field(default=None)
 
 
 class EmailVerification(SQLModel, table=True):

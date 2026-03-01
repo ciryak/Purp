@@ -22,6 +22,7 @@ import concurrent.futures
 from pathlib import Path
 import requests
 from datetime import date, datetime, timedelta, timezone
+from typing import Optional
 import sentry_sdk
 from sentry_sdk.integrations.fastapi import FastApiIntegration
 from sentry_sdk.integrations.starlette import StarletteIntegration
@@ -46,7 +47,7 @@ logging.basicConfig(
     format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
 )
 
-from models import Asset, User, Transaction, PriceAlert, WatchlistItem, ProcessedEvent, Dividend, EmailVerification, NetWorthEntry, PasswordResetToken
+from models import Asset, User, UserSession, RevokedJti, InvestmentGoal, Transaction, PriceAlert, WatchlistItem, ProcessedEvent, Dividend, EmailVerification, NetWorthEntry, PasswordResetToken
 from services import (
     get_asset_data,
     get_ai_analysis,
@@ -633,6 +634,7 @@ async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
 
 # ── Proxy para Yahoo / CryptoCompare (evitar CORS e 403 do corsproxy.io em produção) ──
 YAHOO_CHART_URL = "https://query1.finance.yahoo.com/v8/finance/chart/{symbol}?range=1d&interval=1d"
+YAHOO_SYMBOL_ALIASES = {"BITCOIN": "BTC-USD", "ETHEREUM": "ETH-USD"}
 YAHOO_SPARK_URL = "https://query1.finance.yahoo.com/v8/finance/spark?symbols={symbols}&range=1d&interval=1d"
 CRYPTOCOMPARE_NEWS_URL = "https://min-api.cryptocompare.com/data/v2/news/?lang=EN&limit=15"
 
@@ -640,13 +642,16 @@ CRYPTOCOMPARE_NEWS_URL = "https://min-api.cryptocompare.com/data/v2/news/?lang=E
 @app.get("/api/proxy/yahoo-chart")
 def proxy_yahoo_chart(symbol: str = Query(..., min_length=1, max_length=20)):
     """Proxy para Yahoo Finance chart (um símbolo). Evita CORS e 403 do corsproxy.io."""
-    url = YAHOO_CHART_URL.format(symbol=symbol.upper())
+    sym = symbol.upper().strip()
+    yahoo_sym = YAHOO_SYMBOL_ALIASES.get(sym, sym)
+    url = YAHOO_CHART_URL.format(symbol=yahoo_sym)
     try:
         r = requests.get(url, timeout=10, headers={"User-Agent": "Purp/1.0"})
         r.raise_for_status()
         return r.json()
     except Exception as e:
-        raise HTTPException(status_code=502, detail=f"Upstream error: {str(e)[:100]}")
+        logger.warning("yahoo-chart upstream error for %s: %s", sym, e)
+        return {"chart": {"result": None, "error": {"description": str(e)[:100]}}}
 
 
 @app.get("/api/proxy/yahoo-spark")
@@ -762,14 +767,28 @@ def get_session():
         yield s
 
 
-def create_token(user_id: int) -> str:
+def create_token(user_id: int) -> tuple[str, str]:
+    """Returns (token, jti). Caller should store UserSession with jti."""
     exp = datetime.now(timezone.utc) + timedelta(minutes=TOKEN_EXPIRE)
-    return jwt.encode({"sub": str(user_id), "exp": exp}, SECRET_KEY, algorithm=ALGORITHM)
+    jti = secrets.token_hex(32)
+    payload = {"sub": str(user_id), "exp": exp, "jti": jti}
+    token = jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
+    return token, jti
+
+
+def _create_token_with_session(user_id: int, session: Session, user_agent: str | None = None) -> str:
+    """Creates token, inserts UserSession, returns token."""
+    token, jti = create_token(user_id)
+    now = datetime.now(timezone.utc).isoformat()
+    session.add(UserSession(user_id=user_id, jti=jti, created_at=now, user_agent=user_agent))
+    session.commit()
+    return token
 
 
 def get_current_user(
     token: str | None = Header(None, alias="X-Auth-Token"),
     authorization: str | None = Header(None, alias="Authorization"),
+    session: Session = Depends(get_session),
 ) -> int:
     resolved_token = token
     if not resolved_token and authorization:
@@ -781,7 +800,14 @@ def get_current_user(
         raise HTTPException(401, "Not authenticated — please log in")
     try:
         payload = jwt.decode(resolved_token, SECRET_KEY, algorithms=[ALGORITHM])
-        return int(payload["sub"])
+        user_id = int(payload["sub"])
+        jti = payload.get("jti")
+        if jti:
+            if session.exec(select(RevokedJti).where(RevokedJti.jti == jti)).first():
+                raise HTTPException(401, "Session revoked — please log in again")
+        return user_id
+    except HTTPException:
+        raise
     except (JWTError, ValueError, KeyError, TypeError):
         raise HTTPException(401, "Invalid or expired session — please log in again")
 
@@ -823,6 +849,7 @@ class RegisterInput(BaseModel):
     full_name: str
     password: str
     email: EmailStr
+    ref: Optional[str] = None  # referral code from URL (?ref=XXX)
 
 
 class LoginInput(BaseModel):
@@ -874,12 +901,42 @@ class AlertCreateInput(BaseModel):
 
 class CheckoutInput(BaseModel):
     plan: str = "investor"
+    promotion_code: Optional[str] = None
+    promotion_code: Optional[str] = None  # Stripe Promotion Code ID (e.g. promo_xxx) for referral discount
 
 
 class PreferencesInput(BaseModel):
     notification_email: bool
     notification_digest: bool
     notification_browser: bool
+
+
+class ProfileUpdateInput(BaseModel):
+    full_name: Optional[str] = None
+    email: Optional[str] = None
+    locale: Optional[str] = None
+    currency: Optional[str] = None
+
+
+class ChangePasswordInput(BaseModel):
+    current_password: str
+    new_password: str
+
+
+class GoalCreateInput(BaseModel):
+    label: str
+    target_value: float
+    target_date: Optional[str] = None
+
+
+class GoalUpdateInput(BaseModel):
+    label: Optional[str] = None
+    target_value: Optional[float] = None
+    target_date: Optional[str] = None
+
+
+class RequestDeletionInput(BaseModel):
+    confirm_text: str  # e.g. "EXCLUIR" to confirm
 
 
 class NetWorthEntryInput(BaseModel):
@@ -923,15 +980,30 @@ def register(request: Request, data: RegisterInput, session: Session = Depends(g
         email_norm = str(data.email).strip().lower()
         if session.exec(select(User).where(User.email == email_norm)).first():
             raise HTTPException(400, "Email already registered")
-        
+
+        referred_by_id: Optional[int] = None
+        if data.ref and str(data.ref).strip():
+            referrer = session.exec(select(User).where(User.referral_code == str(data.ref).strip())).first()
+            if referrer and referrer.id:
+                referred_by_id = referrer.id
+
+        def _unique_referral_code() -> str:
+            for _ in range(10):
+                code = secrets.token_urlsafe(8).replace("-", "").replace("_", "")[:8].upper()
+                if not session.exec(select(User).where(User.referral_code == code)).first():
+                    return code
+            return secrets.token_hex(4).upper()
+
         user = User(
-            username=full_name, 
+            username=full_name,
             password_hash=hash_pw(data.password),
-            email=email_norm, 
-            plan="free", 
+            email=email_norm,
+            plan="free",
             is_premium=False,
             is_verified=False,
             created_at=str(date.today()),
+            referral_code=_unique_referral_code(),
+            referred_by_id=referred_by_id,
         )
         session.add(user)
         session.commit()
@@ -949,8 +1021,8 @@ def register(request: Request, data: RegisterInput, session: Session = Depends(g
     code = _create_verification_code(session, user.id)
     send_verification_email_async(email_norm, full_name, code)
 
-    token = create_token(user.id)
-    
+    token, _ = create_token(user.id)
+
     return {
         "token": token,
         "user": _user_payload(user),
@@ -974,7 +1046,7 @@ def login(request: Request, data: LoginInput, session: Session = Depends(get_ses
         raise HTTPException(401, "Incorrect email or password")
 
     # 3. Gera o token (necessário para autorizar a verificação posterior)
-    token = create_token(user.id)
+    token = _create_token_with_session(user.id, session, request.headers.get("user-agent"))
 
     # 4. VERIFICAÇÃO DE STATUS
     if not user.is_verified:
@@ -1060,6 +1132,7 @@ def reset_password(request: Request, data: ResetPasswordInput, session: Session 
 @app.post("/auth/verify-email")
 def verify_email(
     data: VerifyEmailInput,
+    request: Request,
     user_id: int = Depends(get_current_user),
     session: Session = Depends(get_session),
 ):
@@ -1069,7 +1142,7 @@ def verify_email(
 
     # Se já estiver verificado, devolve o token usando a sua função create_token
     if user.is_verified:
-        new_token = create_token(user.id)
+        new_token = _create_token_with_session(user.id, session, request.headers.get("user-agent"))
         return {"ok": True, "token": new_token, "user": _user_payload(user)}
 
     code = data.code.strip()
@@ -1108,7 +1181,7 @@ def verify_email(
     send_welcome_email_async(user.email, user.username)
     
     # Gera o token novo de forma limpa usando a função correta
-    new_token = create_token(user.id)
+    new_token = _create_token_with_session(user.id, session, request.headers.get("user-agent"))
 
     return {"ok": True, "token": new_token, "user": _user_payload(user)}
 @app.post("/auth/resend-verification")
@@ -1152,7 +1225,7 @@ def auth_me(user_id: int = Depends(get_current_user), session: Session = Depends
     user = session.get(User, user_id)
     if not user:
         raise HTTPException(404, "User not found")
-    return {**_user_payload(user), "email": user.email, "is_verified": user.is_verified, "notification_digest": user.notification_digest}
+    return {**_user_payload(user), "is_verified": user.is_verified}
 
 
 @app.post("/auth/logout")
@@ -1184,16 +1257,304 @@ def update_user_preferences(
     }
 
 
+@app.patch("/user/profile")
+def update_profile(
+    data: ProfileUpdateInput,
+    user_id: int = Depends(get_current_user),
+    session: Session = Depends(get_session),
+):
+    user = session.get(User, user_id)
+    if not user:
+        raise HTTPException(404, "User not found")
+    if data.full_name is not None:
+        user.full_name = data.full_name.strip() if data.full_name else None
+    if data.email is not None:
+        email_norm = data.email.strip().lower()
+        if email_norm:
+            existing = session.exec(select(User).where(User.email == email_norm, User.id != user_id)).first()
+            if existing:
+                raise HTTPException(400, "Email already in use")
+        user.email = email_norm or None
+    if data.locale is not None:
+        user.locale = data.locale.strip() or "pt-BR"
+    if data.currency is not None:
+        user.currency = data.currency.strip().upper() or "BRL"
+    session.add(user)
+    session.commit()
+    return {**_user_payload(user), "ok": True}
+
+
+# ── User: Sessions ────────────────────────────────────────────────────────────
+
+@app.get("/user/sessions")
+def get_user_sessions(
+    user_id: int = Depends(get_current_user),
+    session: Session = Depends(get_session),
+):
+    """List active sessions for the current user."""
+    sessions = session.exec(
+        select(UserSession).where(UserSession.user_id == user_id).order_by(UserSession.created_at.desc())
+    ).all()
+    return {
+        "sessions": [
+            {"id": s.id, "created_at": s.created_at, "user_agent": s.user_agent or "Unknown device"}
+            for s in sessions
+        ]
+    }
+
+
+@app.delete("/user/sessions/{session_id}")
+def revoke_session(
+    session_id: int,
+    user_id: int = Depends(get_current_user),
+    session: Session = Depends(get_session),
+):
+    """Revoke one session (add jti to blacklist, remove from UserSession)."""
+    us = session.get(UserSession, session_id)
+    if not us or us.user_id != user_id:
+        raise HTTPException(404, "Session not found")
+    session.add(RevokedJti(jti=us.jti))
+    session.delete(us)
+    session.commit()
+    return {"ok": True}
+
+
+@app.post("/user/sessions/revoke-all")
+def revoke_all_sessions(
+    user_id: int = Depends(get_current_user),
+    session: Session = Depends(get_session),
+):
+    """Revoke all sessions; user will need to log in again on every device."""
+    sessions = session.exec(select(UserSession).where(UserSession.user_id == user_id)).all()
+    for us in sessions:
+        session.add(RevokedJti(jti=us.jti))
+        session.delete(us)
+    session.commit()
+    return {"ok": True}
+
+
+# ── User: Goals ───────────────────────────────────────────────────────────────
+
+def _net_worth_value(session: Session, user_id: int) -> float:
+    """Current net worth (portfolio + manual entries) for progress."""
+    assets = session.exec(select(Asset).where(Asset.user_id == user_id)).all()
+    portfolio_value = 0.0
+    for a in assets:
+        md = get_asset_data(a.symbol)
+        if md:
+            portfolio_value += float(md.get("current_price", 0) or 0) * float(a.amount or 0)
+    entries = session.exec(select(NetWorthEntry).where(NetWorthEntry.user_id == user_id)).all()
+    total = portfolio_value + sum(float(e.value) for e in entries)
+    return round(total, 2)
+
+
+@app.get("/user/goals")
+def get_user_goals(
+    user_id: int = Depends(get_current_user),
+    session: Session = Depends(get_session),
+):
+    goals = session.exec(
+        select(InvestmentGoal).where(InvestmentGoal.user_id == user_id).order_by(InvestmentGoal.created_at.desc())
+    ).all()
+    current_value = _net_worth_value(session, user_id)
+    return {
+        "goals": [
+            {
+                "id": g.id,
+                "label": g.label,
+                "target_value": g.target_value,
+                "target_date": g.target_date,
+                "created_at": g.created_at,
+                "current_value": current_value,
+                "progress_pct": round((current_value / g.target_value * 100), 1) if g.target_value else 0,
+            }
+            for g in goals
+        ]
+    }
+
+
+@app.post("/user/goals")
+def create_goal(
+    data: GoalCreateInput,
+    user_id: int = Depends(get_current_user),
+    session: Session = Depends(get_session),
+):
+    g = InvestmentGoal(
+        user_id=user_id,
+        label=data.label.strip(),
+        target_value=float(data.target_value),
+        target_date=data.target_date.strip() if (data.target_date and data.target_date.strip()) else None,
+        created_at=datetime.now(timezone.utc).isoformat(),
+    )
+    session.add(g)
+    session.commit()
+    session.refresh(g)
+    current_value = _net_worth_value(session, user_id)
+    return {
+        "id": g.id,
+        "label": g.label,
+        "target_value": g.target_value,
+        "target_date": g.target_date,
+        "created_at": g.created_at,
+        "current_value": current_value,
+        "progress_pct": round((current_value / g.target_value * 100), 1) if g.target_value else 0,
+    }
+
+
+@app.get("/user/goals/{goal_id}")
+def get_goal(
+    goal_id: int,
+    user_id: int = Depends(get_current_user),
+    session: Session = Depends(get_session),
+):
+    g = session.get(InvestmentGoal, goal_id)
+    if not g or g.user_id != user_id:
+        raise HTTPException(404, "Goal not found")
+    current_value = _net_worth_value(session, user_id)
+    return {
+        "id": g.id,
+        "label": g.label,
+        "target_value": g.target_value,
+        "target_date": g.target_date,
+        "created_at": g.created_at,
+        "current_value": current_value,
+        "progress_pct": round((current_value / g.target_value * 100), 1) if g.target_value else 0,
+    }
+
+
+@app.patch("/user/goals/{goal_id}")
+def update_goal(
+    goal_id: int,
+    data: GoalUpdateInput,
+    user_id: int = Depends(get_current_user),
+    session: Session = Depends(get_session),
+):
+    g = session.get(InvestmentGoal, goal_id)
+    if not g or g.user_id != user_id:
+        raise HTTPException(404, "Goal not found")
+    if data.label is not None:
+        g.label = data.label.strip()
+    if data.target_value is not None:
+        g.target_value = float(data.target_value)
+    if data.target_date is not None:
+        g.target_date = data.target_date.strip() or None
+    session.add(g)
+    session.commit()
+    session.refresh(g)
+    current_value = _net_worth_value(session, user_id)
+    return {
+        "id": g.id,
+        "label": g.label,
+        "target_value": g.target_value,
+        "target_date": g.target_date,
+        "created_at": g.created_at,
+        "current_value": current_value,
+        "progress_pct": round((current_value / g.target_value * 100), 1) if g.target_value else 0,
+    }
+
+
+@app.delete("/user/goals/{goal_id}")
+def delete_goal(
+    goal_id: int,
+    user_id: int = Depends(get_current_user),
+    session: Session = Depends(get_session),
+):
+    g = session.get(InvestmentGoal, goal_id)
+    if not g or g.user_id != user_id:
+        raise HTTPException(404, "Goal not found")
+    session.delete(g)
+    session.commit()
+    return {"ok": True}
+
+
+# ── User: Referral ────────────────────────────────────────────────────────────
+
+def _ensure_referral_code(session: Session, user: User) -> str:
+    if user.referral_code:
+        return user.referral_code
+    code = secrets.token_hex(4).upper()
+    for _ in range(5):
+        if not session.exec(select(User).where(User.referral_code == code)).first():
+            break
+        code = secrets.token_hex(4).upper()
+    user.referral_code = code
+    session.add(user)
+    session.commit()
+    return code
+
+
+@app.get("/user/referral")
+def get_referral(
+    user_id: int = Depends(get_current_user),
+    session: Session = Depends(get_session),
+):
+    user = session.get(User, user_id)
+    if not user:
+        raise HTTPException(404, "User not found")
+    code = _ensure_referral_code(session, user)
+    base = os.getenv("FRONTEND_URL", "https://app.getpurpai.com").rstrip("/")
+    return {"referral_code": code, "referral_link": f"{base}?ref={code}"}
+
+
+# ── User: Request account deletion ─────────────────────────────────────────────
+
+@app.post("/user/request-deletion")
+def request_account_deletion(
+    data: RequestDeletionInput,
+    user_id: int = Depends(get_current_user),
+    session: Session = Depends(get_session),
+):
+    """Confirm account deletion by typing EXCLUIR. Marks account for deletion (or triggers workflow)."""
+    if (data.confirm_text or "").strip().upper() != "EXCLUIR":
+        raise HTTPException(400, "Type EXCLUIR to confirm account deletion")
+    user = session.get(User, user_id)
+    if not user:
+        raise HTTPException(404, "User not found")
+    # For now: revoke all sessions and optionally mark user (e.g. is_deleted=True if we add the column)
+    # Plan: confirm_text or confirm_email - we do confirm_text here
+    sessions = session.exec(select(UserSession).where(UserSession.user_id == user_id)).all()
+    for us in sessions:
+        session.add(RevokedJti(jti=us.jti))
+        session.delete(us)
+    session.commit()
+    return {"ok": True, "message": "Account deletion requested. All sessions have been revoked."}
+
+
+@app.post("/auth/change-password")
+def change_password(
+    data: ChangePasswordInput,
+    user_id: int = Depends(get_current_user),
+    session: Session = Depends(get_session),
+):
+    user = session.get(User, user_id)
+    if not user:
+        raise HTTPException(404, "User not found")
+    ok, err = validate_password_strong(data.new_password)
+    if not ok:
+        raise HTTPException(400, err)
+    if not bcrypt.checkpw(data.current_password.encode("utf-8"), user.password_hash.encode("utf-8")):
+        raise HTTPException(400, "Current password is incorrect")
+    user.password_hash = bcrypt.hashpw(data.new_password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+    session.add(user)
+    session.commit()
+    return {"ok": True}
+
+
 def _user_payload(user: User) -> dict:
     return {
         "id":                   user.id,
-        "full_name":            user.username,
+        "username":             user.username,
+        "full_name":            user.full_name or user.username,
+        "email":                user.email,
+        "locale":               getattr(user, "locale", None) or "pt-BR",
+        "currency":             getattr(user, "currency", None) or "BRL",
         "plan":                 user.plan,
         "is_premium":           has_plan(user, "investor", "tax_pro"),
         "is_verified":          user.is_verified,
         "notification_email":   user.notification_email,
         "notification_digest":  user.notification_digest,
         "notification_browser": user.notification_browser,
+        "referred_by_id":       getattr(user, "referred_by_id", None),
     }
 
 
@@ -1911,6 +2272,12 @@ def get_net_worth(user_id: int = Depends(get_current_user), session: Session = D
     for k in sorted(by_month.keys())[-12:]:
         history.append({"month": k, "net_worth": round(by_month[k] + manual_assets_total + total_debts, 2)})
 
+    percent_change = None
+    if history and history[-1].get("net_worth") and history[-1]["net_worth"] != 0:
+        prev = float(history[-1]["net_worth"])
+        if net_worth != prev:
+            percent_change = round(((net_worth - prev) / prev) * 100, 1)
+
     return {
         "portfolio_value": round(portfolio_value, 2),
         "manual_assets": [item for c in ("cash", "real_estate", "vehicle", "other_assets") for item in manual_by_category[c]],
@@ -1918,6 +2285,7 @@ def get_net_worth(user_id: int = Depends(get_current_user), session: Session = D
         "total_assets": round(total_assets, 2),
         "total_debts": round(total_debts, 2),
         "net_worth": round(net_worth, 2),
+        "percent_change": percent_change,
         "breakdown": {
             "investments": round(portfolio_value, 2),
             "cash": round(sum(i["value"] for i in manual_by_category["cash"]), 2),
@@ -2907,6 +3275,79 @@ def list_transactions(user_id: int = Depends(get_current_user), session: Session
     ]
 
 
+class TransactionCreateInput(BaseModel):
+    symbol: str
+    type: str
+    amount: float
+    price: float
+    date: str
+
+
+@app.post("/transactions")
+def create_transaction(
+    data: TransactionCreateInput,
+    user_id: int = Depends(get_current_user),
+    session: Session = Depends(get_session),
+):
+    user = session.get(User, user_id)
+    if not user:
+        raise HTTPException(404, "User not found")
+    if not user.is_verified:
+        raise HTTPException(403, "Account not verified")
+    tx_type = (data.type or "").strip().lower()
+    if tx_type not in ("buy", "sell"):
+        raise HTTPException(400, "type must be 'buy' or 'sell'")
+    if data.amount <= 0 or data.price <= 0:
+        raise HTTPException(400, "amount and price must be positive")
+    sym = sanitize_symbol(data.symbol)
+    md = get_asset_data(sym)
+    real_sym = (md.get("real_symbol") or md.get("symbol") or sym) if md else sym
+    tx_date = (data.date or "")[:10] or str(date.today())
+    try:
+        if tx_type == "buy":
+            existing = session.exec(select(Asset).where(Asset.symbol == real_sym, Asset.user_id == user_id)).first()
+            amount, price = float(data.amount), float(data.price)
+            if existing:
+                total_qty = existing.amount + amount
+                total_cost = existing.amount * existing.purchase_price + amount * price
+                existing.amount = total_qty
+                existing.purchase_price = total_cost / total_qty
+                session.add(existing)
+            else:
+                session.add(Asset(symbol=real_sym, amount=amount, type=(md.get("type") or "stock") if md else "stock",
+                    purchase_price=price, purchase_date=tx_date, user_id=user_id))
+            session.add(Transaction(user_id=user_id, symbol=real_sym, type="buy", amount=amount, price=price,
+                total_usd=amount * price, date=tx_date, created_at=str(date.today())))
+            session.commit()
+        else:
+            asset = session.exec(select(Asset).where(Asset.symbol == real_sym, Asset.user_id == user_id)).first()
+            amount, price = float(data.amount), float(data.price)
+            realized_pnl = None
+            if asset:
+                if amount > asset.amount:
+                    raise HTTPException(400, "Sell amount exceeds position")
+                realized_pnl = (price - asset.purchase_price) * amount
+                new_qty = round(asset.amount - amount, 8)
+                if new_qty <= 1e-9:
+                    session.delete(asset)
+                else:
+                    asset.amount = new_qty
+                    session.add(asset)
+            session.add(Transaction(user_id=user_id, symbol=real_sym, type="sell", amount=amount, price=price,
+                total_usd=amount * price, realized_pnl=realized_pnl, date=tx_date, created_at=str(date.today())))
+            session.commit()
+    except HTTPException:
+        raise
+    except Exception as e:
+        session.rollback()
+        raise HTTPException(400, str(e))
+    txs = session.exec(select(Transaction).where(Transaction.user_id == user_id).order_by(Transaction.id.desc()).limit(1)).all()
+    t = txs[0] if txs else None
+    if not t:
+        raise HTTPException(500, "Transaction not created")
+    return {"id": t.id, "symbol": t.symbol, "type": t.type, "amount": t.amount, "price": t.price, "total_usd": t.total_usd, "date": t.date}
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # STRIPE
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -2943,15 +3384,20 @@ def create_checkout(
         else:
             customer_kwargs["customer_email"] = user.email
 
-        session_obj = stripe.checkout.Session.create(
-            payment_method_types=["card"],
-            line_items=[{"price": price_id, "quantity": 1}],
-            mode="subscription",
-            success_url=f"{success_url}?session_id={{CHECKOUT_SESSION_ID}}",
-            cancel_url=cancel_url,
-            metadata={"user_id": str(user_id), "plan": data.plan},
+        create_kwargs: dict = {
+            "payment_method_types": ["card"],
+            "line_items": [{"price": price_id, "quantity": 1}],
+            "mode": "subscription",
+            "success_url": f"{success_url}?session_id={{CHECKOUT_SESSION_ID}}",
+            "cancel_url": cancel_url,
+            "metadata": {"user_id": str(user_id), "plan": data.plan},
             **customer_kwargs,
-        )
+        }
+        if data.promotion_code and data.promotion_code.strip():
+            create_kwargs["subscription_data"] = {
+                "discounts": [{"promotion_code": data.promotion_code.strip()}],
+            }
+        session_obj = stripe.checkout.Session.create(**create_kwargs)
         if session_obj.get("customer") and not user.stripe_customer_id:
             user.stripe_customer_id = session_obj["customer"]
             session.add(user); session.commit()

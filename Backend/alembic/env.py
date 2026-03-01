@@ -9,7 +9,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 from sqlmodel import SQLModel
 from models import (  # noqa: F401 – import so metadata is populated
-    User, Asset, Transaction, PriceAlert, WatchlistItem,
+    User, UserSession, RevokedJti, InvestmentGoal, Asset, Transaction, PriceAlert, WatchlistItem,
     ProcessedEvent, Dividend, EmailVerification, NetWorthEntry, PasswordResetToken,
 )
 

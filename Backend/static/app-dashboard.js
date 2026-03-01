@@ -6,13 +6,19 @@
   var THEME_KEY = "purp-theme";
   var AUTH_TOKEN_KEY = "auth_token";
   var AUTH_USER_KEY = "purp_user";
+  var SYNC_SERVER_KEY = "purp_sync_server";
 
   var COIN_IDS = {
     BTC: "bitcoin", ETH: "ethereum", SOL: "solana", BNB: "binancecoin",
     XRP: "ripple", ADA: "cardano", DOGE: "dogecoin", AVAX: "avalanche-2",
     DOT: "polkadot", LINK: "chainlink",
   };
-  var CRYPTO_TICKERS = new Set(["BTC", "ETH", "SOL", "BNB", "XRP", "ADA", "DOGE", "AVAX", "DOT", "LINK"]);
+  var CRYPTO_TICKERS = new Set(["BTC", "ETH", "SOL", "BNB", "XRP", "ADA", "DOGE", "AVAX", "DOT", "LINK", "BITCOIN", "ETHEREUM"]);
+  var CRYPTO_COIN_IDS = { BITCOIN: "bitcoin", ETHEREUM: "ethereum" };
+  function cryptoCoinId(ticker) {
+    var t = (ticker || "").toUpperCase();
+    return CRYPTO_COIN_IDS[t] || COIN_IDS[t] || t.toLowerCase();
+  }
 
   function isCrypto(ticker) {
     return CRYPTO_TICKERS.has((ticker || "").toUpperCase());
@@ -71,6 +77,41 @@
     return "https://purp-production.up.railway.app";
   }
 
+  function fetchWithAuth(path, opts) {
+    opts = opts || {};
+    var headers = opts.headers || {};
+    var token = getAuthToken();
+    if (token) headers["Authorization"] = "Bearer " + token;
+    if (!headers["Content-Type"]) headers["Content-Type"] = "application/json";
+    opts.headers = headers;
+    var base = getApiBase();
+    return fetch(base + path, opts);
+  }
+
+  function getLocale() {
+    return (state.user && state.user.locale) ? state.user.locale : "pt-BR";
+  }
+  function getCurrency() {
+    return (state.user && state.user.currency) ? state.user.currency : "BRL";
+  }
+  function formatCurrency(value) {
+    if (value == null || isNaN(value)) return "—";
+    try {
+      return new Intl.NumberFormat(getLocale(), { style: "currency", currency: getCurrency() }).format(value);
+    } catch (e) {
+      return getCurrency() === "USD" ? "$" + value.toFixed(2) : "R$ " + value.toFixed(2);
+    }
+  }
+  function formatDate(dateStr) {
+    if (!dateStr) return "";
+    try {
+      var d = typeof dateStr === "string" ? new Date(dateStr) : dateStr;
+      return d.toLocaleDateString(getLocale());
+    } catch (e) {
+      return dateStr;
+    }
+  }
+
   if (!getAuthToken()) {
     window.location.href = "/";
     throw new Error("redirect");
@@ -84,7 +125,15 @@
     news: [],
     prices: {},
     changes: {},
+    movers: [],
+    portfolioScore: null,
+    marketAnalysisText: null,
+    userGoals: null,
+    user: null,
+    portfolioSort: "value",
+    moversSort: "change-desc",
   };
+  var _lastModalTrigger = null;
 
   function persist() {
     setStored({
@@ -158,12 +207,12 @@
     }
 
     if (cryptos.length > 0) {
-      var ids = cryptos.map(function (t) { return COIN_IDS[t] || t.toLowerCase(); }).join(",");
+      var ids = cryptos.map(function (t) { return cryptoCoinId(t); }).join(",");
       fetch("https://api.coingecko.com/api/v3/simple/price?ids=" + ids + "&vs_currencies=usd&include_24hr_change=true")
         .then(function (r) { return r.json(); })
         .then(function (data) {
           cryptos.forEach(function (t) {
-            var id = COIN_IDS[t] || t.toLowerCase();
+            var id = cryptoCoinId(t);
             var o = data[id];
             if (o && o.usd != null) prices[t] = o.usd;
             if (o && o.usd_24h_change != null) changes[t] = o.usd_24h_change;
@@ -175,7 +224,7 @@
     stocks.forEach(function (sym) {
       var base = getApiBase();
       fetch(base + "/api/proxy/yahoo-chart?symbol=" + encodeURIComponent(sym))
-        .then(function (r) { return r.json(); })
+        .then(function (r) { return r.ok ? r.json() : {}; })
         .then(function (json) {
           var meta = json && json.chart && json.chart.result && json.chart.result[0] && json.chart.result[0].meta;
           if (meta) {
@@ -205,7 +254,7 @@
 
     var positions = state.positions;
     var totalValue = state.totalValue;
-    var displayTotal = state.valuesHidden ? "••••" : "$" + totalValue.toFixed(2);
+    var displayTotal = state.valuesHidden ? "••••" : formatCurrency(totalValue);
     var dayChangePct = 0;
     if (positions.length > 0) {
       var dayChange = positions.reduce(function (s, p) {
@@ -215,10 +264,22 @@
       dayChangePct = totalValue > 0 ? (dayChange / totalValue) * 100 : 0;
     }
 
+    var sortBy = state.portfolioSort || "value";
+    if (positions.length > 1) {
+      positions = positions.slice().sort(function (a, b) {
+        if (sortBy === "value") return (b.currentValue || 0) - (a.currentValue || 0);
+        if (sortBy === "pnl") return (b.pnlPercent != null ? b.pnlPercent : 0) - (a.pnlPercent != null ? a.pnlPercent : 0);
+        if (sortBy === "ticker") return (a.ticker || "").localeCompare(b.ticker || "");
+        return 0;
+      });
+    }
+
     var portfolioEmpty = document.getElementById("portfolio-empty");
     var portfolioContent = document.getElementById("portfolio-content");
     var portfolioTotalValue = document.getElementById("portfolio-total-value");
     var portfolioPositions = document.getElementById("portfolio-positions");
+    var portfolioSortSelect = document.getElementById("portfolio-sort");
+    if (portfolioSortSelect && state.portfolioSort) portfolioSortSelect.value = state.portfolioSort;
 
     if (positions.length === 0) {
       if (portfolioEmpty) portfolioEmpty.style.display = "block";
@@ -237,10 +298,16 @@
       }
       if (portfolioPositions) {
         portfolioPositions.innerHTML = positions.map(function (p) {
-          var val = state.valuesHidden ? "••••" : "$" + p.currentValue.toFixed(2);
+          var val = state.valuesHidden ? "••••" : formatCurrency(p.currentValue);
           var pnlClass = p.pnlPercent >= 0 ? "positive" : "negative";
-          var pnlStr = (p.pnlPercent >= 0 ? "+" : "") + p.pnlPercent.toFixed(2) + "%";
-          return "<li><span class=\"pos-ticker\">" + p.ticker + "</span><span class=\"pos-value\">" + val + "</span> <span class=\"pos-pnl " + pnlClass + "\">" + pnlStr + "</span></li>";
+          var pnlStr;
+          if (p.currentPrice == null || p.currentPrice === 0) {
+            pnlStr = "—";
+            pnlClass = "";
+          } else {
+            pnlStr = (p.pnlPercent >= 0 ? "+" : "") + p.pnlPercent.toFixed(2) + "%";
+          }
+          return "<li data-ticker=\"" + p.ticker + "\"><span class=\"pos-ticker\">" + p.ticker + "</span><span class=\"pos-value\">" + val + "</span> <span class=\"pos-pnl " + pnlClass + "\">" + pnlStr + "</span></li>";
         }).join("");
       }
     }
@@ -258,7 +325,7 @@
           var ch = state.changes[t] || 0;
           var chClass = ch >= 0 ? "up" : "dn";
           var chStr = (ch >= 0 ? "+" : "") + ch.toFixed(2) + "%";
-          return "<li data-ticker=\"" + t + "\"><span class=\"wl-ticker\">" + t + "</span><span class=\"wl-price\">$" + price.toFixed(2) + "</span> <span class=\"wl-chg " + chClass + "\">" + chStr + "</span></li>";
+          return "<li data-ticker=\"" + t + "\"><span class=\"wl-ticker\">" + t + "</span><span class=\"wl-price\">" + formatCurrency(price) + "</span> <span class=\"wl-chg " + chClass + "\">" + chStr + "</span></li>";
         }).join("");
       }
     }
@@ -266,29 +333,112 @@
     var scoreValue = document.getElementById("score-value");
     var scoreClassEl = document.getElementById("score-class");
     var score = 50;
-    if (positions.length > 0) {
+    var grade = "—";
+    if (state.portfolioScore && state.portfolioScore.overall != null) {
+      score = Math.round(state.portfolioScore.overall);
+      grade = state.portfolioScore.grade || (score >= 80 ? "Excellent" : score >= 60 ? "Good" : score >= 40 ? "Fair" : "Poor");
+    } else if (positions.length > 0) {
       score = Math.min(100, 40 + Math.min(positions.length * 10, 30) + (state.totalValue > 10000 ? 10 : 0));
+      grade = score >= 80 ? "Excellent" : score >= 60 ? "Good" : score >= 40 ? "Fair" : "Poor";
     }
-    var classification = score >= 80 ? "Excellent" : score >= 60 ? "Good" : score >= 40 ? "Fair" : "Poor";
     if (scoreValue) scoreValue.textContent = score;
-    if (scoreClassEl) scoreClassEl.textContent = classification;
+    if (scoreClassEl) scoreClassEl.textContent = grade;
     var gauge = document.getElementById("score-gauge");
     if (gauge) gauge.style.setProperty("--score", String(score));
+    var scoreExplanation = document.getElementById("score-explanation");
+    if (scoreExplanation) scoreExplanation.textContent = "Baseado em diversificação, risco e consistência.";
+    var scoreInsightsEl = document.getElementById("score-insights");
+    if (scoreInsightsEl) {
+      if (state.portfolioScore && state.portfolioScore.insights && state.portfolioScore.insights.length > 0) {
+        scoreInsightsEl.innerHTML = "<p class=\"score-insight-title\">Sugestões:</p><ul class=\"score-insight-list\">" + state.portfolioScore.insights.slice(0, 3).map(function (s) { return "<li>" + s + "</li>"; }).join("") + "</ul>";
+        scoreInsightsEl.style.display = "block";
+      } else {
+        scoreInsightsEl.innerHTML = "";
+        scoreInsightsEl.style.display = "none";
+      }
+    }
 
     var moversList = document.getElementById("movers-list");
     if (moversList) {
-      var movers = [
-        { ticker: "BTC", changePercent: state.changes["BTC"] || 2.5 },
-        { ticker: "ETH", changePercent: state.changes["ETH"] || 1.8 },
-        { ticker: "NVDA", changePercent: state.changes["NVDA"] || 3.2 },
-        { ticker: "AAPL", changePercent: state.changes["AAPL"] || -0.5 },
-        { ticker: "TSLA", changePercent: state.changes["TSLA"] || 4.1 },
+      var movers = state.movers && state.movers.length > 0 ? state.movers : [
+        { symbol: "BTC", percent_change: state.changes["BTC"] || 2.5 },
+        { symbol: "ETH", percent_change: state.changes["ETH"] || 1.8 },
+        { symbol: "NVDA", percent_change: state.changes["NVDA"] || 3.2 },
+        { symbol: "AAPL", percent_change: state.changes["AAPL"] || -0.5 },
+        { symbol: "TSLA", percent_change: state.changes["TSLA"] || 4.1 },
       ];
+      var moversSort = state.moversSort || "change-desc";
+      movers = movers.slice().sort(function (a, b) {
+        var pa = a.percent_change != null ? a.percent_change : (a.changePercent != null ? a.changePercent : 0);
+        var pb = b.percent_change != null ? b.percent_change : (b.changePercent != null ? b.changePercent : 0);
+        if (moversSort === "change-desc") return pb - pa;
+        if (moversSort === "change-asc") return pa - pb;
+        if (moversSort === "ticker") return (a.symbol || a.ticker || "").localeCompare(b.symbol || b.ticker || "");
+        return 0;
+      });
       moversList.innerHTML = movers.map(function (m) {
-        var c = m.changePercent >= 0 ? "up" : "dn";
-        var str = (m.changePercent >= 0 ? "+" : "") + m.changePercent.toFixed(2) + "%";
-        return "<li><span class=\"mover-ticker\">" + m.ticker + "</span><span class=\"mover-chg " + c + "\">" + str + "</span></li>";
+        var ticker = m.symbol || m.ticker;
+        var pct = m.percent_change != null ? m.percent_change : (m.changePercent != null ? m.changePercent : 0);
+        var c = pct >= 0 ? "up" : "dn";
+        var str = (pct >= 0 ? "+" : "") + (typeof pct === "number" ? pct.toFixed(2) : pct) + "%";
+        return "<li data-ticker=\"" + ticker + "\"><span class=\"mover-ticker\">" + ticker + "</span><span class=\"mover-chg " + c + "\">" + str + "</span></li>";
       }).join("");
+      var moversSortSelect = document.getElementById("movers-sort");
+      if (moversSortSelect && state.moversSort) moversSortSelect.value = state.moversSort;
+    }
+
+    var widgetGoalsEmpty = document.getElementById("widget-goals-empty");
+    var widgetGoalsList = document.getElementById("widget-goals-list");
+    if (widgetGoalsEmpty && widgetGoalsList) {
+      var goals = (state.userGoals && state.userGoals.goals) || [];
+      if (goals.length === 0) {
+        widgetGoalsEmpty.style.display = "block";
+        widgetGoalsList.style.display = "none";
+        widgetGoalsList.innerHTML = "";
+      } else {
+        widgetGoalsEmpty.style.display = "none";
+        widgetGoalsList.style.display = "block";
+        widgetGoalsList.innerHTML = goals.slice(0, 3).map(function (g) {
+          var pct = Math.min(100, (g.progress_pct || 0));
+          return "<div class=\"widget-goal-item\"><div class=\"widget-goal-label\">" + (g.label || "") + "</div><div class=\"goal-progress\"><div class=\"goal-progress-bar\" style=\"width:" + pct + "%\"></div></div><span class=\"widget-goal-values\">" + formatCurrency(g.current_value || 0) + " / " + formatCurrency(g.target_value || 0) + " (" + (g.progress_pct || 0) + "%)</span></div>";
+        }).join("");
+      }
+    }
+
+    var widgetAnalysis = document.querySelector("#widget-analysis .widget-empty-inline");
+    var widgetAnalysisContent = document.querySelector("#widget-analysis .widget-analysis-content");
+    if (widgetAnalysis || widgetAnalysisContent) {
+      if (state.marketAnalysisText) {
+        var content = (state.marketAnalysisText || "").replace(/</g, "&lt;");
+        if (widgetAnalysisContent) widgetAnalysisContent.innerHTML = content;
+        else if (widgetAnalysis) widgetAnalysis.outerHTML = "<div class=\"widget-analysis-content\">" + content + "</div>";
+      } else if (state.marketAnalysisText === false) {
+        var msg = "Faça upgrade para ver análise com IA.";
+        if (widgetAnalysisContent) widgetAnalysisContent.textContent = msg;
+        else if (widgetAnalysis) widgetAnalysis.textContent = msg;
+      }
+    }
+
+    var pieEl = document.getElementById("portfolio-pie");
+    if (pieEl && positions.length > 0) {
+      var totalPct = 0;
+      var segments = positions.map(function (p, i) {
+        var pct = p.allocationPercent || 0;
+        totalPct += pct;
+        return pct;
+      });
+      if (totalPct > 0) {
+        var colors = ["#7c3aed", "#10b981", "#f59e0b", "#ef4444", "#06b6d4", "#8b5cf6"];
+        var conicParts = segments.map(function (pct, i) {
+          return colors[i % colors.length] + " " + (i === 0 ? "0" : segments.slice(0, i).reduce(function (a, b) { return a + b; }, 0)) + "% " + (segments.slice(0, i + 1).reduce(function (a, b) { return a + b; }, 0)) + "%";
+        }).join(", ");
+        pieEl.style.background = "conic-gradient(" + conicParts + ")";
+        pieEl.style.width = "100%";
+        pieEl.style.height = "100%";
+        pieEl.style.borderRadius = "50%";
+      }
+    } else if (pieEl) {
+      pieEl.style.background = "";
     }
   }
 
@@ -296,18 +446,230 @@
     var tickers = allTickers();
     if (tickers.length === 0) tickers = ["BTC", "ETH", "AAPL"];
     fetchPrices(tickers, function () {
+      fetchMovers();
+      fetchPortfolioScore();
+      fetchUserGoals();
+      fetchMarketAnalysis();
       render();
       fetchNews();
     });
   }
 
+  function fetchMovers() {
+    var base = getApiBase();
+    fetch(base + "/movers")
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        var list = [];
+        if (data && data.gainers) list = list.concat(data.gainers);
+        if (data && data.losers) list = list.concat(data.losers);
+        if (list.length === 0 && data && data.all) list = data.all.slice(0, 10);
+        state.movers = list.map(function (m) {
+          return { symbol: m.symbol || m.ticker, percent_change: m.percent_change, current_price: m.current_price, icon: m.icon };
+        });
+        render();
+      })
+      .catch(function () { state.movers = []; });
+  }
+
+  function fetchPortfolioScore() {
+    fetchWithAuth("/portfolio/score")
+      .then(function (r) {
+        if (r.ok) return r.json();
+        return null;
+      })
+      .then(function (data) {
+        state.portfolioScore = data;
+        render();
+      })
+      .catch(function () { state.portfolioScore = null; });
+  }
+
+  function fetchUserGoals() {
+    fetchWithAuth("/user/goals")
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (data) {
+        state.userGoals = data;
+        render();
+      })
+      .catch(function () { state.userGoals = null; });
+  }
+
+  function fetchMarketAnalysis() {
+    fetchWithAuth("/analysis/portfolio")
+      .then(function (r) {
+        if (r.status === 402) {
+          state.marketAnalysisText = false;
+          return;
+        }
+        if (r.ok) return r.json();
+        state.marketAnalysisText = null;
+        return null;
+      })
+      .then(function (data) {
+        if (data && data.analysis) state.marketAnalysisText = data.analysis;
+        render();
+      })
+      .catch(function () { state.marketAnalysisText = null; });
+  }
+
+  function openTransactionModalWithAsset(ticker, price, type) {
+    _lastModalTrigger = document.activeElement;
+    var txModal = document.getElementById("transaction-modal");
+    var txTicker = document.getElementById("tx-ticker");
+    var txPrice = document.getElementById("tx-price");
+    var txDate = document.getElementById("tx-date");
+    var txTypeBuy = document.querySelector(".tx-type-btn[data-type=\"buy\"]");
+    var txTypeSell = document.querySelector(".tx-type-btn[data-type=\"sell\"]");
+    var txTypeInput = document.getElementById("tx-type");
+    if (txTicker) txTicker.value = (ticker || "").toUpperCase();
+    if (txPrice) txPrice.value = price != null ? String(price) : (state.prices[ticker] != null ? state.prices[ticker] : "");
+    if (txDate) txDate.value = new Date().toISOString().slice(0, 10);
+    if (type === "sell" && txTypeSell) {
+      txTypeSell.classList.add("active");
+      if (txTypeBuy) txTypeBuy.classList.remove("active");
+      if (txTypeInput) txTypeInput.value = "sell";
+    } else {
+      if (txTypeBuy) txTypeBuy.classList.add("active");
+      if (txTypeSell) txTypeSell.classList.remove("active");
+      if (txTypeInput) txTypeInput.value = "buy";
+    }
+    if (txModal) txModal.setAttribute("aria-hidden", "false");
+    createIcons();
+  }
+
+  function openAssetPanel(ticker) {
+    if (!ticker) return;
+    _lastModalTrigger = document.activeElement;
+    var titleEl = document.getElementById("asset-panel-title");
+    var bodyEl = document.getElementById("asset-panel-body");
+    var panel = document.getElementById("asset-panel");
+    if (titleEl) titleEl.textContent = ticker;
+    if (bodyEl) bodyEl.innerHTML = "<p class=\"text-muted\">Carregando…</p>";
+    if (panel) panel.setAttribute("aria-hidden", "false");
+    createIcons();
+
+    var symbol = encodeURIComponent(ticker);
+    Promise.all([
+      fetchWithAuth("/snapshot/" + symbol).then(function (r) { return r.ok ? r.json() : null; }),
+      fetchWithAuth("/analysis/" + symbol).then(function (r) {
+        if (r.status === 402) return { upgrade: true };
+        return r.ok ? r.json() : null;
+      }),
+    ]).then(function (results) {
+      var snapshot = results[0];
+      var analysis = results[1];
+      var price = (snapshot && snapshot.price != null) ? snapshot.price : (state.prices[ticker] != null ? state.prices[ticker] : 0);
+      var change = (snapshot && snapshot.change_percent != null) ? snapshot.change_percent : (state.changes[ticker] != null ? state.changes[ticker] : null);
+      var name = (snapshot && snapshot.name) ? snapshot.name : ticker;
+      var changeStr = change != null ? ((change >= 0 ? "+" : "") + change.toFixed(2) + "%") : "—";
+      var changeClass = change != null ? (change >= 0 ? "positive" : "negative") : "";
+      var html = "<p><strong>" + name + "</strong></p><p>Preço: $" + Number(price).toFixed(2) + "</p><p class=\"pos-pnl " + changeClass + "\">Variação 24h: " + changeStr + "</p>";
+      if (analysis && analysis.upgrade) {
+        html += "<p class=\"text-muted\">Faça upgrade para ver análise com IA.</p>";
+      } else if (analysis && analysis.analysis) {
+        html += "<div class=\"asset-panel-analysis\">" + analysis.analysis.replace(/</g, "&lt;") + "</div>";
+      }
+      html += "<div class=\"asset-panel-actions\"><button type=\"button\" class=\"btn btn-primary btn-register-buy\">Registrar compra</button> <button type=\"button\" class=\"btn btn-secondary btn-register-sell\">Registrar venda</button></div>";
+      html += "<p><button type=\"button\" class=\"btn btn-secondary btn-create-alert\" data-ticker=\"" + (ticker || "").replace(/"/g, "&quot;") + "\">Criar alerta</button></p>";
+      if (bodyEl) bodyEl.innerHTML = html;
+      bodyEl.querySelectorAll(".btn-register-buy").forEach(function (btn) {
+        btn.addEventListener("click", function () { openTransactionModalWithAsset(ticker, price, "buy"); });
+      });
+      bodyEl.querySelectorAll(".btn-register-sell").forEach(function (btn) {
+        btn.addEventListener("click", function () { openTransactionModalWithAsset(ticker, price, "sell"); });
+      });
+      bodyEl.querySelectorAll(".btn-create-alert").forEach(function (btn) {
+        btn.addEventListener("click", function () { openAlertsModal(btn.getAttribute("data-ticker") || ticker); });
+      });
+      createIcons();
+    }).catch(function () {
+      var price = state.prices[ticker] != null ? state.prices[ticker] : 0;
+      var change = state.changes[ticker];
+      var changeStr = change != null ? ((change >= 0 ? "+" : "") + change.toFixed(2) + "%") : "—";
+      var changeClass = change != null ? (change >= 0 ? "positive" : "negative") : "";
+      var html = "<p>Preço: $" + Number(price).toFixed(2) + "</p><p class=\"pos-pnl " + changeClass + "\">Variação: " + changeStr + "</p>";
+      html += "<div class=\"asset-panel-actions\"><button type=\"button\" class=\"btn btn-primary btn-register-buy\">Registrar compra</button> <button type=\"button\" class=\"btn btn-secondary btn-register-sell\">Registrar venda</button></div>";
+      html += "<p><button type=\"button\" class=\"btn btn-secondary btn-create-alert\" data-ticker=\"" + (ticker || "").replace(/"/g, "&quot;") + "\">Criar alerta</button></p>";
+      if (bodyEl) bodyEl.innerHTML = html;
+      bodyEl.querySelectorAll(".btn-register-buy").forEach(function (btn) {
+        btn.addEventListener("click", function () { openTransactionModalWithAsset(ticker, price, "buy"); });
+      });
+      bodyEl.querySelectorAll(".btn-register-sell").forEach(function (btn) {
+        btn.addEventListener("click", function () { openTransactionModalWithAsset(ticker, price, "sell"); });
+      });
+      bodyEl.querySelectorAll(".btn-create-alert").forEach(function (btn) {
+        btn.addEventListener("click", function () { openAlertsModal(btn.getAttribute("data-ticker") || ticker); });
+      });
+      createIcons();
+    });
+  }
+
+  function openAlertsModal(prefillTicker) {
+    _lastModalTrigger = document.activeElement;
+    var modal = document.getElementById("alerts-modal");
+    if (!modal) return;
+    modal.setAttribute("aria-hidden", "false");
+    var symbolInp = document.getElementById("alert-symbol");
+    if (symbolInp) symbolInp.value = (prefillTicker || "").toUpperCase();
+    var listEl = document.getElementById("alerts-list");
+    var wrapEl = document.getElementById("alerts-list-wrap");
+    if (wrapEl) {
+      var p = wrapEl.querySelector("p.text-muted");
+      if (p) p.textContent = "Carregando…";
+    }
+    if (listEl) listEl.innerHTML = "";
+    fetchWithAuth("/alerts").then(function (r) { return r.ok ? r.json() : { alerts: [] }; }).then(function (data) {
+      var alerts = data.alerts || [];
+      if (wrapEl) {
+        var p2 = wrapEl.querySelector("p.text-muted");
+        if (p2) p2.textContent = alerts.length === 0 ? "Nenhum alerta." : "";
+      }
+      if (listEl) {
+        listEl.innerHTML = alerts.map(function (a) {
+          var typeLabel = a.alert_type === "price_above" ? "Acima de" : a.alert_type === "price_below" ? "Abaixo de" : a.alert_type;
+          var status = a.active ? "Ativo" : "Pausado";
+          return "<div class=\"alert-item\" data-id=\"" + a.id + "\"><span class=\"alert-info\">" + (a.symbol || "") + " — " + typeLabel + " " + (a.target_value != null ? a.target_value : "") + "</span> <span class=\"alert-status\">" + status + "</span> <button type=\"button\" class=\"btn-small alert-toggle\" data-id=\"" + a.id + "\">" + (a.active ? "Pausar" : "Ativar") + "</button> <button type=\"button\" class=\"btn-small alert-delete\" data-id=\"" + a.id + "\">Excluir</button></div>";
+        }).join("");
+        listEl.querySelectorAll(".alert-toggle").forEach(function (btn) {
+          btn.addEventListener("click", function () {
+            var id = parseInt(btn.getAttribute("data-id"), 10);
+            fetchWithAuth("/alerts/" + id + "/toggle", { method: "POST" }).then(function () { openAlertsModal(); });
+          });
+        });
+        listEl.querySelectorAll(".alert-delete").forEach(function (btn) {
+          btn.addEventListener("click", function () {
+            var id = parseInt(btn.getAttribute("data-id"), 10);
+            fetchWithAuth("/alerts/" + id, { method: "DELETE" }).then(function (r) {
+              if (r.ok) { var item = listEl.querySelector(".alert-item[data-id=\"" + id + "\"]"); if (item) item.remove(); }
+            });
+          });
+        });
+      }
+    });
+    var resultEl = document.getElementById("alerts-result");
+    if (resultEl) resultEl.textContent = "";
+    createIcons();
+  }
+
   function fetchNews() {
     var tickers = allTickers();
     var base = getApiBase();
+    var cutoff = Math.floor(Date.now() / 1000) - 30 * 24 * 3600;
     fetch(base + "/api/proxy/news")
       .then(function (r) { return r.json(); })
       .then(function (data) {
         var list = (data && data.Data) ? data.Data : [];
+        list = list.filter(function (n) {
+          var pub = n.published_on;
+          if (pub != null && pub < cutoff) return false;
+          return true;
+        });
+        list.sort(function (a, b) {
+          var pa = a.published_on || 0;
+          var pb = b.published_on || 0;
+          return pb - pa;
+        });
         var upper = tickers.map(function (t) { return t.toUpperCase(); });
         var filtered = list.filter(function (n) {
           if (upper.length === 0) return true;
@@ -396,6 +758,7 @@
   }
 
   function openShareModal() {
+    _lastModalTrigger = document.activeElement;
     buildShareCard();
     document.getElementById("share-modal").setAttribute("aria-hidden", "false");
     createIcons();
@@ -423,23 +786,64 @@
       .catch(function () { alert("Erro ao gerar imagem."); });
   }
 
+  function focusBeforeHide(modalEl, savedFocus) {
+    try {
+      if (savedFocus && typeof savedFocus.focus === "function" && document.contains(savedFocus)) savedFocus.focus();
+      else {
+        document.body.setAttribute("tabindex", "-1");
+        document.body.focus();
+      }
+    } catch (e) {}
+    if (modalEl) modalEl.setAttribute("aria-hidden", "true");
+  }
+
   document.addEventListener("DOMContentLoaded", function () {
     applyTheme(getTheme());
 
-    var user = getAuthUser();
-    var name = (user && (user.full_name || user.first_name)) ? (user.full_name || (user.first_name + " " + (user.last_name || "")).trim()) : (user && user.email) || "User";
-    var letter = (name || "U").charAt(0).toUpperCase();
-    var headerLetter = document.getElementById("header-user-letter");
-    if (headerLetter) headerLetter.textContent = letter;
-    var menuName = document.getElementById("user-menu-name");
-    if (menuName) menuName.textContent = name;
-    var menuEmail = document.getElementById("user-menu-email");
-    if (menuEmail) menuEmail.textContent = (user && user.email) || "";
+    function updateUserMenu(me) {
+      state.user = me;
+      if (me) {
+        try { localStorage.setItem(AUTH_USER_KEY, JSON.stringify(me)); } catch (e) {}
+      }
+      var name = (me && (me.full_name || me.username)) ? (me.full_name || me.username) : (me && me.email) || "User";
+      var letter = (name || "U").charAt(0).toUpperCase();
+      var headerLetter = document.getElementById("header-user-letter");
+      if (headerLetter) headerLetter.textContent = letter;
+      var menuName = document.getElementById("user-menu-name");
+      if (menuName) menuName.textContent = name;
+      var menuEmail = document.getElementById("user-menu-email");
+      if (menuEmail) menuEmail.textContent = (me && me.email) || "";
+    }
 
-    refreshPrices();
+    var user = getAuthUser();
+    updateUserMenu(user || state.user);
+
+    fetchWithAuth("/auth/me")
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (me) {
+        if (me) updateUserMenu(me);
+        var syncOn = localStorage.getItem(SYNC_SERVER_KEY) === "true";
+        if (syncOn) {
+          fetchWithAuth("/transactions").then(function (r) { return r.ok ? r.json() : []; }).then(function (arr) {
+            if (Array.isArray(arr) && arr.length > 0) {
+              state.transactions = arr.map(function (t) {
+                return { id: t.id, ticker: t.symbol || t.ticker, type: t.type || "buy", quantity: parseFloat(t.amount) || 0, price: parseFloat(t.price) || 0, date: t.date || "", notes: "" };
+              });
+              persist();
+            }
+            refreshPrices();
+          }).catch(function () { refreshPrices(); });
+        } else {
+          refreshPrices();
+        }
+      })
+      .catch(function () {
+        refreshPrices();
+      });
 
     document.querySelectorAll("[data-open-transaction]").forEach(function (btn) {
       btn.addEventListener("click", function () {
+        _lastModalTrigger = document.activeElement;
         document.getElementById("transaction-modal").setAttribute("aria-hidden", "false");
         document.getElementById("tx-date").value = new Date().toISOString().slice(0, 10);
         createIcons();
@@ -447,11 +851,29 @@
     });
     document.querySelectorAll("[data-open-asset]").forEach(function (btn) {
       btn.addEventListener("click", function () {
+        _lastModalTrigger = document.activeElement;
         document.getElementById("asset-panel").setAttribute("aria-hidden", "false");
         document.getElementById("asset-panel-title").textContent = "AI Insights";
         var body = document.getElementById("asset-panel-body");
-        if (body) body.innerHTML = "<p class=\"text-muted\">Em breve.</p>";
+        if (body) body.innerHTML = "<p class=\"text-muted\">Carregando…</p>";
         createIcons();
+        fetchWithAuth("/analysis/portfolio")
+          .then(function (r) {
+            if (r.status === 402) {
+              if (body) body.innerHTML = "<p class=\"text-muted\">Faça upgrade para ver análise com IA.</p>";
+              return;
+            }
+            return r.ok ? r.json() : null;
+          })
+          .then(function (data) {
+            if (body && data && data.analysis) body.innerHTML = "<div class=\"asset-panel-analysis\">" + data.analysis.replace(/</g, "&lt;") + "</div>";
+            else if (body && !body.innerHTML.includes("upgrade")) body.innerHTML = "<p class=\"text-muted\">Em breve.</p>";
+            createIcons();
+          })
+          .catch(function () {
+            if (body) body.innerHTML = "<p class=\"text-muted\">Em breve.</p>";
+            createIcons();
+          });
       });
     });
 
@@ -465,7 +887,7 @@
     var txTypeInput = document.getElementById("tx-type");
 
     function closeTxModal() {
-      txModal.setAttribute("aria-hidden", "true");
+      focusBeforeHide(txModal, _lastModalTrigger);
     }
     txModal.querySelector(".modal-backdrop").addEventListener("click", closeTxModal);
     txModal.querySelector(".modal-close").addEventListener("click", closeTxModal);
@@ -547,23 +969,35 @@
     var assetPanel = document.getElementById("asset-panel");
     if (assetPanel) {
       assetPanel.querySelector(".asset-panel-backdrop").addEventListener("click", function () {
-        assetPanel.setAttribute("aria-hidden", "true");
+        focusBeforeHide(assetPanel, _lastModalTrigger);
       });
       var closeBtn = assetPanel.querySelector(".asset-panel-close");
-      if (closeBtn) closeBtn.addEventListener("click", function () { assetPanel.setAttribute("aria-hidden", "true"); });
+      if (closeBtn) closeBtn.addEventListener("click", function () { focusBeforeHide(assetPanel, _lastModalTrigger); });
     }
 
     document.getElementById("btn-settings").addEventListener("click", function () {
+      _lastModalTrigger = document.activeElement;
       document.getElementById("settings-drawer").setAttribute("aria-hidden", "false");
       var btnVal = document.getElementById("settings-values-btn");
       if (btnVal) btnVal.textContent = state.valuesHidden ? "On" : "Off";
+      var u = state.user;
+      var notifEmail = document.getElementById("settings-notif-email");
+      var notifDigest = document.getElementById("settings-notif-digest");
+      var notifBrowser = document.getElementById("settings-notif-browser");
+      if (notifEmail) { notifEmail.textContent = (u && u.notification_email) ? "On" : "Off"; notifEmail.setAttribute("aria-pressed", (u && u.notification_email) ? "true" : "false"); }
+      if (notifDigest) { notifDigest.textContent = (u && u.notification_digest) ? "On" : "Off"; notifDigest.setAttribute("aria-pressed", (u && u.notification_digest) ? "true" : "false"); }
+      if (notifBrowser) { notifBrowser.textContent = (u && u.notification_browser) ? "On" : "Off"; notifBrowser.setAttribute("aria-pressed", (u && u.notification_browser) ? "true" : "false"); }
+      var localeSel = document.getElementById("settings-locale");
+      var currencySel = document.getElementById("settings-currency");
+      if (localeSel && u && u.locale) localeSel.value = u.locale;
+      if (currencySel && u && u.currency) currencySel.value = u.currency;
       createIcons();
     });
     document.getElementById("settings-drawer").querySelector(".settings-backdrop").addEventListener("click", function () {
-      document.getElementById("settings-drawer").setAttribute("aria-hidden", "true");
+      focusBeforeHide(document.getElementById("settings-drawer"), _lastModalTrigger);
     });
     document.getElementById("settings-drawer").querySelector(".settings-close").addEventListener("click", function () {
-      document.getElementById("settings-drawer").setAttribute("aria-hidden", "true");
+      focusBeforeHide(document.getElementById("settings-drawer"), _lastModalTrigger);
     });
     document.getElementById("settings-values-btn").addEventListener("click", function () {
       state.valuesHidden = !state.valuesHidden;
@@ -592,7 +1026,166 @@
       a.click();
       URL.revokeObjectURL(a.href);
     });
+    var settingsExportFiscal = document.getElementById("settings-export-fiscal");
+    if (settingsExportFiscal) settingsExportFiscal.addEventListener("click", function () {
+      var year = new Date().getFullYear();
+      fetchWithAuth("/tax/form-8949?year=" + year).then(function (r) {
+        if (r.status === 402) { alert("Plano Tax Pro necessário para relatório fiscal."); return; }
+        if (!r.ok) return r.text().then(function (t) { alert("Erro: " + (t || r.status)); });
+        return r.blob().then(function (blob) {
+          var a = document.createElement("a");
+          a.href = URL.createObjectURL(blob);
+          a.download = "form-8949-" + year + ".csv";
+          a.click();
+          URL.revokeObjectURL(a.href);
+        });
+      });
+    });
+    function patchPreferences(prefs) {
+      fetchWithAuth("/user/preferences", {
+        method: "PATCH",
+        body: JSON.stringify(prefs),
+      }).then(function (r) {
+        if (r.ok) return r.json();
+        return null;
+      }).then(function (data) {
+        if (data && state.user) {
+          state.user.notification_email = data.notification_email;
+          state.user.notification_digest = data.notification_digest;
+          state.user.notification_browser = data.notification_browser;
+        }
+      }).catch(function () {});
+    }
+    document.getElementById("settings-notif-email").addEventListener("click", function () {
+      var next = !(state.user && state.user.notification_email);
+      this.textContent = next ? "On" : "Off";
+      this.setAttribute("aria-pressed", next ? "true" : "false");
+      patchPreferences({ notification_email: next, notification_digest: state.user && state.user.notification_digest, notification_browser: state.user && state.user.notification_browser });
+    });
+    document.getElementById("settings-notif-digest").addEventListener("click", function () {
+      var next = !(state.user && state.user.notification_digest);
+      this.textContent = next ? "On" : "Off";
+      this.setAttribute("aria-pressed", next ? "true" : "false");
+      patchPreferences({ notification_email: state.user && state.user.notification_email, notification_digest: next, notification_browser: state.user && state.user.notification_browser });
+    });
+    document.getElementById("settings-notif-browser").addEventListener("click", function () {
+      var next = !(state.user && state.user.notification_browser);
+      this.textContent = next ? "On" : "Off";
+      this.setAttribute("aria-pressed", next ? "true" : "false");
+      patchPreferences({ notification_email: state.user && state.user.notification_email, notification_digest: state.user && state.user.notification_digest, notification_browser: next });
+    });
+    document.getElementById("settings-edit-profile").addEventListener("click", function () {
+      _lastModalTrigger = document.activeElement;
+      document.getElementById("settings-drawer").setAttribute("aria-hidden", "true");
+      var u = state.user;
+      document.getElementById("profile-full-name").value = (u && (u.full_name || u.username)) || "";
+      document.getElementById("profile-email").value = (u && u.email) || "";
+      document.getElementById("edit-profile-result").textContent = "";
+      document.getElementById("edit-profile-modal").setAttribute("aria-hidden", "false");
+      createIcons();
+    });
+    document.getElementById("settings-change-password").addEventListener("click", function () {
+      _lastModalTrigger = document.activeElement;
+      document.getElementById("settings-drawer").setAttribute("aria-hidden", "true");
+      document.getElementById("current-password").value = "";
+      document.getElementById("new-password").value = "";
+      document.getElementById("change-password-result").textContent = "";
+      document.getElementById("change-password-modal").setAttribute("aria-hidden", "false");
+      createIcons();
+    });
+    document.getElementById("settings-locale").addEventListener("change", function () {
+      var locale = this.value;
+      if (!state.user) return;
+      fetchWithAuth("/user/profile", { method: "PATCH", body: JSON.stringify({ locale: locale }) })
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (data) { if (data) state.user.locale = data.locale; })
+        .catch(function () {});
+    });
+    document.getElementById("settings-currency").addEventListener("change", function () {
+      var currency = this.value;
+      if (!state.user) return;
+      fetchWithAuth("/user/profile", { method: "PATCH", body: JSON.stringify({ currency: currency }) })
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (data) { if (data) state.user.currency = data.currency; render(); })
+        .catch(function () {});
+    });
+    document.getElementById("settings-manage-subscription").addEventListener("click", function () {
+      var body = { plan: "investor" };
+      if (state.user && state.user.referred_by_id) body.promotion_code = "promo_1T5zIiP6HjWToP4aqM1sVwQj";
+      fetchWithAuth("/stripe/create-checkout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      })
+        .then(function (r) { return r.ok ? r.json() : r.json().then(function (e) { throw new Error(e.detail || e.message || "Erro"); }); })
+        .then(function (data) {
+          if (data && data.checkout_url) window.open(data.checkout_url, "_blank");
+        })
+        .catch(function (err) { alert(err.message || "Erro ao abrir checkout."); });
+    });
+
+    var editProfileModal = document.getElementById("edit-profile-modal");
+    if (editProfileModal) {
+      editProfileModal.querySelector(".modal-backdrop").addEventListener("click", function () { focusBeforeHide(editProfileModal, _lastModalTrigger); });
+      editProfileModal.querySelector(".edit-profile-close").addEventListener("click", function () { focusBeforeHide(editProfileModal, _lastModalTrigger); });
+    }
+    document.getElementById("edit-profile-form").addEventListener("submit", function (e) {
+      e.preventDefault();
+      var fullName = document.getElementById("profile-full-name").value.trim();
+      var email = document.getElementById("profile-email").value.trim().toLowerCase();
+      var resultEl = document.getElementById("edit-profile-result");
+      fetchWithAuth("/user/profile", {
+        method: "PATCH",
+        body: JSON.stringify({ full_name: fullName || null, email: email || null }),
+      }).then(function (r) {
+        if (r.ok) return r.json();
+        return r.json().then(function (err) { throw new Error(err.detail || err.message || "Erro"); });
+      }).then(function (data) {
+        if (data) {
+          state.user = Object.assign(state.user || {}, data);
+          if (data.full_name != null) state.user.full_name = data.full_name;
+          if (data.email != null) state.user.email = data.email;
+          resultEl.textContent = "Salvo.";
+          resultEl.style.color = "var(--positive, green)";
+          var menuName = document.getElementById("user-menu-name");
+          if (menuName) menuName.textContent = state.user.full_name || state.user.username || "User";
+          setTimeout(function () { focusBeforeHide(document.getElementById("edit-profile-modal"), _lastModalTrigger); }, 500);
+        }
+      }).catch(function (err) {
+        resultEl.textContent = err.message || "Erro ao salvar.";
+        resultEl.style.color = "var(--negative, red)";
+      });
+    });
+
+    var changePasswordModal = document.getElementById("change-password-modal");
+    if (changePasswordModal) {
+      changePasswordModal.querySelector(".modal-backdrop").addEventListener("click", function () { focusBeforeHide(changePasswordModal, _lastModalTrigger); });
+      changePasswordModal.querySelector(".change-password-close").addEventListener("click", function () { focusBeforeHide(changePasswordModal, _lastModalTrigger); });
+    }
+    document.getElementById("change-password-form").addEventListener("submit", function (e) {
+      e.preventDefault();
+      var current = document.getElementById("current-password").value;
+      var newPw = document.getElementById("new-password").value;
+      var resultEl = document.getElementById("change-password-result");
+      fetchWithAuth("/auth/change-password", {
+        method: "POST",
+        body: JSON.stringify({ current_password: current, new_password: newPw }),
+      }).then(function (r) {
+        if (r.ok) return;
+        return r.json().then(function (err) { throw new Error(err.detail || err.message || "Erro"); });
+      }).then(function () {
+        resultEl.textContent = "Senha alterada.";
+        resultEl.style.color = "var(--positive, green)";
+        document.getElementById("current-password").value = "";
+        document.getElementById("new-password").value = "";
+        setTimeout(function () { focusBeforeHide(document.getElementById("change-password-modal"), _lastModalTrigger); }, 500);
+      }).catch(function (err) {
+        resultEl.textContent = err.message || "Erro ao alterar senha.";
+        resultEl.style.color = "var(--negative, red)";
+      });
+    });
     document.getElementById("settings-import-csv").addEventListener("click", function () {
+      _lastModalTrigger = document.activeElement;
       document.getElementById("settings-drawer").setAttribute("aria-hidden", "true");
       document.getElementById("import-modal").setAttribute("aria-hidden", "false");
       document.getElementById("import-file").value = "";
@@ -600,10 +1193,10 @@
     });
 
     document.getElementById("import-modal").querySelector(".modal-backdrop").addEventListener("click", function () {
-      document.getElementById("import-modal").setAttribute("aria-hidden", "true");
+      focusBeforeHide(document.getElementById("import-modal"), _lastModalTrigger);
     });
     document.getElementById("import-modal").querySelector(".import-close").addEventListener("click", function () {
-      document.getElementById("import-modal").setAttribute("aria-hidden", "true");
+      focusBeforeHide(document.getElementById("import-modal"), _lastModalTrigger);
     });
     document.getElementById("import-do").addEventListener("click", function () {
       var input = document.getElementById("import-file");
@@ -652,7 +1245,7 @@
         persist();
         refreshPrices();
         document.getElementById("import-result").textContent = "Importadas " + txs.length + " transações.";
-        document.getElementById("import-modal").setAttribute("aria-hidden", "true");
+        focusBeforeHide(document.getElementById("import-modal"), _lastModalTrigger);
       };
       reader.readAsText(file);
     });
@@ -677,6 +1270,51 @@
           clearSession();
           window.location.href = "/";
         }
+        if (btn.getAttribute("data-action") === "account") {
+          _lastModalTrigger = document.activeElement;
+          var accountModal = document.getElementById("account-modal");
+          accountModal.setAttribute("aria-hidden", "false");
+          var body = document.getElementById("account-modal-body");
+          var netWorthEl = document.getElementById("account-net-worth");
+          if (netWorthEl) netWorthEl.textContent = "Carregando…";
+          fetchWithAuth("/auth/me").then(function (r) { return r.ok ? r.json() : null; }).then(function (me) {
+            if (me) updateUserMenu(me);
+          });
+          fetchWithAuth("/net-worth")
+            .then(function (r) { return r.ok ? r.json() : null; })
+            .then(function (data) {
+              if (netWorthEl && data && data.net_worth != null) {
+                var txt = formatCurrency(data.net_worth);
+                if (data.percent_change != null) txt += " <span class=\"account-change " + (data.percent_change >= 0 ? "positive" : "negative") + "\">(" + (data.percent_change >= 0 ? "+" : "") + data.percent_change.toFixed(1) + "% vs. mês anterior)</span>";
+                netWorthEl.innerHTML = txt;
+              } else if (netWorthEl) netWorthEl.textContent = formatCurrency(0);
+            })
+            .catch(function () { if (netWorthEl) netWorthEl.textContent = "—"; });
+          var firstFocus = accountModal.querySelector("button, [href], input, select, textarea");
+          if (firstFocus) setTimeout(function () { firstFocus.focus(); }, 100);
+          var syncToggle = document.getElementById("account-sync-toggle");
+          if (syncToggle) {
+            var syncOn = localStorage.getItem(SYNC_SERVER_KEY) === "true";
+            syncToggle.textContent = syncOn ? "On" : "Off";
+            syncToggle.onclick = function () {
+              var next = localStorage.getItem(SYNC_SERVER_KEY) !== "true";
+              localStorage.setItem(SYNC_SERVER_KEY, next ? "true" : "false");
+              this.textContent = next ? "On" : "Off";
+              if (next) {
+                fetchWithAuth("/transactions").then(function (r) { return r.ok ? r.json() : []; }).then(function (arr) {
+                  if (Array.isArray(arr)) {
+                    state.transactions = arr.map(function (t) {
+                      return { id: t.id, ticker: t.symbol || t.ticker, type: t.type || "buy", quantity: parseFloat(t.amount) || 0, price: parseFloat(t.price) || 0, date: t.date || "", notes: "" };
+                    });
+                    persist();
+                    render();
+                  }
+                });
+              }
+            };
+          }
+          createIcons();
+        }
       });
     });
 
@@ -698,6 +1336,7 @@
     });
 
     var searchInput = document.getElementById("header-search-input");
+    var searchDropdownTimeout;
     if (searchInput) searchInput.addEventListener("input", function () {
       var q = this.value.trim();
       var dropdown = document.getElementById("header-search-dropdown");
@@ -714,12 +1353,75 @@
             var ticker = b.getAttribute("data-ticker");
             searchInput.value = "";
             dropdown.setAttribute("aria-hidden", "true");
-            document.getElementById("asset-panel-title").textContent = ticker;
-            document.getElementById("asset-panel-body").innerHTML = "<p>Preço: $" + (state.prices[ticker] || 0).toFixed(2) + "</p><p>Variação 24h: " + (state.changes[ticker] != null ? (state.changes[ticker] >= 0 ? "+" : "") + state.changes[ticker].toFixed(2) + "%" : "—") + "</p>";
-            document.getElementById("asset-panel").setAttribute("aria-hidden", "false");
+            openAssetPanel(ticker);
+            try {
+              var prev = JSON.parse(localStorage.getItem(SEARCH_HISTORY_KEY) || "[]");
+              prev = [ticker].concat(prev.filter(function (x) { return x !== ticker; })).slice(0, 5);
+              localStorage.setItem(SEARCH_HISTORY_KEY, JSON.stringify(prev));
+            } catch (e) {}
             createIcons();
           });
         });
+        return;
+      }
+      clearTimeout(searchDropdownTimeout);
+      if (q.length >= 2) {
+        searchDropdownTimeout = setTimeout(function () {
+          fetch(getApiBase() + "/search?q=" + encodeURIComponent(q))
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+              var list = Array.isArray(data) ? data : (data && data.results ? data.results : []);
+              var items = list.slice(0, 8).map(function (item) {
+                var sym = item.symbol || item.ticker || item;
+                var label = typeof sym === "string" ? sym : (item.name || item.symbol || item.ticker || "");
+                var tickerVal = typeof sym === "string" ? sym : (item.symbol || item.ticker || "");
+                return "<button type=\"button\" data-ticker=\"" + tickerVal + "\">" + (label || tickerVal) + "</button>";
+              });
+              if (items.length === 0) items = ["<button type=\"button\" data-ticker=\"" + q.toUpperCase() + "\">" + q.toUpperCase() + "</button>"];
+              dropdown.innerHTML = items.join("");
+              dropdown.setAttribute("aria-hidden", "false");
+              dropdown.querySelectorAll("button").forEach(function (b) {
+                b.addEventListener("click", function () {
+                  var ticker = (b.getAttribute("data-ticker") || "").toUpperCase();
+                  searchInput.value = "";
+                  dropdown.setAttribute("aria-hidden", "true");
+                  try {
+                    var prev = JSON.parse(localStorage.getItem(SEARCH_HISTORY_KEY) || "[]");
+                    prev = [ticker].concat(prev.filter(function (x) { return x !== ticker; })).slice(0, 5);
+                    localStorage.setItem(SEARCH_HISTORY_KEY, JSON.stringify(prev));
+                  } catch (e) {}
+                  if (state.tickers.indexOf(ticker) === -1) {
+                    state.tickers.push(ticker);
+                    persist();
+                    refreshPrices();
+                  }
+                  openAssetPanel(ticker);
+                  createIcons();
+                });
+              });
+            })
+            .catch(function () {
+              dropdown.innerHTML = "<button type=\"button\" data-ticker=\"" + q.toUpperCase() + "\">" + q.toUpperCase() + "</button>";
+              dropdown.setAttribute("aria-hidden", "false");
+              dropdown.querySelector("button").addEventListener("click", function () {
+                var ticker = q.toUpperCase();
+                try {
+                  var prev = JSON.parse(localStorage.getItem(SEARCH_HISTORY_KEY) || "[]");
+                  prev = [ticker].concat(prev.filter(function (x) { return x !== ticker; })).slice(0, 5);
+                  localStorage.setItem(SEARCH_HISTORY_KEY, JSON.stringify(prev));
+                } catch (e) {}
+                if (state.tickers.indexOf(ticker) === -1) {
+                  state.tickers.push(ticker);
+                  persist();
+                  refreshPrices();
+                }
+                searchInput.value = "";
+                dropdown.setAttribute("aria-hidden", "true");
+                openAssetPanel(ticker);
+                createIcons();
+              });
+            });
+        }, 300);
         return;
       }
       dropdown.innerHTML = "<button type=\"button\" data-ticker=\"" + q.toUpperCase() + "\">" + q.toUpperCase() + "</button>";
@@ -738,9 +1440,7 @@
         }
         searchInput.value = "";
         dropdown.setAttribute("aria-hidden", "true");
-        document.getElementById("asset-panel-title").textContent = ticker;
-        document.getElementById("asset-panel-body").innerHTML = "<p>Preço: $" + (state.prices[ticker] || 0).toFixed(2) + "</p>";
-        document.getElementById("asset-panel").setAttribute("aria-hidden", "false");
+        openAssetPanel(ticker);
         createIcons();
       });
     });
@@ -765,10 +1465,10 @@
       });
     });
     document.querySelector(".share-modal-backdrop").addEventListener("click", function () {
-      document.getElementById("share-modal").setAttribute("aria-hidden", "true");
+      focusBeforeHide(document.getElementById("share-modal"), _lastModalTrigger);
     });
     document.querySelector(".share-modal-close").addEventListener("click", function () {
-      document.getElementById("share-modal").setAttribute("aria-hidden", "true");
+      focusBeforeHide(document.getElementById("share-modal"), _lastModalTrigger);
     });
     document.getElementById("share-download-png").addEventListener("click", function () {
       shareDownloadPng();
@@ -778,12 +1478,329 @@
     if (wlList) wlList.addEventListener("click", function (e) {
       var li = e.target.closest("li[data-ticker]");
       if (!li) return;
-      var ticker = li.getAttribute("data-ticker");
-      document.getElementById("asset-panel-title").textContent = ticker;
-      document.getElementById("asset-panel-body").innerHTML = "<p>Preço: $" + (state.prices[ticker] || 0).toFixed(2) + "</p><p>Variação: " + (state.changes[ticker] != null ? (state.changes[ticker] >= 0 ? "+" : "") + state.changes[ticker].toFixed(2) + "%" : "—") + "</p>";
-      document.getElementById("asset-panel").setAttribute("aria-hidden", "false");
-      createIcons();
+      openAssetPanel(li.getAttribute("data-ticker"));
     });
+
+    var portfolioPositionsEl = document.getElementById("portfolio-positions");
+    if (portfolioPositionsEl) portfolioPositionsEl.addEventListener("click", function (e) {
+      var li = e.target.closest("li[data-ticker]");
+      if (!li) return;
+      openAssetPanel(li.getAttribute("data-ticker"));
+    });
+
+    var moversListEl = document.getElementById("movers-list");
+    if (moversListEl) moversListEl.addEventListener("click", function (e) {
+      var li = e.target.closest("li[data-ticker]");
+      if (!li) return;
+      openAssetPanel(li.getAttribute("data-ticker"));
+    });
+
+    var portfolioSortEl = document.getElementById("portfolio-sort");
+    if (portfolioSortEl) portfolioSortEl.addEventListener("change", function () {
+      state.portfolioSort = this.value || "value";
+      render();
+    });
+    var moversSortEl = document.getElementById("movers-sort");
+    if (moversSortEl) moversSortEl.addEventListener("change", function () {
+      state.moversSort = this.value || "change-desc";
+      render();
+    });
+
+    var headerSyncEl = document.getElementById("header-sync-indicator");
+    if (headerSyncEl) {
+      headerSyncEl.setAttribute("title", getAuthToken() ? "Dados sincronizados com sua conta" : "Modo local");
+    }
+
+    var accountModal = document.getElementById("account-modal");
+    if (accountModal) {
+      accountModal.querySelector(".modal-backdrop").addEventListener("click", function () { focusBeforeHide(accountModal, _lastModalTrigger); });
+      accountModal.querySelector(".account-modal-close").addEventListener("click", function () { focusBeforeHide(accountModal, _lastModalTrigger); });
+      accountModal.addEventListener("keydown", function (e) {
+        if (e.key === "Escape" && accountModal.getAttribute("aria-hidden") === "false") {
+          e.preventDefault();
+          focusBeforeHide(accountModal, _lastModalTrigger);
+        }
+      });
+      var accountSessionsBtn = document.getElementById("account-sessions-btn");
+      if (accountSessionsBtn) accountSessionsBtn.addEventListener("click", function () {
+        _lastModalTrigger = document.activeElement;
+        var sm = document.getElementById("sessions-modal");
+        if (sm) sm.setAttribute("aria-hidden", "false");
+        var listEl = document.getElementById("sessions-list");
+        if (listEl) listEl.innerHTML = "Carregando…";
+        fetchWithAuth("/user/sessions").then(function (r) { return r.ok ? r.json() : { sessions: [] }; }).then(function (data) {
+          var sessions = data.sessions || [];
+          if (listEl) {
+            if (sessions.length === 0) listEl.innerHTML = "<p class=\"text-muted\">Nenhuma sessão ativa.</p>";
+            else {
+              listEl.innerHTML = sessions.map(function (s) {
+                return "<div class=\"session-item\" data-id=\"" + s.id + "\"><span class=\"session-info\">" + (s.user_agent || "Dispositivo") + " — " + (s.created_at || "").slice(0, 19) + "</span> <button type=\"button\" class=\"btn-secondary btn-small session-revoke\" data-id=\"" + s.id + "\">Encerrar</button></div>";
+              }).join("");
+              listEl.querySelectorAll(".session-revoke").forEach(function (btn) {
+                btn.addEventListener("click", function () {
+                  var id = parseInt(btn.getAttribute("data-id"), 10);
+                  fetchWithAuth("/user/sessions/" + id, { method: "DELETE" }).then(function (r) {
+                    if (r.ok) { var item = listEl.querySelector(".session-item[data-id=\"" + id + "\"]"); if (item) item.remove(); }
+                  });
+                });
+              });
+            }
+          }
+        });
+        var revokeAllBtn = document.getElementById("sessions-revoke-all");
+        if (revokeAllBtn) revokeAllBtn.onclick = function () {
+          fetchWithAuth("/user/sessions/revoke-all", { method: "POST" }).then(function (r) {
+            if (r.ok && listEl) listEl.innerHTML = "<p class=\"text-muted\">Todas as sessões foram encerradas.</p>";
+          });
+        };
+        createIcons();
+      });
+      var accountDeleteBtn = document.getElementById("account-delete-btn");
+      if (accountDeleteBtn) accountDeleteBtn.addEventListener("click", function () {
+        _lastModalTrigger = document.activeElement;
+        var dm = document.getElementById("delete-account-modal");
+        if (dm) {
+          var step1 = document.getElementById("delete-account-step1");
+          var step2 = document.getElementById("delete-account-step2");
+          if (step1) step1.style.display = "block";
+          if (step2) step2.style.display = "none";
+          var conf = document.getElementById("delete-account-confirm");
+          if (conf) conf.value = "";
+          var errEl = document.getElementById("delete-account-err");
+          if (errEl) { errEl.style.display = "none"; errEl.textContent = ""; }
+          dm.setAttribute("aria-hidden", "false");
+        }
+        createIcons();
+      });
+      var accountGoalsBtn = document.getElementById("account-goals-btn");
+      if (accountGoalsBtn) accountGoalsBtn.addEventListener("click", function () {
+        _lastModalTrigger = document.activeElement;
+        var gm = document.getElementById("goals-modal");
+        if (gm) gm.setAttribute("aria-hidden", "false");
+        var listEl = document.getElementById("goals-list");
+        if (listEl) listEl.innerHTML = "Carregando…";
+        fetchWithAuth("/user/goals").then(function (r) { return r.ok ? r.json() : { goals: [] }; }).then(function (data) {
+          var goals = data.goals || [];
+          if (listEl) {
+            if (goals.length === 0) listEl.innerHTML = "<p class=\"text-muted\">Nenhuma meta. Crie uma abaixo.</p>";
+            else {
+              listEl.innerHTML = goals.map(function (g) {
+                var pct = Math.min(100, (g.progress_pct || 0));
+                return "<div class=\"goal-item\" data-id=\"" + g.id + "\"><div class=\"goal-header\"><strong>" + (g.label || "") + "</strong> <button type=\"button\" class=\"btn-small goal-delete\" data-id=\"" + g.id + "\">Excluir</button></div><div class=\"goal-progress\"><div class=\"goal-progress-bar\" style=\"width:" + pct + "%\"></div></div><span class=\"goal-values\">" + formatCurrency(g.current_value || 0) + " / " + formatCurrency(g.target_value || 0) + " (" + (g.progress_pct || 0) + "%)</span></div>";
+              }).join("");
+              listEl.querySelectorAll(".goal-delete").forEach(function (btn) {
+                btn.addEventListener("click", function () {
+                  var id = parseInt(btn.getAttribute("data-id"), 10);
+                  fetchWithAuth("/user/goals/" + id, { method: "DELETE" }).then(function (r) {
+                    if (r.ok) { var item = listEl.querySelector(".goal-item[data-id=\"" + id + "\"]"); if (item) item.remove(); }
+                  });
+                });
+              });
+            }
+          }
+        });
+        createIcons();
+      });
+      var goalCreateBtn = document.getElementById("goal-create");
+      if (goalCreateBtn) goalCreateBtn.addEventListener("click", function () {
+        var label = (document.getElementById("goal-label") && document.getElementById("goal-label").value) || "";
+        var target = parseFloat((document.getElementById("goal-target") && document.getElementById("goal-target").value)) || 0;
+        var targetDate = (document.getElementById("goal-date") && document.getElementById("goal-date").value) || null;
+        if (!label.trim()) return;
+        fetchWithAuth("/user/goals", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ label: label.trim(), target_value: target, target_date: targetDate || undefined }),
+        }).then(function (r) { return r.json(); }).then(function (g) {
+          var listEl = document.getElementById("goals-list");
+          if (listEl && listEl.innerHTML.indexOf("Nenhuma meta") !== -1) listEl.innerHTML = "";
+          if (listEl) {
+            var pct = Math.min(100, (g.progress_pct || 0));
+            var html = "<div class=\"goal-item\" data-id=\"" + g.id + "\"><div class=\"goal-header\"><strong>" + (g.label || "") + "</strong> <button type=\"button\" class=\"btn-small goal-delete\" data-id=\"" + g.id + "\">Excluir</button></div><div class=\"goal-progress\"><div class=\"goal-progress-bar\" style=\"width:" + pct + "%\"></div></div><span class=\"goal-values\">" + formatCurrency(g.current_value || 0) + " / " + formatCurrency(g.target_value || 0) + " (" + (g.progress_pct || 0) + "%)</span></div>";
+            listEl.insertAdjacentHTML("afterbegin", html);
+            listEl.querySelector(".goal-delete").addEventListener("click", function () {
+              fetchWithAuth("/user/goals/" + g.id, { method: "DELETE" }).then(function (r) {
+                if (r.ok) { var item = listEl.querySelector(".goal-item[data-id=\"" + g.id + "\"]"); if (item) item.remove(); }
+              });
+            });
+          }
+          if (document.getElementById("goal-label")) document.getElementById("goal-label").value = "";
+          if (document.getElementById("goal-target")) document.getElementById("goal-target").value = "";
+          if (document.getElementById("goal-date")) document.getElementById("goal-date").value = "";
+        });
+      });
+      var accountReferralBtn = document.getElementById("account-referral-btn");
+      if (accountReferralBtn) accountReferralBtn.addEventListener("click", function () {
+        fetchWithAuth("/user/referral").then(function (r) { return r.ok ? r.json() : null; }).then(function (data) {
+          if (data && data.referral_link) {
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+              navigator.clipboard.writeText(data.referral_link).then(function () { alert("Link copiado!"); });
+            } else {
+              var inp = document.createElement("input");
+              inp.value = data.referral_link;
+              document.body.appendChild(inp);
+              inp.select();
+              document.execCommand("copy");
+              document.body.removeChild(inp);
+              alert("Link copiado!");
+            }
+          }
+        });
+      });
+      var accountBrokerBtn = document.getElementById("account-broker-btn");
+      if (accountBrokerBtn) accountBrokerBtn.addEventListener("click", function () {
+        _lastModalTrigger = document.activeElement;
+        var bm = document.getElementById("broker-modal");
+        if (bm) bm.setAttribute("aria-hidden", "false");
+        var resultEl = document.getElementById("broker-result");
+        if (resultEl) resultEl.textContent = "";
+        createIcons();
+      });
+      var accountAlertsBtn = document.getElementById("account-alerts-btn");
+      if (accountAlertsBtn) accountAlertsBtn.addEventListener("click", function () {
+        openAlertsModal();
+      });
+    }
+
+    var sessionsModal = document.getElementById("sessions-modal");
+    if (sessionsModal) {
+      sessionsModal.querySelector(".modal-backdrop").addEventListener("click", function () { focusBeforeHide(sessionsModal, _lastModalTrigger); });
+      sessionsModal.querySelector(".sessions-modal-close").addEventListener("click", function () { focusBeforeHide(sessionsModal, _lastModalTrigger); });
+    }
+    var deleteAccountModal = document.getElementById("delete-account-modal");
+    if (deleteAccountModal) {
+      deleteAccountModal.querySelector(".modal-backdrop").addEventListener("click", function () { focusBeforeHide(deleteAccountModal, _lastModalTrigger); });
+      deleteAccountModal.querySelectorAll(".delete-account-modal-close").forEach(function (el) { el.addEventListener("click", function () { focusBeforeHide(deleteAccountModal, _lastModalTrigger); }); });
+      var deleteSubmit = document.getElementById("delete-account-submit");
+      if (deleteSubmit) deleteSubmit.addEventListener("click", function () {
+        var confirmVal = (document.getElementById("delete-account-confirm") && document.getElementById("delete-account-confirm").value) || "";
+        if (confirmVal.trim().toUpperCase() !== "EXCLUIR") {
+          var errEl = document.getElementById("delete-account-err");
+          if (errEl) { errEl.textContent = "Digite EXCLUIR para confirmar."; errEl.style.display = "block"; }
+          return;
+        }
+        fetchWithAuth("/user/request-deletion", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ confirm_text: confirmVal.trim() }) }).then(function (r) {
+          if (r.ok) {
+            document.getElementById("delete-account-step1").style.display = "none";
+            document.getElementById("delete-account-step2").style.display = "block";
+            clearSession();
+            setTimeout(function () { window.location.href = "/"; }, 2000);
+          } else {
+            var errEl = document.getElementById("delete-account-err");
+            if (errEl) { errEl.textContent = "Erro ao solicitar exclusão."; errEl.style.display = "block"; }
+          }
+        });
+      });
+    }
+    var goalsModal = document.getElementById("goals-modal");
+    if (goalsModal) {
+      goalsModal.querySelector(".modal-backdrop").addEventListener("click", function () { focusBeforeHide(goalsModal, _lastModalTrigger); });
+      goalsModal.querySelector(".goals-modal-close").addEventListener("click", function () { focusBeforeHide(goalsModal, _lastModalTrigger); });
+    }
+    var widgetGoalsVerTodas = document.getElementById("widget-goals-ver-todas");
+    if (widgetGoalsVerTodas) {
+      widgetGoalsVerTodas.addEventListener("click", function () {
+        var accountGoalsBtn = document.getElementById("account-goals-btn");
+        if (accountGoalsBtn) accountGoalsBtn.click();
+      });
+    }
+    var brokerModal = document.getElementById("broker-modal");
+    if (brokerModal) {
+      brokerModal.querySelector(".modal-backdrop").addEventListener("click", function () { focusBeforeHide(brokerModal, _lastModalTrigger); });
+      brokerModal.querySelector(".broker-modal-close").addEventListener("click", function () { focusBeforeHide(brokerModal, _lastModalTrigger); });
+      var brokerFetchBtn = document.getElementById("broker-fetch");
+      if (brokerFetchBtn) brokerFetchBtn.addEventListener("click", function () {
+        var broker = (document.getElementById("broker-select") && document.getElementById("broker-select").value) || "coinbase";
+        var apiKey = (document.getElementById("broker-api-key") && document.getElementById("broker-api-key").value) || "";
+        var apiSecret = (document.getElementById("broker-api-secret") && document.getElementById("broker-api-secret").value) || "";
+        var resultEl = document.getElementById("broker-result");
+        if (resultEl) resultEl.textContent = "Buscando…";
+        fetchWithAuth("/broker/fetch", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ broker: broker, api_key: apiKey, api_secret: apiSecret }) }).then(function (r) { return r.json().then(function (d) { return { ok: r.ok, data: d }; }); }).then(function (x) {
+          if (resultEl) {
+            if (x.ok && x.data && x.data.holdings) resultEl.textContent = "Encontradas " + (x.data.holdings.length || 0) + " posições.";
+            else resultEl.textContent = (x.data && x.data.detail) || "Erro ao buscar.";
+          }
+        });
+      });
+      var brokerApplyBtn = document.getElementById("broker-apply");
+      if (brokerApplyBtn) brokerApplyBtn.addEventListener("click", function () {
+        var broker = (document.getElementById("broker-select") && document.getElementById("broker-select").value) || "coinbase";
+        var apiKey = (document.getElementById("broker-api-key") && document.getElementById("broker-api-key").value) || "";
+        var apiSecret = (document.getElementById("broker-api-secret") && document.getElementById("broker-api-secret").value) || "";
+        fetchWithAuth("/broker/fetch", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ broker: broker, api_key: apiKey, api_secret: apiSecret }) }).then(function (r) { return r.json().then(function (d) { return { ok: r.ok, data: d }; }); }).then(function (x) {
+          if (!x.ok || !x.data || !x.data.holdings) {
+            var resultEl = document.getElementById("broker-result");
+            if (resultEl) resultEl.textContent = "Busque posições antes de aplicar.";
+            return;
+          }
+          fetchWithAuth("/broker/apply", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ holdings: x.data.holdings }) }).then(function (r) {
+            var resultEl = document.getElementById("broker-result");
+            if (resultEl) resultEl.textContent = r.ok ? "Posições aplicadas ao portfólio." : "Erro ao aplicar.";
+          });
+        });
+      });
+    }
+
+    var transactionsPanel = document.getElementById("transactions-panel");
+    var mobileNavTransactions = document.getElementById("mobile-nav-transactions");
+    if (mobileNavTransactions && transactionsPanel) {
+      mobileNavTransactions.addEventListener("click", function () {
+        _lastModalTrigger = document.activeElement;
+        var listEl = document.getElementById("transactions-panel-list");
+        var txs = (state.transactions || []).slice().sort(function (a, b) { return (b.date || "").localeCompare(a.date || ""); });
+        if (txs.length === 0) {
+          listEl.innerHTML = "<p class=\"text-muted\">Nenhuma transação. Toque em \"Nova transação\" para registrar.</p>";
+        } else {
+          listEl.innerHTML = txs.map(function (t) {
+            var typeClass = t.type === "buy" ? "tx-type-buy" : "tx-type-sell";
+            var typeLabel = t.type === "buy" ? "Compra" : "Venda";
+            var total = (t.quantity * t.price) || 0;
+            return "<div class=\"tx-item\"><div><span class=\"tx-date\">" + (t.date || "") + "</span> <span class=\"tx-ticker\">" + (t.ticker || "") + "</span> <span class=\"" + typeClass + "\">" + typeLabel + "</span></div><div>" + t.quantity + " × " + formatCurrency(t.price) + " = " + formatCurrency(total) + "</div></div>";
+          }).join("");
+        }
+        transactionsPanel.setAttribute("aria-hidden", "false");
+        createIcons();
+      });
+      transactionsPanel.querySelector(".mobile-panel-backdrop").addEventListener("click", function () {
+        focusBeforeHide(transactionsPanel, _lastModalTrigger);
+      });
+      transactionsPanel.querySelector(".mobile-panel-close").addEventListener("click", function () {
+        focusBeforeHide(transactionsPanel, _lastModalTrigger);
+      });
+      transactionsPanel.querySelector("[data-open-transaction]").addEventListener("click", function () {
+        focusBeforeHide(transactionsPanel, _lastModalTrigger);
+        document.getElementById("transaction-modal").setAttribute("aria-hidden", "false");
+        document.getElementById("tx-date").value = new Date().toISOString().slice(0, 10);
+        createIcons();
+      });
+    }
+
+    var alertsModal = document.getElementById("alerts-modal");
+    if (alertsModal) {
+      alertsModal.querySelector(".modal-backdrop").addEventListener("click", function () { focusBeforeHide(alertsModal, _lastModalTrigger); });
+      alertsModal.querySelector(".alerts-modal-close").addEventListener("click", function () { focusBeforeHide(alertsModal, _lastModalTrigger); });
+      var alertCreateBtn = document.getElementById("alert-create");
+      if (alertCreateBtn) alertCreateBtn.addEventListener("click", function () {
+        var symbol = (document.getElementById("alert-symbol") && document.getElementById("alert-symbol").value) || "";
+        var alertType = (document.getElementById("alert-type") && document.getElementById("alert-type").value) || "price_above";
+        var targetVal = parseFloat((document.getElementById("alert-target") && document.getElementById("alert-target").value)) || 0;
+        var resultEl = document.getElementById("alerts-result");
+        if (!symbol.trim()) { if (resultEl) resultEl.textContent = "Informe o símbolo do ativo."; return; }
+        if (targetVal <= 0) { if (resultEl) resultEl.textContent = "Informe um valor alvo maior que zero."; return; }
+        if (resultEl) resultEl.textContent = "Criando…";
+        fetchWithAuth("/alerts", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ symbol: symbol.trim(), alert_type: alertType, target_value: targetVal, recurring: false }),
+        }).then(function (r) { return r.json().then(function (d) { return { ok: r.ok, data: d }; }); }).then(function (x) {
+          if (resultEl) resultEl.textContent = x.ok ? "Alerta criado." : (x.data.detail || "Erro ao criar.");
+          if (x.ok) {
+            if (document.getElementById("alert-target")) document.getElementById("alert-target").value = "";
+            openAlertsModal(document.getElementById("alert-symbol") ? document.getElementById("alert-symbol").value : "");
+          }
+        });
+      });
+    }
 
     setInterval(refreshPrices, 60000);
     createIcons();
