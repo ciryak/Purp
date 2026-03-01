@@ -150,8 +150,9 @@
       <select id="benchmark-select" class="select-ctrl">
         <option value="^GSPC">S&amp;P 500</option>
         <option value="^IXIC">Nasdaq</option>
-        <option value="^BVSP">Ibovespa</option>
+        <option value="^DJI">Dow Jones</option>
         <option value="BTC-USD">Bitcoin</option>
+        <option value="GLD">Gold ETF</option>
       </select>
       <div class="time-pills">
         <button class="pill" data-p="1d">24H</button>
@@ -162,7 +163,10 @@
       <span id="benchmark-change" class="benchmark-badge">Benchmark: —</span>
     </div>
 
-    <div class="main-chart-wrap"><canvas id="mainChart"></canvas></div>
+    <div class="main-chart-wrap">
+      <canvas id="mainChart"></canvas>
+      <div id="main-chart-placeholder" class="main-chart-placeholder" style="display:none;">Add your first asset to start tracking performance</div>
+    </div>
 
     <div class="chart-legend">
       <span class="dot purple"></span><span>Portfolio</span>
@@ -324,7 +328,7 @@
 <div id="market-watch" class="page">
   <div class="page-header">
     <div class="page-title">Market Watch</div>
-    <div class="page-sub">5 stocks and 5 cryptos in real time</div>
+    <div id="market-watch-sub" class="page-sub">5 stocks and 5 cryptos in real time</div>
   </div>
 
   <div class="section-heading">Top Stocks</div>
@@ -499,7 +503,7 @@
 <!-- ═══ DETAIL VIEW ═══ -->
 <div id="detail-view" class="overlay-screen">
   <div class="detail-nav">
-    <button class="back-btn" id="btn-back">
+    <button class="back-btn" id="btn-back" aria-label="Back to portfolio">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M19 12H5M12 5l-7 7 7 7"/></svg>
       Back
     </button>
@@ -603,21 +607,21 @@
 <!-- ═══ BROKER API MODAL ── -->
 <div id="modal-broker-api" class="modal-overlay">
   <div class="modal-box">
-    <div class="modal-title" id="broker-api-title">Conectar API</div>
-    <p class="panel-sub" style="margin-bottom:12px;">Insira as chaves de API (não são armazenadas no servidor).</p>
+    <div class="modal-title" id="broker-api-title">Connect API</div>
+    <p class="panel-sub" style="margin-bottom:12px;">Enter your API keys (they are not stored on the server).</p>
     <input type="hidden" id="broker-api-name" value="">
     <div class="field-group">
       <label class="field-label">API Key</label>
-      <input type="text" id="broker-api-key" placeholder="Sua API key" autocomplete="off">
+      <input type="text" id="broker-api-key" placeholder="Your API key" autocomplete="off">
     </div>
     <div class="field-group">
       <label class="field-label">API Secret</label>
-      <input type="password" id="broker-api-secret" placeholder="Sua API secret" autocomplete="off">
+      <input type="password" id="broker-api-secret" placeholder="Your API secret" autocomplete="off">
     </div>
     <div id="broker-api-result" class="broker-api-result" style="display:none;"></div>
     <div class="modal-actions">
-      <button type="button" class="btn-ghost" id="btn-broker-api-cancel">Cancelar</button>
-      <button type="button" class="btn-primary" id="btn-broker-api-fetch">Buscar dados</button>
+      <button type="button" class="btn-ghost" id="btn-broker-api-cancel">Cancel</button>
+      <button type="button" class="btn-primary" id="btn-broker-api-fetch">Fetch Holdings</button>
     </div>
   </div>
 </div>
@@ -676,7 +680,6 @@
 <script src="bundle.min.js"></script>
 <script src="popup.js"></script>
 <script src="Verify-screen.JS"></script>
-<script src="chart.js"></script>
 
 </body>
 </html>

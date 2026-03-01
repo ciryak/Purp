@@ -18,13 +18,17 @@
      --accent-glow: rgba(124,58,237,0.28);
      --gold:        #f59e0b;
      --gold-l:      #fbbf24;
-     --green:       #10b981;
-     --red:         #ef4444;
-     --danger:      #ef4444;
-     --text:        #f2f0ff;
+   --green:       #10b981;
+   --red:         #ef4444;
+   --danger:      #ef4444;
+   --green-l:     #34d399;
+   --red-l:       #f87171;
+   --positive:    #10b981;
+   --negative:    #ef4444;
+   --text:        #f2f0ff;
      --text2:       rgba(242,240,255,0.6);
-     /* WCAG AA 4.5:1 contrast on dark bg */
-     --text3:       rgba(242,240,255,0.55);
+   /* WCAG AA 4.5:1 contrast on dark bg */
+   --text3:       rgba(242,240,255,0.40);
      /* Radius scale — same as web */
      --r-xs:        4px;
      --r-sm:        8px;
@@ -454,6 +458,10 @@
    .pill:not(.active):hover { color: var(--text); }
    
    .main-chart-wrap { min-height: 140px; height: 140px; margin-top: 12px; position: relative; }
+   .main-chart-placeholder {
+     position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+     font-size: 12px; color: var(--text3); text-align: center; padding: 16px;
+   }
    
    .chart-legend {
      display: flex; align-items: center; gap: 10px;
@@ -572,8 +580,18 @@
 .asset-profit { font-size:10px; font-family:var(--mono); margin-top:2px; }
 
 .sensitive-value.is-hidden {
-  filter: blur(6px);
+  color: transparent !important;
+  text-shadow: 0 0 8px rgba(255,255,255,0.5);
+  transition: color 0.2s, text-shadow 0.2s;
   user-select: none;
+  -webkit-user-select: none;
+  -webkit-text-fill-color: transparent;
+}
+.balance-value.sensitive-value.is-hidden {
+  background: none;
+  -webkit-background-clip: unset;
+  -webkit-text-fill-color: transparent;
+  text-shadow: 0 0 12px rgba(167,139,250,0.6);
 }
 
 /* Transactions */
@@ -635,6 +653,8 @@
   background: rgba(255,255,255,0.06);
   transform: translateY(-1px);
 }
+.alert-row { cursor: default; }
+.alert-row:hover { transform: none; border-color: rgba(124,58,237,0.25); }
 .market-left {
   display: flex;
   align-items: center;
@@ -660,6 +680,7 @@
   gap: 2px;
 }
 .market-symbol { font-size: 12px; font-weight: 700; }
+.market-name { font-size: 10px; color: var(--text3); max-width: 14ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .market-tag {
   font-size: 9px;
   font-weight: 700;
@@ -667,12 +688,18 @@
   letter-spacing: 0.4px;
   color: var(--text3);
 }
+.market-tag-stock { color: #3b82f6; }
+.market-tag-crypto { color: var(--green); }
+.market-status-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; margin-right: 4px; vertical-align: middle; }
+.market-status-dot.open { background: var(--green); }
+.market-status-dot.closed { background: var(--text3); }
 .market-right {
   display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 2px;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
 }
+.market-values { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
 .market-price { font-family: var(--mono); font-size: 12px; }
 .market-change { font-family: var(--mono); font-size: 11px; }
    
@@ -840,10 +867,18 @@
    .detail-price  { font-size:14px; color:var(--text2); font-family:var(--mono); margin-top:2px; }
    
    .time-row {
-     display:flex; gap:4px; margin-bottom:14px;
-     background:rgba(0,0,0,0.2); border-radius:999px; padding:3px;
-     flex-wrap: wrap;
+     display: flex;
+     gap: 3px;
+     margin-bottom: 14px;
+     align-items: center;
+     overflow-x: auto;
+     flex-wrap: nowrap;
+     scrollbar-width: none;
+     padding: 3px;
+     background: rgba(0,0,0,0.2);
+     border-radius: 999px;
    }
+   .time-row::-webkit-scrollbar { display: none; }
    .time-btn {
      flex:1; min-width:0; background:transparent; border:none;
      color:var(--text3); padding:5px; border-radius:999px;
@@ -928,6 +963,16 @@
      font-family:var(--mono);
    }
    .modal-actions { display:flex; gap:8px; margin-top:6px; }
+.broker-api-result {
+  margin-top: 10px;
+  padding: 10px 12px;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  font-size: 12px;
+  color: var(--text2);
+  line-height: 1.5;
+}
    
    /* Upgrade modal */
    .upgrade-star   { font-size:32px; text-align:center; margin-bottom:6px; }

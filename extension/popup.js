@@ -22,27 +22,51 @@ let portfolioCount   = 0;
 let portfolioSymbols = new Set();
 let rebalanceSymbols = [];
 let hideSensitiveValues   = true;
+let lastTotalBalanceUsd   = null;
 let selectedAddAssetType  = null;
 let activeTaxTab          = 'tlh';   // 'tlh' | 'form8949' | 'summary'
 
 let _detailSymbol   = '';
 let _detailPeriod   = '1mo';
 let detailChartMode = 'line';
+let _mainChartDirty = true;
+
+const _cache = new Map();
+const CACHE_TTL = 60_000;
 
 let importSelectedFile   = null;
 let importSelectedBroker = '';
 
-const FEATURED_STOCKS  = ['AAPL', 'MSFT', 'NVDA', 'AMZN', 'TSLA'];
-const FEATURED_CRYPTOS = ['BTC', 'ETH', 'SOL', 'BNB', 'XRP'];
+const FEATURED_STOCKS  = ['AAPL', 'NVDA', 'MSFT', 'TSLA', 'META'];
+const FEATURED_CRYPTOS = ['BTC', 'ETH', 'SOL', 'XRP', 'DOGE'];
 
 const $ = (id) => document.getElementById(id);
 const formatUSD = (v) =>
   new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(v ?? 0);
+const formatUSDCompact = (v) => {
+  if (Math.abs(v ?? 0) >= 1_000_000) {
+    return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', notation: 'compact', maximumFractionDigits: 2 }).format(v);
+  }
+  return formatUSD(v);
+};
 const formatPct = (v) => `${v >= 0 ? '+' : ''}${(v || 0).toFixed(2)}%`;
+const formatDateUS = (isoStr) => {
+  if (!isoStr) return '—';
+  const d = new Date(isoStr);
+  return new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', year: 'numeric' }).format(d);
+};
+function isUSMarketOpen() {
+  const now = new Date();
+  const et = new Date(now.toLocaleString('en-US', { timeZone: 'America/New_York' }));
+  const day = et.getDay();
+  const h = et.getHours(), m = et.getMinutes();
+  const mins = h * 60 + m;
+  return day >= 1 && day <= 5 && mins >= 570 && mins < 960;
+}
 const hasChromeStorage = typeof chrome !== 'undefined' && !!chrome.storage?.local;
 
 // Converte o campo detail do FastAPI para string legível (pode vir como array em erros 422)
-function apiErrorDetail(detail, fallback = 'Algo deu errado. Tente novamente.') {
+function apiErrorDetail(detail, fallback = 'Something went wrong. Please try again.') {
   if (!detail) return fallback;
   if (typeof detail === 'string') return detail;
   if (Array.isArray(detail) && detail.length) {
@@ -60,37 +84,22 @@ function apiErrorDetail(detail, fallback = 'Algo deu errado. Tente novamente.') 
     tracesSampleRate: 1.0,
   });
 
-//
-  window.toggleAuthMode = function() {
-    const loginForm = document.getElementById('login-form') || document.getElementById('login-screen');
-    const registerForm = document.getElementById('register-form') || document.getElementById('register-screen');
-    
-    // Se a tela de login não estiver escondida, escondemos ela e mostramos o registro
-    if (!loginForm.classList.contains('hidden') && loginForm.style.display !== 'none') {
-      loginForm.classList.add('hidden');
-      if (loginForm.style.display) loginForm.style.display = 'none';
-      
-      registerForm.classList.remove('hidden');
-      registerForm.style.display = 'block';
-    } else {
-      // Caso contrário, fazemos o inverso
-      registerForm.classList.add('hidden');
-      if (registerForm.style.display) registerForm.style.display = 'none';
-      
-      loginForm.classList.remove('hidden');
-      loginForm.style.display = 'block';
-    }
-  };
-  
-  // Se você usa EventListeners para chamar a função, adicione isso dentro do seu DOMContentLoaded:
-  document.addEventListener('DOMContentLoaded', () => {
-    const toggleButtons = document.querySelectorAll('.toggle-auth-btn'); // Verifique a classe ou ID no seu HTML
-    toggleButtons.forEach(btn => {
-      btn.addEventListener('click', window.toggleAuthMode);
-    });
-  });
-
-
+function toggleAuthMode() {
+  const loginForm = document.getElementById('login-form') || document.getElementById('login-screen');
+  const registerForm = document.getElementById('register-form') || document.getElementById('register-screen');
+  if (!loginForm || !registerForm) return;
+  if (!loginForm.classList.contains('hidden') && loginForm.style.display !== 'none') {
+    loginForm.classList.add('hidden');
+    if (loginForm.style.display) loginForm.style.display = 'none';
+    registerForm.classList.remove('hidden');
+    registerForm.style.display = 'block';
+  } else {
+    registerForm.classList.add('hidden');
+    if (registerForm.style.display) registerForm.style.display = 'none';
+    loginForm.classList.remove('hidden');
+    loginForm.style.display = 'block';
+  }
+}
 // ══════════════════════════════════════════════════════════════════
 // INJECTED CSS — all new styles added here, no external file needed
 // ══════════════════════════════════════════════════════════════════
@@ -430,9 +439,15 @@ function injectPortfolioScoreStyles() {
 }
 
 function applyVisibilityMask() {
-  document.querySelectorAll('.sensitive-value').forEach((el) =>
-    el.classList.toggle('is-hidden', hideSensitiveValues)
-  );
+  const totalBalance = $('total-balance');
+  if (totalBalance) {
+    totalBalance.textContent = hideSensitiveValues ? '$--,--' : formatUSDCompact(lastTotalBalanceUsd ?? 0);
+    totalBalance.classList.toggle('is-hidden', false);
+  }
+  document.querySelectorAll('.sensitive-value').forEach((el) => {
+    if (el.id === 'total-balance') return;
+    el.classList.remove('is-hidden');
+  });
 }
 function getEyeIconSvg(hidden) {
   return hidden
@@ -516,6 +531,23 @@ function clearSession() {
   localStorage.removeItem('purp_user');
 }
 
+async function handleLogout() {
+  try {
+    await apiFetch('/auth/logout', { method: 'POST', headers: authHeaders() });
+  } catch (_) {}
+  clearSession();
+  if (mainChart) { mainChart.destroy(); mainChart = null; }
+  if (detailChart) { detailChart.destroy(); detailChart = null; }
+  const assetsList = $('assets-list');
+  if (assetsList) assetsList.innerHTML = '';
+  const totalBalance = $('total-balance');
+  if (totalBalance) totalBalance.textContent = '$0.00';
+  lastTotalBalanceUsd = null;
+  switchTab('dashboard');
+  showLoginScreen();
+  toast('Signed out successfully.', 'info');
+}
+
 function isPremium() { return !!currentUser?.is_premium; }
 function isTaxPro()  { return currentUser?.plan === 'tax_pro'; }
 
@@ -529,6 +561,17 @@ async function apiFetch(path, opts = {}) {
   } catch (e) { console.error('Network error:', e); return null; }
 }
 
+async function cachedFetch(path, opts = {}) {
+  const now = Date.now();
+  const hit = _cache.get(path);
+  if (hit && now - hit.ts < CACHE_TTL) return hit.data;
+  const res = await apiFetch(path, opts);
+  if (!res || !res.ok) return null;
+  const data = await res.json();
+  _cache.set(path, { data, ts: now });
+  return data;
+}
+
 function assetIconUrl(icon, symbol) {
   const sym = (symbol || '').toUpperCase() || '';
   if (icon && icon.startsWith('http')) return icon;
@@ -539,6 +582,7 @@ function startRefresh() {
   stopRefresh();
   refreshTimer = setInterval(() => {
     if (!authToken) return;
+    _mainChartDirty = true;
     fetchPortfolio(); loadMainChart(true);
     loadDividendCard();
     if ($('market-watch')?.classList.contains('active')) loadMarketWatch();
@@ -548,6 +592,14 @@ function stopRefresh() { if (refreshTimer) { clearInterval(refreshTimer); refres
 
 function showLoginScreen() { $('login-screen').classList.remove('hidden'); }
 function hideLoginScreen() { $('login-screen').classList.add('hidden'); }
+
+function focusModalFirstFocusable(modalEl) {
+  if (!modalEl) return;
+  requestAnimationFrame(() => {
+    const first = modalEl.querySelector('button, input, select, [tabindex]:not([tabindex="-1"])');
+    if (first) first.focus();
+  });
+}
 
 // ── LOGIN / REGISTER ─────────────────────────────────────────────
 async function handleLogin() {
@@ -622,12 +674,24 @@ async function handleLogin() {
  * Função auxiliar para limpar a UI e iniciar os serviços do app
  */
 function finalizeLoginUI() {
-  hideLoginScreen();    // Esconde a tela de login/cadastro
-  updateProfileBar();   // Atualiza nome/foto do user na barra
-  fetchPortfolio();     // Carrega ativos
-  loadMainChart();      // Inicia gráfico principal
-  startRefresh();       // Inicia o timer de atualização de preços (Binance/yfinance)
-  checkAIStatus();      // Verifica limites do Gemini
+  hideLoginScreen();
+  updateProfileBar();
+  initDashboard();
+}
+
+async function initDashboard() {
+  await fetchPortfolio();
+  loadMainChart();
+  setTimeout(() => {
+    loadPortfolioScore();
+    loadNetWorth();
+  }, 300);
+  setTimeout(() => {
+    loadDividendCard();
+    loadBalancePerformance();
+  }, 800);
+  startRefresh();
+  checkAIStatus();
 }
 
 
@@ -751,7 +815,7 @@ function updateProfileBar() {
 const STRIPE_INVESTOR_URL = 'https://buy.stripe.com/7sYfZj2ozh2z0Je4tf8og02';
 const STRIPE_TAXPRO_URL   = 'https://buy.stripe.com/00wfZjfblh2z63ye3P8og03';
 
-function showUpgradeModal(reason) { $('upgrade-reason').textContent = reason || 'Unlock advanced features.'; $('modal-upgrade').classList.add('active'); }
+function showUpgradeModal(reason) { $('upgrade-reason').textContent = reason || 'Unlock advanced features.'; $('modal-upgrade').classList.add('active'); focusModalFirstFocusable($('modal-upgrade')); }
 function hideUpgradeModal() { $('modal-upgrade').classList.remove('active'); }
 function handleUpgrade() {
   hideUpgradeModal();
@@ -784,25 +848,38 @@ function switchTab(id) {
 // ── MAIN CHART ───────────────────────────────────────────────────
 async function loadMainChart(skipAnim = false) {
   if (!authToken) return;
-  const ctx = $('mainChart')?.getContext('2d');
-  if (!ctx) return;
+  if (typeof Chart === 'undefined') return;
+  if (!_mainChartDirty && mainChart) return;
+  _mainChartDirty = false;
+  const ctx = $('mainChart');
+  const wrap = document.querySelector('.main-chart-wrap');
+  const placeholder = $('main-chart-placeholder');
+  if (!ctx || !wrap) return;
   if (mainChart) { mainChart.destroy(); mainChart = null; }
   const period = document.querySelector('.pill.active')?.dataset.p || '1mo';
   const bench  = $('benchmark-select')?.value || '^GSPC';
   const res = await apiFetch(`/portfolio/history?period=${period}&benchmark=${encodeURIComponent(bench)}`, { headers: authHeaders() });
   if (!res || !res.ok) return;
   const data = await res.json();
-  if (!data.portfolio?.length) return;
-  const s0 = data.portfolio[0], b0 = data.benchmark[0] || 1;
-  const normP = data.portfolio.map((v) => ((v - s0) / (s0 || 1)) * 100);
-  const normB = data.benchmark.map((v) => ((v - b0) / (b0 || 1)) * 100);
+  const prices = data.portfolio || [];
+  if (!prices.length || prices.every(v => v === 0)) {
+    if (ctx) ctx.style.display = 'none';
+    if (placeholder) { placeholder.style.display = 'flex'; placeholder.textContent = 'Add your first asset to start tracking performance'; }
+    return;
+  }
+  const s0 = prices[0] || prices.find(v => v > 0) || 1;
+  const b0 = (data.benchmark && data.benchmark[0]) || 1;
+  const normP = prices.map((v) => ((v - s0) / s0) * 100);
+  const normB = (data.benchmark || []).map((v) => ((v - b0) / b0) * 100);
   const benchChange = normB.length ? normB[normB.length - 1] : 0;
   const benchEl = $('benchmark-change');
   if (benchEl) {
     benchEl.textContent = `Benchmark: ${formatPct(benchChange)}`;
     benchEl.classList.toggle('pos', benchChange > 0); benchEl.classList.toggle('neg', benchChange < 0);
   }
-  mainChart = new Chart(ctx, {
+  if (placeholder) placeholder.style.display = 'none';
+  ctx.style.display = 'block';
+  mainChart = new Chart(ctx.getContext('2d'), {
     type: 'line',
     data: {
       labels: data.dates,
@@ -813,7 +890,27 @@ async function loadMainChart(skipAnim = false) {
     },
     options: {
       responsive: true, maintainAspectRatio: false, animation: skipAnim ? false : { duration: 400 },
-      plugins: { legend: { display: false }, tooltip: { mode: 'index', intersect: false } },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          mode: 'index',
+          intersect: false,
+          callbacks: {
+            label: (ctx) => {
+              const label = ctx.dataset.label || '';
+              const idx = ctx.dataIndex;
+              if (ctx.datasetIndex === 0 && data.portfolio && data.portfolio[idx] != null) {
+                return `${label}: ${formatUSD(data.portfolio[idx])}`;
+              }
+              if (ctx.datasetIndex === 1 && data.benchmark && data.benchmark[idx] != null) {
+                return `${label}: ${formatUSD(data.benchmark[idx])}`;
+              }
+              const val = ctx.raw;
+              return `${label}: ${val >= 0 ? '+' : ''}${Number(val).toFixed(2)}%`;
+            },
+          },
+        },
+      },
       scales: { x: { display: false }, y: { display: false } },
     },
   });
@@ -822,6 +919,7 @@ async function loadMainChart(skipAnim = false) {
 
 // ── DETAIL CHART ─────────────────────────────────────────────────
 async function loadDetailChart(symbol, period) {
+  if (typeof Chart === 'undefined') return;
   const ctx = $('detailChart')?.getContext('2d');
   if (!ctx) return;
   if (detailChart) { detailChart.destroy(); detailChart = null; }
@@ -847,7 +945,7 @@ async function loadDetailChart(symbol, period) {
     const wickColor = 'rgba(255,255,255,0.25)';
     const wicks = dates.map((_, i) => [low[i], high[i]]);
     const bodyUpNarrow = dates.map((_, i) => close[i] >= open[i] ? [open[i], close[i]] : null);
-    const bodyDownNarrow = dates.map((_, i) => close[i] < open[i] ? [open[i], close[i]] : null);
+    const bodyDownNarrow = dates.map((_, i) => close[i] < open[i] ? [close[i], open[i]] : null);
     detailChart = new Chart(ctx, {
       type: 'bar',
       data: {
@@ -870,19 +968,43 @@ async function loadDetailChart(symbol, period) {
 
   const grad = ctx.createLinearGradient(0, 0, 0, 260);
   grad.addColorStop(0, 'rgba(124,58,237,0.4)'); grad.addColorStop(1, 'rgba(124,58,237,0)');
+  const volumes = data.volumes || [];
+  const hasVolume = volumes.length === (data.prices || []).length;
+  const datasets = [
+    { label: 'Price', data: data.prices, borderColor: '#7c3aed', backgroundColor: grad, borderWidth: 2, pointRadius: 0, pointHoverRadius: 5, fill: true, tension: 0.4, yAxisID: 'y' },
+  ];
+  if (hasVolume && volumes.length) {
+    datasets.push({
+      label: 'Volume',
+      data: volumes,
+      type: 'bar',
+      backgroundColor: 'rgba(124,58,237,0.2)',
+      barThickness: 4,
+      order: 0,
+      yAxisID: 'y1',
+    });
+  }
+  const scaleY1 = hasVolume && volumes.length
+    ? { y1: { id: 'y1', display: true, position: 'right', grid: { drawOnChartArea: false }, ticks: { color: 'rgba(255,255,255,0.2)', font: { size: 8 } } } }
+    : {};
   detailChart = new Chart(ctx, {
     type: 'line',
-    data: { labels: data.dates || [], datasets: [{ data: data.prices, borderColor: '#7c3aed', backgroundColor: grad, borderWidth: 2, pointRadius: 0, pointHoverRadius: 5, fill: true, tension: 0.4 }] },
+    data: { labels: data.dates || [], datasets },
     options: {
       responsive: true, maintainAspectRatio: false, animation: { duration: 300 },
       interaction: { mode: 'index', intersect: false }, plugins: { legend: { display: false } },
-      scales: { x: { display: false }, y: { display: true, position: 'right', grid: { color: 'rgba(255,255,255,0.04)' }, ticks: { color: 'rgba(255,255,255,0.3)', font: { family: 'DM Mono', size: 9 } } } },
+      scales: {
+        x: { display: false },
+        y: { display: true, position: 'right', grid: { color: 'rgba(255,255,255,0.04)' }, ticks: { color: 'rgba(255,255,255,0.3)', font: { family: 'DM Mono', size: 9 } } },
+        ...scaleY1,
+      },
     },
   });
   applyVisibilityMask();
 }
 
 function renderSpark(canvasId, data, color) {
+  if (typeof Chart === 'undefined') return;
   const ctx = $(canvasId)?.getContext('2d');
   if (!ctx || !data?.length) return;
   new Chart(ctx, {
@@ -943,22 +1065,33 @@ async function resolveSymbolType(symbol) {
 
 // ── MARKET WATCH ─────────────────────────────────────────────────
 async function fetchQuoteForSymbol(symbol) {
-  const res = await apiFetch(`/history/${encodeURIComponent(symbol)}?period=1d`);
-  if (!res || !res.ok) return null;
-  const data = await res.json();
-  const prices = data.prices || [];
-  if (!prices.length) return null;
-  const first = prices[0] || 0, last = prices[prices.length - 1] || 0;
+  const d = await cachedFetch(`/quote/${encodeURIComponent(symbol)}`);
+  if (d && d.price != null) {
+    return { symbol, price: d.price, pct: d.change_pct, name: d.name };
+  }
+  const data = await cachedFetch(`/history/${encodeURIComponent(symbol)}?period=1d`);
+  if (!data?.prices?.length) return null;
+  const first = data.prices[0], last = data.prices[data.prices.length - 1];
   const pct = first > 0 ? ((last - first) / first) * 100 : 0;
-  return { symbol, price: last, pct };
+  return { symbol, price: last, pct, name: data.name || symbol };
+}
+
+async function fetchSparkData(symbol) {
+  const data = await cachedFetch(`/history/${encodeURIComponent(symbol)}?period=5d`);
+  return data?.prices ?? null;
 }
 
 function renderMarketRows(containerId, rows) {
   const root = $(containerId); if (!root) return; root.innerHTML = '';
   if (!rows.length) { root.innerHTML = '<div class="empty-sub">Unable to load quotes right now.</div>'; return; }
   const isStocks = containerId.includes('stocks');
-  rows.forEach((item) => {
+  const badgeColor = isStocks ? '#3b82f6' : '#10b981';
+  const sparkColor = isStocks ? '#3b82f6' : '#10b981';
+  rows.forEach((item, idx) => {
     const isUp = (item.pct || 0) >= 0;
+    const name = (item.name || item.symbol || '').toString().slice(0, 14);
+    const arrow = isUp ? '▲' : '▼';
+    const canvasId = `spark-${containerId}-${(item.symbol || '').replace(/\W/g, '')}-${idx}`;
     const row = document.createElement('div');
     row.className = 'market-row';
     row.setAttribute('role', 'button');
@@ -968,25 +1101,45 @@ function renderMarketRows(containerId, rows) {
         <div class="market-avatar">${(item.symbol || '?')[0]}</div>
         <div class="market-symbol-block">
           <span class="market-symbol">${item.symbol}</span>
-          <span class="market-tag">${isStocks ? 'Stock' : 'Crypto'}</span>
+          <span class="market-name">${name}</span>
+          <span class="market-tag ${isStocks ? 'market-tag-stock' : 'market-tag-crypto'}">${isStocks ? 'STOCK' : 'CRYPTO'}</span>
         </div>
       </div>
       <div class="market-right">
-        <span class="market-price sensitive-value">${formatUSD(item.price)}</span>
-        <span class="market-change ${isUp ? 'text-green' : 'text-red'}">${formatPct(item.pct)}</span>
+        <canvas id="${canvasId}" class="asset-spark" width="56" height="26" aria-hidden="true"></canvas>
+        <div class="market-values">
+          <span class="market-price sensitive-value">${formatUSD(item.price)}</span>
+          <span class="market-change ${isUp ? 'text-green' : 'text-red'}">${arrow} ${formatPct(item.pct)}</span>
+        </div>
       </div>`;
     const assetPayload = { symbol: item.symbol, real_symbol: item.symbol, current_price: item.price, percent_change: item.pct, days_held: 0, type: isStocks ? 'stock' : 'crypto' };
     row.addEventListener('click', () => openDetail(assetPayload));
     row.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openDetail(assetPayload); } });
     root.appendChild(row);
+    if (item.spark && item.spark.length && typeof Chart !== 'undefined') {
+      renderSpark(canvasId, item.spark, sparkColor);
+    }
   });
   applyVisibilityMask();
 }
 
 async function loadMarketWatch() {
+  const subEl = $('market-watch-sub');
+  if (subEl) {
+    const open = isUSMarketOpen();
+    subEl.innerHTML = `<span class="market-status-dot ${open ? 'open' : 'closed'}"></span> ${open ? 'Market Open' : 'Market Closed'} • 5 stocks and 5 cryptos in real time`;
+  }
+  const stockPromises = FEATURED_STOCKS.map(async (s) => {
+    const [quote, spark] = await Promise.all([fetchQuoteForSymbol(s), fetchSparkData(s)]);
+    return quote ? { ...quote, spark: spark || [] } : null;
+  });
+  const cryptoPromises = FEATURED_CRYPTOS.map(async (s) => {
+    const [quote, spark] = await Promise.all([fetchQuoteForSymbol(s), fetchSparkData(s)]);
+    return quote ? { ...quote, spark: spark || [] } : null;
+  });
   const [stocks, cryptos] = await Promise.all([
-    Promise.all(FEATURED_STOCKS.map((s) => fetchQuoteForSymbol(s))),
-    Promise.all(FEATURED_CRYPTOS.map((s) => fetchQuoteForSymbol(s))),
+    Promise.all(stockPromises),
+    Promise.all(cryptoPromises),
   ]);
   renderMarketRows('market-stocks-list', stocks.filter(Boolean));
   renderMarketRows('market-cryptos-list', cryptos.filter(Boolean));
@@ -1020,7 +1173,7 @@ async function loadTransactions() {
   const txs = await res.json();
   const list = $('transactions-list'); if (!list) return; list.innerHTML = '';
   if (!txs.length) {
-    list.innerHTML = `<div class="empty-state"><div class="empty-icon">🧾</div><div class="empty-title">No transactions yet</div><div class="empty-sub">Your buy and sell operations will appear here.</div></div>`;
+    list.innerHTML = `<div class="empty-state"><div class="empty-icon">🧾</div><div class="empty-title">No transactions yet</div><div class="empty-sub">Your buy & sell history will appear here once you record your first trade.</div></div>`;
     return;
   }
   txs.forEach((tx) => {
@@ -1031,7 +1184,7 @@ async function loadTransactions() {
     row.className = 'tx-item';
     row.innerHTML = `
       <div class="tx-top"><span class="tx-symbol">${tx.symbol}</span><span class="tx-type ${tx.type}">${tx.type}</span></div>
-      <div class="tx-meta"><span>${tx.date}</span><span>${tx.amount} @ ${formatUSD(tx.price)}</span></div>
+      <div class="tx-meta"><span>${formatDateUS(tx.date)}</span><span>${tx.amount} @ ${formatUSD(tx.price)}</span></div>
       <div class="tx-meta" style="margin-top:6px;"><span class="sensitive-value">Total: ${formatUSD(tx.total_usd)}</span><span class="${pnlClass}">P&L: ${pnlText}</span></div>`;
     list.appendChild(row);
   });
@@ -1077,9 +1230,8 @@ async function exportPortfolioCsv() {
 
 async function loadPortfolioScore() {
   if (!authToken) return;
-  const res = await apiFetch('/portfolio/score', { headers: authHeaders() });
-  if (!res || !res.ok) return;
-  const score = await res.json();
+  const score = await cachedFetch('/portfolio/score', { headers: authHeaders() });
+  if (!score) return;
 
   const overall = Number(score.overall || 0);
   const circumference = 283;
@@ -1118,7 +1270,7 @@ async function loadPortfolioScore() {
 
 
 
-function openNetWorthModal() { $('modal-net-worth')?.classList.add('active'); }
+function openNetWorthModal() { $('modal-net-worth')?.classList.add('active'); focusModalFirstFocusable($('modal-net-worth')); }
 function closeNetWorthModal() { $('modal-net-worth')?.classList.remove('active'); }
 
 async function loadNetWorth() {
@@ -1127,7 +1279,7 @@ async function loadNetWorth() {
   if (!res || !res.ok) return;
   const data = await res.json();
 
-  $('net-worth-total').textContent = formatUSD(data.net_worth || 0);
+  $('net-worth-total').textContent = formatUSDCompact(data.net_worth || 0);
   $('nw-investments').textContent = formatUSD(data.breakdown?.investments || 0);
   $('nw-cash').textContent = formatUSD(data.breakdown?.cash || 0);
   $('nw-real-estate').textContent = formatUSD(data.breakdown?.real_estate || 0);
@@ -1256,20 +1408,19 @@ async function fetchPortfolio() {
   if (!res || !res.ok) return;
   const data = await res.json();
   const balanceEl = $('total-balance');
-  balanceEl.textContent = formatUSD(data.total_balance_usd);
+  lastTotalBalanceUsd = data.total_balance_usd;
+  balanceEl.textContent = formatUSDCompact(data.total_balance_usd);
   balanceEl.classList.add('sensitive-value');
   portfolioCount   = (data.assets || []).length;
   portfolioSymbols = new Set((data.assets || []).map((a) => (a.real_symbol || a.symbol || '').toUpperCase()));
   updateProfileBar();
-  await loadPortfolioScore();
-  await loadNetWorth();
   const list = $('assets-list'); list.innerHTML = '';
   if (!data.assets?.length) {
-    list.innerHTML = `<div class="empty-state"><div class="empty-icon">📭</div><div class="empty-title">Portfolio is empty</div><div class="empty-sub">Add your first asset using the menu above to start tracking your investments.</div></div>`;
+    list.innerHTML = `<div class="empty-state"><div class="empty-icon">📭</div><div class="empty-title">Portfolio is empty</div><div class="empty-sub">Start tracking your first investment — add AAPL, BTC, or any asset you hold.</div></div>`;
+    applyVisibilityMask();
     return;
   }
   renderRebalanceTargets(data.assets || []);
-  await loadBalancePerformance();
   data.assets.forEach((asset) => {
     const profit   = asset.profit ?? 0;
     const isProfit = profit >= 0;
@@ -1295,8 +1446,8 @@ async function fetchPortfolio() {
         </div>
       </div>
       <div class="action-bar">
-        <button class="action-btn ai"   data-id="${asset.id}">✨ AI Analysis</button>
-        <button class="action-btn sell" data-id="${asset.id}">📉 Sell</button>
+        <button class="action-btn ai"   data-id="${asset.id}" aria-label="AI Analysis for ${(asset.symbol || '').toUpperCase()}">✨ AI Analysis</button>
+        <button class="action-btn sell" data-id="${asset.id}" aria-label="Sell ${(asset.symbol || '').toUpperCase()}">📉 Sell</button>
       </div>
       <div class="ai-result" id="ai-res-${asset.id}"></div>`;
     wrapper.querySelector('.asset-main').addEventListener('click', () => openDetail(asset));
@@ -1306,14 +1457,13 @@ async function fetchPortfolio() {
     renderSpark(`spark-${asset.id}`, asset.history || [], isProfit ? '#10b981' : '#ef4444');
   });
   applyVisibilityMask();
-  // Trigger dividend card load (non-blocking)
-  loadDividendCard();
   loadAlerts();
 }
 
 // ── DETAIL VIEW ──────────────────────────────────────────────────
 function openDetail(asset) {
   const view = $('detail-view'); view.classList.add('active');
+  focusModalFirstFocusable(view);
   $('detail-symbol').textContent = asset.symbol;
   $('detail-price').textContent  = formatUSD(asset.current_price);
   $('detail-price').classList.add('sensitive-value');
@@ -1341,6 +1491,7 @@ function openSellModal(asset) {
   qty.step  = (asset.type || '').toLowerCase() === 'stock' ? '1' : 'any';
   $('sell-info').textContent = `Held: ${asset.amount}  •  Avg cost: ${formatUSD(asset.purchase_price)}`;
   updateSellEstimate(); $('modal-sell').classList.add('active');
+  focusModalFirstFocusable($('modal-sell'));
 }
 function closeSellModal() { $('modal-sell').classList.remove('active'); assetForSale = null; }
 function updateSellEstimate() {
@@ -1367,7 +1518,7 @@ async function confirmSell() {
       const data = await res.json();
       const pnl  = data.pnl ?? 0;
       toast(`Sold! P&L: ${pnl >= 0 ? '+' : ''}${formatUSD(pnl)}`, pnl >= 0 ? 'success' : 'info');
-      closeSellModal(); fetchPortfolio(); loadMainChart();
+      closeSellModal(); _mainChartDirty = true; fetchPortfolio(); loadMainChart();
     } else { const err = await res.json().catch(() => ({})); toast(apiErrorDetail(err.detail, 'Failed to sell. Try again.'), 'error'); }
   } finally { btn.disabled = false; btn.textContent = 'Confirm Sale'; }
 }
@@ -1431,7 +1582,7 @@ async function handleAddAsset() {
     if (res.ok) {
       $('symbol-input').value = ''; $('amount-input').value = ''; $('price-input').value = ''; $('date-input').value = '';
       selectedAddAssetType = null; setAddAmountInputMode(null); $('search-dropdown').style.display = 'none';
-      switchTab('dashboard'); await fetchPortfolio(); loadMainChart(); toast(`${sym} added to your portfolio ✓`, 'success');
+      switchTab('dashboard'); _mainChartDirty = true; await fetchPortfolio(); loadMainChart(); toast(`${sym} added to your portfolio ✓`, 'success');
     } else if (res.status === 402) {
       const err = await res.json().catch(() => ({})); showUpgradeModal(apiErrorDetail(err.detail, 'Upgrade to Premium for more assets.'));
     } else if (res.status === 404) { toast(`Asset '${sym}' not found.`, 'error');
@@ -1496,7 +1647,7 @@ function renderAlertsList(alerts = []) {
   const root = $('alerts-list');
   if (!root) return;
   if (!alerts.length) {
-    root.innerHTML = '<div class="empty-sub">No alerts yet.</div>';
+    root.innerHTML = '<div class="empty-sub">Set a price alert on any asset — we\'ll notify you when it hits your target.</div>';
     return;
   }
   root.innerHTML = alerts.map((a) => {
@@ -1550,7 +1701,7 @@ function renderAlertsList(alerts = []) {
         // Remove o item do DOM imediatamente para feedback instantâneo
         btn.closest('.alert-row')?.remove();
         if (!root.querySelector('.alert-row')) {
-          root.innerHTML = '<div class="empty-sub">No alerts yet.</div>';
+          root.innerHTML = '<div class="empty-sub">Set a price alert on any asset — we\'ll notify you when it hits your target.</div>';
         }
       } else {
         const err = await res?.json().catch(() => ({})) || {};
@@ -1648,6 +1799,7 @@ function openImportModal() {
   $('import-result').style.display     = 'none';
   $('btn-import-confirm').disabled     = true;
   $('modal-import-csv').classList.add('active');
+  focusModalFirstFocusable($('modal-import-csv'));
 }
 function closeImportModal() { $('modal-import-csv').classList.remove('active'); }
 function updateImportConfirmBtn() { $('btn-import-confirm').disabled = !(importSelectedFile && importSelectedBroker); }
@@ -1686,7 +1838,7 @@ async function handleImportConfirm() {
     $('import-progress').style.display = 'none';
     const imported = data.imported ?? 0, skipped = data.skipped ?? 0, errors = data.errors ?? [];
     showImportResult('success', null, { imported, skipped, errors, broker: importSelectedBroker });
-    if (imported > 0) { fetchPortfolio(); loadMainChart(true); toast(`Imported ${imported} transaction${imported !== 1 ? 's' : ''} ✓`, 'success', 5000); }
+    if (imported > 0) { _mainChartDirty = true; fetchPortfolio(); loadMainChart(true); toast(`Imported ${imported} transaction${imported !== 1 ? 's' : ''} ✓`, 'success', 5000); }
   } catch (err) { $('import-progress').style.display = 'none'; showImportResult('error', `Unexpected error: ${err.message}`, null);
   } finally { btn.disabled = false; btn.textContent = 'Import'; }
 }
@@ -2066,7 +2218,7 @@ async function loadTaxLossHarvesting() {
 }
 
 // Tax Pro upgrade modal
-function showTaxProUpgradeModal() { $('modal-upgrade-tax-pro').classList.add('active'); }
+function showTaxProUpgradeModal() { $('modal-upgrade-tax-pro').classList.add('active'); focusModalFirstFocusable($('modal-upgrade-tax-pro')); }
 function hideTaxProUpgradeModal() { $('modal-upgrade-tax-pro').classList.remove('active'); }
 function handleTaxProUpgrade() {
   hideTaxProUpgradeModal();
@@ -2276,27 +2428,40 @@ function buildYieldRows(assets) {
 
 // ── INIT ─────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
-  injectStyles();
-  injectPortfolioScoreStyles();
-
   loadSession((hasSession) => {
     if (hasSession) {
-      // Check if user is already verified (stored session)
-      if (currentUser && currentUser.is_verified === false) {
-        showVerifyScreen(authToken, currentUser.email || '', (verifiedUser, newToken) => {
+      const pendingEmail = localStorage.getItem('pending_email');
+      if (currentUser?.is_verified === false && pendingEmail) {
+        showVerifyScreen(authToken, pendingEmail, (verifiedUser, newToken) => {
+          localStorage.removeItem('pending_email');
           const updatedUser = { ...currentUser, ...verifiedUser, is_verified: true };
-          // Usa o token devolvido por /auth/verify-email (novo), com fallback para o anterior
           saveSession(newToken || authToken, updatedUser);
-          hideLoginScreen(); updateProfileBar();
-          fetchPortfolio(); loadMainChart(); startRefresh(); checkAIStatus();
+          finalizeLoginUI();
+          toast('Email verified! Welcome to Purp 🎉', 'success', 5000);
         });
-      } else {
-        hideLoginScreen(); updateProfileBar(); fetchPortfolio(); loadMainChart(); startRefresh(); checkAIStatus();
+        return;
       }
-    } else { showLoginScreen(); }
+      if (currentUser?.is_verified !== false) {
+        localStorage.removeItem('pending_email');
+      }
+      hideLoginScreen();
+      updateProfileBar();
+      initDashboard();
+    } else {
+      showLoginScreen();
+    }
   });
 
+  injectStyles();
+  injectPortfolioScoreStyles();
   updatePrivacyToggle();
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+    document.querySelectorAll('.modal-overlay.active').forEach((m) => m.classList.remove('active'));
+    if ($('detail-view')?.classList.contains('active')) $('detail-view').classList.remove('active');
+    closeMenu();
+  });
 
   // Auth
   $('btn-login')?.addEventListener('click', handleLogin);
@@ -2369,11 +2534,11 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   // Main chart controls
-  $('benchmark-select')?.addEventListener('change', () => loadMainChart());
+  $('benchmark-select')?.addEventListener('change', () => { _mainChartDirty = true; loadMainChart(); });
   document.querySelectorAll('.pill').forEach((btn) => {
     btn.addEventListener('click', (e) => {
       document.querySelectorAll('.pill').forEach((b) => b.classList.remove('active'));
-      e.target.classList.add('active'); loadMainChart();
+      e.target.classList.add('active'); _mainChartDirty = true; loadMainChart();
     });
   });
 
@@ -2420,11 +2585,12 @@ document.addEventListener('DOMContentLoaded', () => {
     const broker = row.dataset.broker || '';
     if (action.dataset.action === 'api') {
       $('broker-api-name').value = broker;
-      $('broker-api-title').textContent = `Conectar ${broker.charAt(0).toUpperCase() + broker.slice(1)}`;
+      $('broker-api-title').textContent = `Connect ${broker.charAt(0).toUpperCase() + broker.slice(1)}`;
       $('broker-api-key').value = '';
       $('broker-api-secret').value = '';
       $('broker-api-result').style.display = 'none';
       $('modal-broker-api').classList.add('active');
+      focusModalFirstFocusable($('modal-broker-api'));
     } else {
       if ($('import-broker-select')) $('import-broker-select').value = broker;
       openImportModal();
@@ -2438,7 +2604,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const resultEl = $('broker-api-result');
     if (!broker) return;
     resultEl.style.display = 'block';
-    resultEl.innerHTML = 'Buscando…';
+    resultEl.innerHTML = 'Fetching…';
     const res = await apiFetch('/broker/fetch', {
       method: 'POST',
       headers: authHeaders(),
@@ -2457,8 +2623,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const count = (data.holdings || []).length;
     window._lastBrokerHoldings = (data.holdings || []).map(h => ({ symbol: h.symbol, amount: h.amount, type: h.type || 'crypto' }));
     resultEl.innerHTML = count
-      ? `<span style="color:var(--green);">${count} ativo(s) encontrado(s).</span><br><button type="button" id="btn-broker-apply" class="btn-primary" style="margin-top:8px;">Adicionar ao portfólio</button>`
-      : `<span style="color:var(--text2);">Nenhum saldo encontrado.</span>`;
+      ? `<span style="color:var(--green);">${count} holding(s) found.</span><br><button type="button" id="btn-broker-apply" class="btn-primary" style="margin-top:8px;">Add to portfolio</button>`
+      : `<span style="color:var(--text2);">No balance found.</span>`;
   });
   document.getElementById('modal-broker-api')?.addEventListener('click', async (e) => {
     if (e.target?.id !== 'btn-broker-apply' || !window._lastBrokerHoldings?.length) return;
@@ -2473,14 +2639,14 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     const data = await res?.json().catch(() => ({}));
     if (res?.ok && data?.ok) {
-      resultEl.innerHTML = `<span style="color:var(--green);">${data.created ?? 0} ativo(s) adicionado(s).</span>`;
+      resultEl.innerHTML = `<span style="color:var(--green);">${data.created ?? 0} asset(s) added.</span>`;
       if (typeof fetchPortfolio === 'function') fetchPortfolio();
     } else {
-      resultEl.innerHTML = `<span style="color:var(--red);">${data?.errors?.join(' ') || 'Erro ao adicionar.'}</span><br><button type="button" id="btn-broker-apply" class="btn-primary" style="margin-top:8px;">Tentar novamente</button>`;
+      resultEl.innerHTML = `<span style="color:var(--red);">${data?.errors?.join(' ') || 'Failed to add.'}</span><br><button type="button" id="btn-broker-apply" class="btn-primary" style="margin-top:8px;">Try again</button>`;
       window._lastBrokerHoldings = window._lastBrokerHoldings || [];
     }
     btn.disabled = false;
-    btn.textContent = 'Adicionar ao portfólio';
+    btn.textContent = 'Add to portfolio';
   });
 
   // Tax Pro
