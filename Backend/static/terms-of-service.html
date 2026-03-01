@@ -1,0 +1,417 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Terms of Service — Purp</title>
+  <meta name="description" content="Terms of Service for Purp, an AI-powered portfolio tracker Chrome extension by André Soluções LTDA.">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:       #07060f;
+      --surface:  #0f0c1e;
+      --card:     rgba(255,255,255,0.04);
+      --border:   rgba(255,255,255,0.09);
+      --accent:   #7c3aed;
+      --accent-l: #a78bfa;
+      --text:     #f2f0ff;
+      --text2:    rgba(242,240,255,0.68);
+      --text3:    rgba(242,240,255,0.38);
+      --gold:     #fbbf24;
+      --green:    #10b981;
+      --red:      #f87171;
+    }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Georgia', 'Times New Roman', serif;
+      font-size: 16px;
+      line-height: 1.8;
+    }
+
+    .site-header {
+      position: sticky; top: 0; z-index: 100;
+      background: rgba(7,6,15,0.92);
+      backdrop-filter: blur(20px);
+      border-bottom: 1px solid var(--border);
+      padding: 0 40px;
+      height: 60px;
+      display: flex; align-items: center; gap: 14px;
+    }
+
+    .logo {
+      width: 36px; height: 36px; border-radius: 10px;
+      background: linear-gradient(135deg, #7c3aed 0%, #a78bfa 100%);
+      display: flex; align-items: center; justify-content: center;
+      font-family: 'Arial Black', sans-serif; font-size: 17px;
+      font-weight: 900; color: #fff;
+      box-shadow: 0 0 20px rgba(124,58,237,0.4);
+      flex-shrink: 0;
+    }
+
+    .logo-text {
+      font-family: 'Arial Black', sans-serif;
+      font-size: 18px; font-weight: 900;
+      background: linear-gradient(135deg, #fff 30%, #a78bfa 100%);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .header-divider { width: 1px; height: 20px; background: var(--border); margin: 0 4px; }
+    .header-label { font-family: 'Arial', sans-serif; font-size: 13px; color: var(--text3); }
+
+    .wrapper { max-width: 800px; margin: 0 auto; padding: 72px 40px 120px; }
+
+    .hero { margin-bottom: 56px; padding-bottom: 48px; border-bottom: 1px solid var(--border); }
+
+    .badge {
+      display: inline-flex; align-items: center; gap: 6px;
+      font-family: 'Arial', sans-serif; font-size: 11px; font-weight: 700;
+      letter-spacing: 1.4px; text-transform: uppercase;
+      color: var(--accent-l);
+      background: rgba(124,58,237,0.12);
+      border: 1px solid rgba(124,58,237,0.28);
+      border-radius: 999px; padding: 5px 14px; margin-bottom: 20px;
+    }
+
+    h1 {
+      font-size: 48px; font-weight: 400;
+      letter-spacing: -1px; line-height: 1.1; margin-bottom: 20px;
+    }
+
+    h1 span {
+      background: linear-gradient(135deg, #a78bfa, #7c3aed);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .meta-row { display: flex; flex-wrap: wrap; gap: 20px; font-family: 'Arial', sans-serif; }
+    .meta-item { font-size: 13px; color: var(--text3); display: flex; align-items: center; gap: 6px; }
+    .meta-item strong { color: var(--text2); font-weight: 600; }
+
+    .notice {
+      border-radius: 14px; padding: 20px 24px;
+      font-family: 'Arial', sans-serif; font-size: 14px;
+      color: var(--text2); line-height: 1.65; margin: 28px 0;
+      display: flex; gap: 14px;
+    }
+    .notice-icon { font-size: 20px; flex-shrink: 0; margin-top: 1px; }
+    .notice-title { font-size: 11px; font-weight: 800; letter-spacing: 1.2px; text-transform: uppercase; margin-bottom: 5px; }
+
+    .notice-purple { background: rgba(124,58,237,0.08); border: 1px solid rgba(124,58,237,0.22); border-left: 3px solid var(--accent); }
+    .notice-purple .notice-title { color: var(--accent-l); }
+    .notice-gold { background: rgba(251,191,36,0.07); border: 1px solid rgba(251,191,36,0.2); border-left: 3px solid var(--gold); }
+    .notice-gold .notice-title { color: var(--gold); }
+    .notice-red { background: rgba(248,113,113,0.07); border: 1px solid rgba(248,113,113,0.2); border-left: 3px solid var(--red); }
+    .notice-red .notice-title { color: var(--red); }
+
+    .toc {
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: 16px; padding: 28px 32px; margin-bottom: 60px;
+    }
+    .toc-title { font-family: 'Arial', sans-serif; font-size: 10px; font-weight: 800; letter-spacing: 1.5px; text-transform: uppercase; color: var(--text3); margin-bottom: 18px; }
+    .toc-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 32px; list-style: none; counter-reset: toc; }
+    .toc-grid li { counter-increment: toc; font-family: 'Arial', sans-serif; font-size: 13.5px; display: flex; align-items: baseline; gap: 8px; }
+    .toc-grid li::before { content: counter(toc, decimal-leading-zero); font-size: 10px; color: var(--accent-l); font-weight: 700; flex-shrink: 0; }
+    .toc-grid a { color: var(--text2); text-decoration: none; transition: color 0.15s; }
+    .toc-grid a:hover { color: var(--accent-l); }
+
+    .section { margin-bottom: 60px; scroll-margin-top: 80px; }
+    .section-tag { font-family: 'Arial', sans-serif; font-size: 10px; font-weight: 800; letter-spacing: 1.4px; text-transform: uppercase; color: var(--accent-l); margin-bottom: 8px; }
+
+    h2 { font-size: 28px; font-weight: 400; color: var(--text); letter-spacing: -0.3px; padding-bottom: 16px; margin-bottom: 22px; border-bottom: 1px solid var(--border); }
+    h3 { font-family: 'Arial', sans-serif; font-size: 15px; font-weight: 700; color: var(--text); margin: 30px 0 10px; }
+
+    p { color: var(--text2); margin-bottom: 16px; font-size: 15px; }
+    ul, ol { padding-left: 22px; margin-bottom: 16px; }
+    li { color: var(--text2); font-size: 15px; margin-bottom: 8px; line-height: 1.7; }
+    a { color: var(--accent-l); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    strong { color: var(--text); font-weight: 600; }
+    code { font-family: 'Courier New', monospace; font-size: 13px; background: rgba(124,58,237,0.12); border: 1px solid rgba(124,58,237,0.2); border-radius: 5px; padding: 1px 7px; }
+
+    .table-wrap { overflow-x: auto; margin: 20px 0 28px; border-radius: 12px; border: 1px solid var(--border); }
+    table { width: 100%; border-collapse: collapse; font-family: 'Arial', sans-serif; font-size: 13.5px; }
+    thead th { background: rgba(124,58,237,0.1); padding: 11px 16px; text-align: left; font-size: 10px; font-weight: 800; letter-spacing: 1px; text-transform: uppercase; color: var(--accent-l); white-space: nowrap; }
+    tbody td { padding: 11px 16px; color: var(--text2); border-top: 1px solid var(--border); vertical-align: top; }
+    tbody tr:hover td { background: rgba(255,255,255,0.025); }
+
+    .doc-footer {
+      margin-top: 80px; padding-top: 40px; border-top: 1px solid var(--border);
+      display: grid; grid-template-columns: 1fr auto; gap: 24px; align-items: start;
+    }
+    .footer-brand { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+    .footer-info { font-family: 'Arial', sans-serif; font-size: 12px; color: var(--text3); line-height: 1.9; }
+    .footer-info strong { color: var(--text2); }
+    .footer-nav { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; padding-top: 4px; }
+    .footer-nav a { font-family: 'Arial', sans-serif; font-size: 13px; color: var(--accent-l); }
+
+    @media (max-width: 680px) {
+      .wrapper { padding: 48px 20px 80px; }
+      .site-header { padding: 0 20px; }
+      h1 { font-size: 34px; }
+      .toc-grid { grid-template-columns: 1fr; }
+      .doc-footer { grid-template-columns: 1fr; }
+      .footer-nav { align-items: flex-start; }
+    }
+  </style>
+</head>
+<body>
+
+<header class="site-header">
+  <div class="logo">P</div>
+  <span class="logo-text">Purp</span>
+  <div class="header-divider"></div>
+  <span class="header-label">Terms of Service</span>
+</header>
+
+<div class="wrapper">
+
+  <div class="hero">
+    <div class="badge">Terms of Service</div>
+    <h1>Terms of <span>Service</span></h1>
+    <div class="meta-row">
+      <div class="meta-item"><span>Effective date:</span><strong>June 1, 2025</strong></div>
+      <div class="meta-item"><span>Last updated:</span><strong>June 1, 2025</strong></div>
+      <div class="meta-item"><span>Version:</span><strong>1.0</strong></div>
+    </div>
+  </div>
+
+  <div class="notice notice-purple">
+    <div class="notice-icon">📋</div>
+    <div>
+      <div class="notice-title">Please Read Carefully</div>
+      By installing, accessing, or using the Purp Chrome extension or any associated services, you agree to be bound by these Terms of Service. If you do not agree, please uninstall the extension and discontinue use.
+    </div>
+  </div>
+
+  <div class="toc">
+    <div class="toc-title">Table of Contents</div>
+    <ol class="toc-grid">
+      <li><a href="#s1">About Purp</a></li>
+      <li><a href="#s2">Eligibility</a></li>
+      <li><a href="#s3">Account Registration</a></li>
+      <li><a href="#s4">Subscription Plans &amp; Billing</a></li>
+      <li><a href="#s5">Free Trial</a></li>
+      <li><a href="#s6">Cancellations &amp; Refunds</a></li>
+      <li><a href="#s7">Acceptable Use</a></li>
+      <li><a href="#s8">Financial Disclaimer</a></li>
+      <li><a href="#s9">AI-Generated Content</a></li>
+      <li><a href="#s10">Intellectual Property</a></li>
+      <li><a href="#s11">Third-Party Services</a></li>
+      <li><a href="#s12">Termination</a></li>
+      <li><a href="#s13">Disclaimer of Warranties</a></li>
+      <li><a href="#s14">Limitation of Liability</a></li>
+      <li><a href="#s15">Governing Law</a></li>
+      <li><a href="#s16">Changes to These Terms</a></li>
+      <li><a href="#s17">Contact</a></li>
+    </ol>
+  </div>
+
+  <div class="section" id="s1">
+    <div class="section-tag">Section 01</div>
+    <h2>About Purp</h2>
+    <p>Purp is an AI-powered portfolio tracking tool delivered as a Google Chrome browser extension, developed and operated by <strong>André Soluções LTDA</strong>, a company incorporated under Brazilian law, registered under CNPJ <strong>59.455.448/0001-42</strong>, headquartered in <strong>Sorocaba, São Paulo, Brazil</strong>.</p>
+    <p>Purp allows users to monitor investments across stocks and cryptocurrencies, receive AI-generated portfolio analysis, set price and performance alerts, import transaction history, and access tax planning tools. Our backend services run at <code>purp-production.up.railway.app</code> and our website is located at <a href="https://getpurpai.com" target="_blank" rel="noopener">getpurpai.com</a>.</p>
+    <p>These Terms govern your use of the extension, the API, the website, and any related services (collectively, the "Service").</p>
+  </div>
+
+  <div class="section" id="s2">
+    <div class="section-tag">Section 02</div>
+    <h2>Eligibility</h2>
+    <p>To use Purp you must be at least <strong>18 years of age</strong> (or the age of legal majority in your jurisdiction), have the legal capacity to enter a binding contract, not be prohibited from using the Service under any law or regulation, and provide accurate registration information. By creating an account you represent that all eligibility requirements are met.</p>
+  </div>
+
+  <div class="section" id="s3">
+    <div class="section-tag">Section 03</div>
+    <h2>Account Registration</h2>
+    <h3>Creating Your Account</h3>
+    <p>Registration requires a valid email address and a password. A 6-digit verification code is sent to confirm your email. Your account is not activated until verification is complete.</p>
+    <h3>Account Security</h3>
+    <p>You are solely responsible for safeguarding your credentials and for all activity under your account. Notify us immediately at <a href="mailto:support@getpurpai.com">support@getpurpai.com</a> if you suspect unauthorized access. We will never ask for your password by email, phone, or chat.</p>
+    <h3>One Account Per Person</h3>
+    <p>Accounts are for individual use only. Sharing accounts, creating duplicates to bypass plan limits, or automated account creation is prohibited.</p>
+  </div>
+
+  <div class="section" id="s4">
+    <div class="section-tag">Section 04</div>
+    <h2>Subscription Plans &amp; Billing</h2>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Plan</th><th>Price (USD)</th><th>Key Features</th></tr></thead>
+        <tbody>
+          <tr><td><strong>Free</strong></td><td>$0 / month</td><td>Up to 4 assets, basic portfolio tracking, market watch</td></tr>
+          <tr><td><strong>Investor</strong></td><td>$18.99 / month</td><td>Unlimited assets, AI analysis, CSV import, 2-year history, price alerts, priority support</td></tr>
+          <tr><td><strong>Tax Pro</strong></td><td>$29.00 / month</td><td>Everything in Investor + Tax Loss Harvesting, FIFO/LIFO/HIFO cost basis, Form 8949 export, wash-sale guidance</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <h3>Billing Terms</h3>
+    <ul>
+      <li>Subscriptions are billed on a <strong>monthly recurring basis</strong> through Stripe, Inc.</li>
+      <li>Billing begins at the end of any applicable free trial period.</li>
+      <li>All prices are in <strong>U.S. Dollars (USD)</strong>. Any currency conversion costs are borne by the user.</li>
+      <li>We do not store your payment card data. All payment processing is handled by Stripe under PCI-DSS standards.</li>
+    </ul>
+  </div>
+
+  <div class="section" id="s5">
+    <div class="section-tag">Section 05</div>
+    <h2>Free Trial</h2>
+    <p>New subscribers to paid plans are eligible for a <strong>7-day free trial</strong> with full access to all features. Only one free trial per person and per payment method is permitted. You may cancel before the trial ends to avoid being charged.</p>
+    <div class="notice notice-gold">
+      <div class="notice-icon">🔔</div>
+      <div>
+        <div class="notice-title">Trial Reminder</div>
+        We will email you before your trial expires. If you do not cancel before it ends, your subscription will automatically convert to a paid plan and your payment method will be charged.
+      </div>
+    </div>
+  </div>
+
+  <div class="section" id="s6">
+    <div class="section-tag">Section 06</div>
+    <h2>Cancellations &amp; Refunds</h2>
+    <h3>Cancellation Policy</h3>
+    <p>You may cancel your subscription at any time through the Stripe billing portal or by contacting <a href="mailto:support@getpurpai.com">support@getpurpai.com</a>.</p>
+    <div class="notice notice-red">
+      <div class="notice-icon">🚫</div>
+      <div>
+        <div class="notice-title">No Refunds</div>
+        <strong>All subscription payments are non-refundable.</strong> Upon cancellation, you will not receive a refund for the current or any previous billing period. However, your subscription remains <strong>fully active with all paid features</strong> until the last day of the current billing cycle. You will not be charged again for subsequent periods after cancellation takes effect.
+      </div>
+    </div>
+    <h3>After Cancellation</h3>
+    <ul>
+      <li>Full access to paid features continues until the billing period ends.</li>
+      <li>Your account then automatically converts to the Free tier.</li>
+      <li>Data exceeding Free tier limits is stored but inaccessible until you re-upgrade.</li>
+      <li>Your account and data are not deleted upon cancellation.</li>
+    </ul>
+    <h3>Exceptions</h3>
+    <p>Refunds may be considered solely at our discretion where a verified technical failure on our part rendered the Service completely unusable for the majority of a billing period, or where required by mandatory consumer protection law applicable to your jurisdiction.</p>
+  </div>
+
+  <div class="section" id="s7">
+    <div class="section-tag">Section 07</div>
+    <h2>Acceptable Use</h2>
+    <p>You may use Purp for personal, non-commercial portfolio tracking. You agree not to: reverse-engineer or extract source code from the extension or API; automate API requests beyond normal usage; use the Service for unlawful purposes; share credentials or allow third-party account use; introduce malware or attempt unauthorized access; or resell access to the Service. Violations may result in immediate suspension without refund.</p>
+  </div>
+
+  <div class="section" id="s8">
+    <div class="section-tag">Section 08</div>
+    <h2>Financial Information Disclaimer</h2>
+    <div class="notice notice-red">
+      <div class="notice-icon">⚠️</div>
+      <div>
+        <div class="notice-title">Not Financial Advice</div>
+        Purp is a portfolio tracking tool only. It does not provide investment, tax, or legal advice, nor any recommendation to buy, sell, or hold any financial instrument.
+      </div>
+    </div>
+    <p>All data displayed — portfolio values, price data, performance metrics, AI outputs, tax estimates, portfolio scores — is for <strong>informational purposes only</strong>. Market data may be delayed or inaccurate. Tax features produce estimates only; consult a qualified tax professional for tax filings.</p>
+    <p><strong>Past performance is not indicative of future results. All investing involves risk. André Soluções LTDA is not a registered investment advisor, broker-dealer, or financial institution.</strong></p>
+  </div>
+
+  <div class="section" id="s9">
+    <div class="section-tag">Section 09</div>
+    <h2>AI-Generated Content</h2>
+    <p>Premium subscribers may access AI portfolio analysis powered by Google Gemini. AI outputs are automatically generated and may contain errors. They do not constitute investment, financial, legal, or tax advice. We are not liable for losses arising from reliance on AI-generated content. AI availability is subject to Google's service terms.</p>
+  </div>
+
+  <div class="section" id="s10">
+    <div class="section-tag">Section 10</div>
+    <h2>Intellectual Property</h2>
+    <p>All content, design, code, trademarks, and materials in Purp are owned by or licensed to André Soluções LTDA and protected under applicable intellectual property law. We grant you a limited, non-exclusive, non-transferable, revocable license to use the extension for personal portfolio tracking. You retain ownership of the financial data you enter; by submitting data you grant us a limited license to process it solely to deliver the Service.</p>
+  </div>
+
+  <div class="section" id="s11">
+    <div class="section-tag">Section 11</div>
+    <h2>Third-Party Services</h2>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Provider</th><th>Purpose</th><th>Policy</th></tr></thead>
+        <tbody>
+          <tr><td><strong>Stripe, Inc.</strong></td><td>Payment processing</td><td><a href="https://stripe.com/legal" target="_blank" rel="noopener noreferrer">stripe.com/legal</a></td></tr>
+          <tr><td><strong>Google Gemini</strong></td><td>AI portfolio analysis</td><td><a href="https://policies.google.com/terms" target="_blank" rel="noopener noreferrer">policies.google.com</a></td></tr>
+          <tr><td><strong>Sentry</strong></td><td>Crash &amp; error monitoring</td><td><a href="https://sentry.io/terms/" target="_blank" rel="noopener noreferrer">sentry.io/terms</a></td></tr>
+          <tr><td><strong>Railway</strong></td><td>Backend infrastructure</td><td><a href="https://railway.app/legal" target="_blank" rel="noopener noreferrer">railway.app/legal</a></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>We are not responsible for the availability or practices of third-party services. Your use of them is governed by their own terms and policies.</p>
+  </div>
+
+  <div class="section" id="s12">
+    <div class="section-tag">Section 12</div>
+    <h2>Termination</h2>
+    <p><strong>By you:</strong> Delete your account at any time by contacting <a href="mailto:support@getpurpai.com">support@getpurpai.com</a>. Data will be permanently removed within 30 days except where retention is legally required.</p>
+    <p><strong>By us:</strong> We may suspend or terminate accounts immediately for violation of these Terms, non-payment, fraudulent or illegal activity, or prolonged inactivity exceeding 12 months on the Free plan. Termination does not entitle you to a refund of amounts paid.</p>
+  </div>
+
+  <div class="section" id="s13">
+    <div class="section-tag">Section 13</div>
+    <h2>Disclaimer of Warranties</h2>
+    <p>THE SERVICE IS PROVIDED <strong>"AS IS"</strong> AND <strong>"AS AVAILABLE"</strong> WITHOUT WARRANTIES OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, ACCURACY OF DATA, OR NON-INFRINGEMENT. WE DO NOT WARRANT THAT THE SERVICE WILL BE UNINTERRUPTED, ERROR-FREE, OR SECURE AT ALL TIMES. MARKET DATA MAY BE DELAYED OR INACCURATE AND SHOULD NOT BE THE SOLE BASIS FOR ANY FINANCIAL DECISION.</p>
+  </div>
+
+  <div class="section" id="s14">
+    <div class="section-tag">Section 14</div>
+    <h2>Limitation of Liability</h2>
+    <p>TO THE MAXIMUM EXTENT PERMITTED BY LAW, ANDRÉ SOLUÇÕES LTDA SHALL NOT BE LIABLE FOR ANY INDIRECT, INCIDENTAL, SPECIAL, CONSEQUENTIAL, OR PUNITIVE DAMAGES, INCLUDING INVESTMENT LOSSES, LOSS OF DATA, TAX PENALTIES, OR LOSS OF PROFITS. OUR TOTAL LIABILITY FOR ANY CLAIM SHALL NOT EXCEED THE GREATER OF: (A) THE TOTAL AMOUNTS YOU PAID IN THE TWELVE MONTHS PRECEDING THE CLAIM, OR (B) USD $100. THESE LIMITATIONS APPLY TO THE FULLEST EXTENT PERMITTED BY BRAZILIAN LAW AND ANY OTHER APPLICABLE LAW.</p>
+  </div>
+
+  <div class="section" id="s15">
+    <div class="section-tag">Section 15</div>
+    <h2>Governing Law &amp; Jurisdiction</h2>
+    <p>These Terms are governed by the <strong>laws of the Federative Republic of Brazil</strong>. Any dispute shall be submitted to the exclusive jurisdiction of the courts of the <strong>Comarca de Sorocaba, State of São Paulo, Brazil</strong>.</p>
+    <p>Brazilian consumer users retain all rights under the <em>Código de Defesa do Consumidor</em> (Lei nº 8.078/1990) and the <em>Lei Geral de Proteção de Dados Pessoais — LGPD</em> (Lei nº 13.709/2018), which rights are not waived or limited by these Terms.</p>
+  </div>
+
+  <div class="section" id="s16">
+    <div class="section-tag">Section 16</div>
+    <h2>Changes to These Terms</h2>
+    <p>We may modify these Terms at any time. For material changes we will update the "Last updated" date, notify you by email at least 14 days before changes take effect, and display an in-app notice for at least 14 days. Continued use of the Service after the effective date constitutes acceptance.</p>
+  </div>
+
+  <div class="section" id="s17">
+    <div class="section-tag">Section 17</div>
+    <h2>Contact</h2>
+    <div class="table-wrap">
+      <table>
+        <tbody>
+          <tr><td><strong>Company</strong></td><td>André Soluções LTDA</td></tr>
+          <tr><td><strong>CNPJ</strong></td><td>59.455.448/0001-42</td></tr>
+          <tr><td><strong>Address</strong></td><td>Sorocaba, São Paulo, Brasil</td></tr>
+          <tr><td><strong>Legal</strong></td><td><a href="mailto:legal@getpurpai.com">legal@getpurpai.com</a></td></tr>
+          <tr><td><strong>Support</strong></td><td><a href="mailto:support@getpurpai.com">support@getpurpai.com</a></td></tr>
+          <tr><td><strong>Website</strong></td><td><a href="https://getpurpai.com" target="_blank" rel="noopener">getpurpai.com</a></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="doc-footer">
+    <div>
+      <div class="footer-brand">
+        <div class="logo" style="width:28px;height:28px;font-size:13px;border-radius:8px;">P</div>
+        <span class="logo-text" style="font-size:16px;">Purp</span>
+      </div>
+      <div class="footer-info">
+        <strong>André Soluções LTDA</strong> · CNPJ 59.455.448/0001-42<br>
+        Sorocaba, São Paulo, Brasil<br>
+        © 2025 Purp. All rights reserved.
+      </div>
+    </div>
+    <div class="footer-nav">
+      <a href="/static/privacy-policy.html" target="_blank" rel="noopener noreferrer">Privacy Policy</a>
+      <a href="https://getpurpai.com" target="_blank" rel="noopener">getpurpai.com</a>
+      <a href="mailto:support@getpurpai.com">support@getpurpai.com</a>
+    </div>
+  </div>
+
+</div>
+</body>
+</html>

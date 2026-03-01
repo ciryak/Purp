@@ -1,0 +1,573 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Privacy Policy — Purp</title>
+  <meta name="description" content="Privacy Policy for Purp Chrome extension by André Soluções LTDA. LGPD and Chrome Web Store compliant.">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:       #07060f;
+      --surface:  #0f0c1e;
+      --card:     rgba(255,255,255,0.04);
+      --border:   rgba(255,255,255,0.09);
+      --accent:   #7c3aed;
+      --accent-l: #a78bfa;
+      --text:     #f2f0ff;
+      --text2:    rgba(242,240,255,0.68);
+      --text3:    rgba(242,240,255,0.38);
+      --gold:     #fbbf24;
+      --green:    #10b981;
+      --red:      #f87171;
+    }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Georgia', 'Times New Roman', serif;
+      font-size: 16px;
+      line-height: 1.8;
+    }
+
+    .site-header {
+      position: sticky; top: 0; z-index: 100;
+      background: rgba(7,6,15,0.92);
+      backdrop-filter: blur(20px);
+      border-bottom: 1px solid var(--border);
+      padding: 0 40px; height: 60px;
+      display: flex; align-items: center; gap: 14px;
+    }
+
+    .logo {
+      width: 36px; height: 36px; border-radius: 10px;
+      background: linear-gradient(135deg, #7c3aed 0%, #a78bfa 100%);
+      display: flex; align-items: center; justify-content: center;
+      font-family: 'Arial Black', sans-serif; font-size: 17px;
+      font-weight: 900; color: #fff;
+      box-shadow: 0 0 20px rgba(124,58,237,0.4); flex-shrink: 0;
+    }
+
+    .logo-text {
+      font-family: 'Arial Black', sans-serif; font-size: 18px; font-weight: 900;
+      background: linear-gradient(135deg, #fff 30%, #a78bfa 100%);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+    }
+
+    .header-divider { width: 1px; height: 20px; background: var(--border); margin: 0 4px; }
+    .header-label { font-family: 'Arial', sans-serif; font-size: 13px; color: var(--text3); }
+
+    .wrapper { max-width: 800px; margin: 0 auto; padding: 72px 40px 120px; }
+
+    .hero { margin-bottom: 56px; padding-bottom: 48px; border-bottom: 1px solid var(--border); }
+
+    .badge {
+      display: inline-flex; align-items: center; gap: 6px;
+      font-family: 'Arial', sans-serif; font-size: 11px; font-weight: 700;
+      letter-spacing: 1.4px; text-transform: uppercase;
+      color: var(--green);
+      background: rgba(16,185,129,0.1);
+      border: 1px solid rgba(16,185,129,0.25);
+      border-radius: 999px; padding: 5px 14px; margin-bottom: 20px;
+    }
+
+    h1 {
+      font-size: 48px; font-weight: 400;
+      letter-spacing: -1px; line-height: 1.1; margin-bottom: 20px;
+    }
+
+    h1 span {
+      background: linear-gradient(135deg, #34d399, #10b981);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+    }
+
+    .meta-row { display: flex; flex-wrap: wrap; gap: 20px; font-family: 'Arial', sans-serif; }
+    .meta-item { font-size: 13px; color: var(--text3); display: flex; align-items: center; gap: 6px; }
+    .meta-item strong { color: var(--text2); font-weight: 600; }
+
+    /* Summary cards */
+    .summary-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 14px; margin: 32px 0 48px; }
+    .summary-card {
+      background: var(--card); border: 1px solid var(--border); border-radius: 14px;
+      padding: 20px 18px; font-family: 'Arial', sans-serif;
+    }
+    .summary-icon { font-size: 22px; margin-bottom: 10px; }
+    .summary-label { font-size: 10px; font-weight: 800; letter-spacing: 1px; text-transform: uppercase; color: var(--text3); margin-bottom: 7px; }
+    .summary-value { font-size: 13px; color: var(--text2); line-height: 1.55; }
+    .summary-value a { color: var(--accent-l); }
+
+    /* Notices */
+    .notice {
+      border-radius: 14px; padding: 20px 24px;
+      font-family: 'Arial', sans-serif; font-size: 14px;
+      color: var(--text2); line-height: 1.65; margin: 28px 0;
+      display: flex; gap: 14px;
+    }
+    .notice-icon { font-size: 20px; flex-shrink: 0; margin-top: 1px; }
+    .notice-title { font-size: 11px; font-weight: 800; letter-spacing: 1.2px; text-transform: uppercase; margin-bottom: 5px; }
+    .notice-green { background: rgba(16,185,129,0.07); border: 1px solid rgba(16,185,129,0.2); border-left: 3px solid var(--green); }
+    .notice-green .notice-title { color: var(--green); }
+    .notice-purple { background: rgba(124,58,237,0.08); border: 1px solid rgba(124,58,237,0.22); border-left: 3px solid var(--accent); }
+    .notice-purple .notice-title { color: var(--accent-l); }
+    .notice-gold { background: rgba(251,191,36,0.07); border: 1px solid rgba(251,191,36,0.2); border-left: 3px solid var(--gold); }
+    .notice-gold .notice-title { color: var(--gold); }
+
+    /* TOC */
+    .toc { background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 28px 32px; margin-bottom: 60px; }
+    .toc-title { font-family: 'Arial', sans-serif; font-size: 10px; font-weight: 800; letter-spacing: 1.5px; text-transform: uppercase; color: var(--text3); margin-bottom: 18px; }
+    .toc-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 32px; list-style: none; counter-reset: toc; }
+    .toc-grid li { counter-increment: toc; font-family: 'Arial', sans-serif; font-size: 13.5px; display: flex; align-items: baseline; gap: 8px; }
+    .toc-grid li::before { content: counter(toc, decimal-leading-zero); font-size: 10px; color: var(--green); font-weight: 700; flex-shrink: 0; }
+    .toc-grid a { color: var(--text2); text-decoration: none; transition: color 0.15s; }
+    .toc-grid a:hover { color: var(--green); }
+
+    /* Sections */
+    .section { margin-bottom: 60px; scroll-margin-top: 80px; }
+    .section-tag { font-family: 'Arial', sans-serif; font-size: 10px; font-weight: 800; letter-spacing: 1.4px; text-transform: uppercase; color: var(--green); margin-bottom: 8px; }
+    h2 { font-size: 28px; font-weight: 400; color: var(--text); letter-spacing: -0.3px; padding-bottom: 16px; margin-bottom: 22px; border-bottom: 1px solid var(--border); }
+    h3 { font-family: 'Arial', sans-serif; font-size: 15px; font-weight: 700; color: var(--text); margin: 30px 0 10px; }
+    p { color: var(--text2); margin-bottom: 16px; font-size: 15px; }
+    ul, ol { padding-left: 22px; margin-bottom: 16px; }
+    li { color: var(--text2); font-size: 15px; margin-bottom: 8px; line-height: 1.7; }
+    a { color: var(--accent-l); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    strong { color: var(--text); font-weight: 600; }
+    code { font-family: 'Courier New', monospace; font-size: 13px; background: rgba(124,58,237,0.12); border: 1px solid rgba(124,58,237,0.2); border-radius: 5px; padding: 1px 7px; }
+    em { font-style: italic; color: var(--text2); }
+
+    /* Tables */
+    .table-wrap { overflow-x: auto; margin: 20px 0 28px; border-radius: 12px; border: 1px solid var(--border); }
+    table { width: 100%; border-collapse: collapse; font-family: 'Arial', sans-serif; font-size: 13.5px; }
+    thead th { background: rgba(16,185,129,0.08); padding: 11px 16px; text-align: left; font-size: 10px; font-weight: 800; letter-spacing: 1px; text-transform: uppercase; color: var(--green); white-space: nowrap; }
+    tbody td { padding: 11px 16px; color: var(--text2); border-top: 1px solid var(--border); vertical-align: top; }
+    tbody tr:hover td { background: rgba(255,255,255,0.025); }
+
+    /* Rights grid */
+    .rights-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 20px 0 28px; }
+    .right-card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 18px; font-family: 'Arial', sans-serif; }
+    .right-card-title { font-size: 14px; font-weight: 700; color: var(--text); margin-bottom: 7px; }
+    .right-card-desc { font-size: 13px; color: var(--text2); line-height: 1.55; }
+
+    /* Footer */
+    .doc-footer { margin-top: 80px; padding-top: 40px; border-top: 1px solid var(--border); display: grid; grid-template-columns: 1fr auto; gap: 24px; align-items: start; }
+    .footer-brand { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+    .footer-info { font-family: 'Arial', sans-serif; font-size: 12px; color: var(--text3); line-height: 1.9; }
+    .footer-info strong { color: var(--text2); }
+    .footer-nav { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; padding-top: 4px; }
+    .footer-nav a { font-family: 'Arial', sans-serif; font-size: 13px; color: var(--accent-l); }
+
+    @media (max-width: 680px) {
+      .wrapper { padding: 48px 20px 80px; }
+      .site-header { padding: 0 20px; }
+      h1 { font-size: 34px; }
+      .summary-grid { grid-template-columns: 1fr; }
+      .toc-grid { grid-template-columns: 1fr; }
+      .rights-grid { grid-template-columns: 1fr; }
+      .doc-footer { grid-template-columns: 1fr; }
+      .footer-nav { align-items: flex-start; }
+    }
+  </style>
+</head>
+<body>
+
+<header class="site-header">
+  <div class="logo">P</div>
+  <span class="logo-text">Purp</span>
+  <div class="header-divider"></div>
+  <span class="header-label">Privacy Policy</span>
+</header>
+
+<div class="wrapper">
+
+  <div class="hero">
+    <div class="badge">Privacy Policy</div>
+    <h1>Privacy <span>Policy</span></h1>
+    <div class="meta-row">
+      <div class="meta-item"><span>Effective date:</span><strong>June 1, 2025</strong></div>
+      <div class="meta-item"><span>Last updated:</span><strong>June 1, 2025</strong></div>
+      <div class="meta-item"><span>Version:</span><strong>1.0</strong></div>
+    </div>
+  </div>
+
+  <!-- At-a-glance cards -->
+  <div class="summary-grid">
+    <div class="summary-card">
+      <div class="summary-icon">🔒</div>
+      <div class="summary-label">Data Sold?</div>
+      <div class="summary-value">Never. We do not sell, rent, or share your personal data with advertisers or data brokers.</div>
+    </div>
+    <div class="summary-card">
+      <div class="summary-icon">🗄️</div>
+      <div class="summary-label">Data Stored</div>
+      <div class="summary-value">Your portfolio, transactions, and alerts are stored on secure servers to power the Service.</div>
+    </div>
+    <div class="summary-card">
+      <div class="summary-icon">🗑️</div>
+      <div class="summary-label">Delete Your Data</div>
+      <div class="summary-value">Request full deletion anytime at <a href="mailto:privacy@getpurpai.com">privacy@getpurpai.com</a>.</div>
+    </div>
+  </div>
+
+  <div class="notice notice-green">
+    <div class="notice-icon">🛡️</div>
+    <div>
+      <div class="notice-title">Our Commitment</div>
+      Purp is built on trust. We collect only what is necessary to deliver the Service, we never sell your data, and you remain in control of your information at all times. This policy is fully compliant with Brazil's <strong>Lei Geral de Proteção de Dados Pessoais (LGPD — Lei nº 13.709/2018)</strong> and with Google Chrome Web Store privacy requirements.
+    </div>
+  </div>
+
+  <div class="toc">
+    <div class="toc-title">Table of Contents</div>
+    <ol class="toc-grid">
+      <li><a href="#p1">Controller Identity</a></li>
+      <li><a href="#p2">Information We Collect</a></li>
+      <li><a href="#p3">How We Use Your Data</a></li>
+      <li><a href="#p4">How We Share Your Data</a></li>
+      <li><a href="#p5">Data Retention</a></li>
+      <li><a href="#p6">Security</a></li>
+      <li><a href="#p7">Extension Storage &amp; Cookies</a></li>
+      <li><a href="#p8">Your Rights (LGPD)</a></li>
+      <li><a href="#p9">Children's Privacy</a></li>
+      <li><a href="#p10">International Transfers</a></li>
+      <li><a href="#p11">Third-Party Services</a></li>
+      <li><a href="#p12">Chrome Web Store Disclosure</a></li>
+      <li><a href="#p13">Changes to This Policy</a></li>
+      <li><a href="#p14">Contact &amp; DPO</a></li>
+    </ol>
+  </div>
+
+  <!-- Section 1 -->
+  <div class="section" id="p1">
+    <div class="section-tag">Section 01</div>
+    <h2>Controller Identity</h2>
+    <p>The data controller responsible for personal data processed through Purp is:</p>
+    <div class="table-wrap">
+      <table>
+        <tbody>
+          <tr><td><strong>Company</strong></td><td>André Soluções LTDA</td></tr>
+          <tr><td><strong>CNPJ</strong></td><td>59.455.448/0001-42</td></tr>
+          <tr><td><strong>Address</strong></td><td>Sorocaba, São Paulo, Brasil</td></tr>
+          <tr><td><strong>Privacy Contact</strong></td><td><a href="mailto:privacy@getpurpai.com">privacy@getpurpai.com</a></td></tr>
+          <tr><td><strong>Website</strong></td><td><a href="https://getpurpai.com" target="_blank" rel="noopener">getpurpai.com</a></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>This Privacy Policy describes how André Soluções LTDA collects, uses, stores, and protects information from users of the Purp Chrome extension, API, and website (collectively, the "Service").</p>
+  </div>
+
+  <!-- Section 2 -->
+  <div class="section" id="p2">
+    <div class="section-tag">Section 02</div>
+    <h2>Information We Collect</h2>
+
+    <h3>2.1 — Information You Provide</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Data Type</th><th>Examples</th><th>Why Collected</th></tr></thead>
+        <tbody>
+          <tr><td><strong>Account Information</strong></td><td>Email address, hashed password</td><td>Authentication and account management</td></tr>
+          <tr><td><strong>Portfolio Data</strong></td><td>Asset names, ticker symbols, quantities, purchase prices, broker names</td><td>Displaying your portfolio dashboard</td></tr>
+          <tr><td><strong>Transaction History</strong></td><td>Buy/sell dates, prices, quantities, fees</td><td>Performance calculation and tax features</td></tr>
+          <tr><td><strong>Alerts</strong></td><td>Price targets, percentage thresholds</td><td>Sending price alerts by email</td></tr>
+          <tr><td><strong>Watchlist</strong></td><td>Ticker symbols you monitor</td><td>Personalized market watch display</td></tr>
+          <tr><td><strong>Financial Goals</strong></td><td>Target amounts, dates, goal labels</td><td>Goal tracking feature</td></tr>
+          <tr><td><strong>Broker API Keys</strong></td><td>API key and secret (optional)</td><td>Automated portfolio sync — stored encrypted</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>2.2 — Automatically Collected Data</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Data Type</th><th>Details</th></tr></thead>
+        <tbody>
+          <tr><td><strong>Usage Data</strong></td><td>Features accessed, session interactions — used to improve the extension</td></tr>
+          <tr><td><strong>Crash Reports</strong></td><td>JavaScript errors, stack traces, browser version — collected via Sentry to fix bugs</td></tr>
+          <tr><td><strong>Device Info</strong></td><td>Browser type and version, operating system — collected via Sentry</td></tr>
+          <tr><td><strong>IP Address</strong></td><td>Logged by our servers for security; not linked to portfolio data; deleted after 30 days</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>2.3 — Payment Information</h3>
+    <p>We use <strong>Stripe, Inc.</strong> for payment processing. We <strong>never see or store</strong> your full card number, CVV, or billing address. Stripe handles all payment data under PCI-DSS compliance. We only receive a Stripe customer token and your subscription status.</p>
+
+    <h3>2.4 — What We Do NOT Collect</h3>
+    <ul>
+      <li>We do not access your browser history or any data outside the Purp extension context.</li>
+      <li>We do not access brokerage accounts unless you explicitly provide an API key.</li>
+      <li>We do not collect CPF, RG, Social Security Numbers, government IDs, or full bank account numbers.</li>
+      <li>We do not use fingerprinting, cross-site tracking pixels, or advertising identifiers.</li>
+      <li>We do not access your tabs, browsing activity, or any web page content outside the extension popup.</li>
+    </ul>
+  </div>
+
+  <!-- Section 3 -->
+  <div class="section" id="p3">
+    <div class="section-tag">Section 03</div>
+    <h2>How We Use Your Data</h2>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Purpose</th><th>Data Used</th><th>Legal Basis (LGPD)</th></tr></thead>
+        <tbody>
+          <tr><td>Providing and operating the Service</td><td>Account info, portfolio data, transactions</td><td>Contract performance (Art. 7, V)</td></tr>
+          <tr><td>Sending price and performance alerts</td><td>Email address, alert preferences</td><td>Contract performance (Art. 7, V)</td></tr>
+          <tr><td>Payment processing and subscription management</td><td>Email, Stripe tokens</td><td>Contract performance (Art. 7, V)</td></tr>
+          <tr><td>AI portfolio analysis via Google Gemini</td><td>Anonymized portfolio summary only</td><td>Consent — feature opt-in (Art. 7, I)</td></tr>
+          <tr><td>Transactional emails (verification, alerts, billing)</td><td>Email address</td><td>Contract performance (Art. 7, V)</td></tr>
+          <tr><td>Debugging and product improvement</td><td>Error logs, crash reports, usage data</td><td>Legitimate interest (Art. 7, IX)</td></tr>
+          <tr><td>Security and fraud prevention</td><td>IP address, account activity</td><td>Legitimate interest (Art. 7, IX)</td></tr>
+          <tr><td>Legal compliance</td><td>As required by applicable law</td><td>Legal obligation (Art. 7, II)</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="notice notice-purple">
+      <div class="notice-icon">🤖</div>
+      <div>
+        <div class="notice-title">AI Analysis — What We Send to Google Gemini</div>
+        When you request AI portfolio analysis, we send only an anonymized summary of your portfolio composition (asset classes, allocation percentages, performance ranges) to the Gemini API. We do not send your exact holdings, account balances, email address, or any personally identifiable information to Google.
+      </div>
+    </div>
+  </div>
+
+  <!-- Section 4 -->
+  <div class="section" id="p4">
+    <div class="section-tag">Section 04</div>
+    <h2>How We Share Your Data</h2>
+    <div class="notice notice-green">
+      <div class="notice-icon">✅</div>
+      <div>
+        <div class="notice-title">Core Principle</div>
+        We do not sell, rent, trade, or lease your personal information to any third party, ever. We do not share data with advertisers or data brokers.
+      </div>
+    </div>
+
+    <h3>Service Providers (Processors)</h3>
+    <p>We share data only with trusted vendors under data processing agreements:</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Provider</th><th>Purpose</th><th>Data Shared</th><th>Location</th></tr></thead>
+        <tbody>
+          <tr><td><strong>Stripe, Inc.</strong></td><td>Payment processing</td><td>Email, subscription status</td><td>USA</td></tr>
+          <tr><td><strong>Google (Gemini API)</strong></td><td>AI analysis</td><td>Anonymized portfolio summary</td><td>USA</td></tr>
+          <tr><td><strong>Sentry</strong></td><td>Error monitoring</td><td>Crash logs, browser info (no portfolio data)</td><td>USA</td></tr>
+          <tr><td><strong>Railway</strong></td><td>Backend infrastructure</td><td>All server-side data (encrypted at rest)</td><td>USA</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>Legal Requirements</h3>
+    <p>We may disclose your information when required by Brazilian law, valid court order, or government authority, or to protect the rights, property, or safety of Purp, our users, or the public.</p>
+
+    <h3>Business Transfers</h3>
+    <p>In the event of a merger, acquisition, or asset sale, your information may be transferred. We will notify you by email and in-app notice before your data becomes subject to a different privacy policy.</p>
+  </div>
+
+  <!-- Section 5 -->
+  <div class="section" id="p5">
+    <div class="section-tag">Section 05</div>
+    <h2>Data Retention</h2>
+    <ul>
+      <li><strong>Active accounts:</strong> Portfolio data and account information are retained for the lifetime of your account.</li>
+      <li><strong>Deleted accounts:</strong> Personal data is permanently deleted within <strong>30 days</strong> of a verified deletion request, except where retention is legally required (e.g., billing records, typically 5 years under Brazilian fiscal law).</li>
+      <li><strong>Crash logs (Sentry):</strong> Auto-deleted after 90 days.</li>
+      <li><strong>Server access logs (IP):</strong> Deleted after 30 days.</li>
+      <li><strong>Inactive Free accounts:</strong> Accounts with no login for more than 12 months may be deleted after 30 days' prior email notice.</li>
+    </ul>
+  </div>
+
+  <!-- Section 6 -->
+  <div class="section" id="p6">
+    <div class="section-tag">Section 06</div>
+    <h2>Security</h2>
+    <p>We implement technical and organizational measures aligned with industry standards:</p>
+    <ul>
+      <li><strong>Passwords</strong> are hashed with bcrypt — we never store plaintext passwords.</li>
+      <li><strong>Authentication tokens</strong> are signed JWTs with expiration periods.</li>
+      <li><strong>Data in transit</strong> is encrypted using TLS 1.2 or higher on all connections.</li>
+      <li><strong>Data at rest</strong> is encrypted on Railway's infrastructure.</li>
+      <li><strong>Broker API keys</strong> are stored using AES-256 encryption.</li>
+      <li><strong>Payment data</strong> is handled exclusively by Stripe's PCI-DSS compliant systems.</li>
+    </ul>
+    <div class="notice notice-gold">
+      <div class="notice-icon">⚠️</div>
+      <div>
+        <div class="notice-title">Security Notice</div>
+        No system is 100% secure. If you suspect unauthorized access, contact us immediately at <a href="mailto:security@getpurpai.com">security@getpurpai.com</a>. In case of a data breach, we will notify affected users and the Autoridade Nacional de Proteção de Dados (ANPD) within the timeframes required by the LGPD.
+      </div>
+    </div>
+  </div>
+
+  <!-- Section 7 -->
+  <div class="section" id="p7">
+    <div class="section-tag">Section 07</div>
+    <h2>Extension Storage &amp; Cookies</h2>
+
+    <h3>Chrome Extension Local Storage</h3>
+    <p>The Purp extension uses the browser's local storage within the extension's isolated context to store:</p>
+    <ul>
+      <li>Your authentication token (JWT) to keep you logged in.</li>
+      <li>Your email address for session restoration.</li>
+      <li>A pending verification flag if your email is unconfirmed.</li>
+      <li>Cached market data with a short TTL (60 seconds) to reduce API calls.</li>
+    </ul>
+    <p>This data is stored only within Purp's isolated extension storage. It is <strong>not accessible to websites you visit or to any other extension</strong>. Purp does not inject scripts into web pages you browse.</p>
+
+    <h3>Website Cookies</h3>
+    <p>Our website at <a href="https://getpurpai.com" target="_blank" rel="noopener">getpurpai.com</a> uses only essential session cookies required for login functionality. We do <strong>not</strong> use advertising cookies, tracking pixels, Google Analytics, Facebook Pixel, or any third-party analytics on our website.</p>
+
+    <h3>No Cross-Site Tracking</h3>
+    <p>Purp does not track your browsing activity across websites. The extension activates only within its own popup window and has no visibility into your browsing habits.</p>
+  </div>
+
+  <!-- Section 8 -->
+  <div class="section" id="p8">
+    <div class="section-tag">Section 08</div>
+    <h2>Your Rights Under the LGPD</h2>
+    <p>Under Brazil's Lei Geral de Proteção de Dados Pessoais (Lei nº 13.709/2018), you have the following rights regarding your personal data:</p>
+    <div class="rights-grid">
+      <div class="right-card">
+        <div class="right-card-title">📋 Confirmation &amp; Access (Art. 18, I–II)</div>
+        <div class="right-card-desc">Request confirmation that we process your data and a copy of the personal data we hold about you.</div>
+      </div>
+      <div class="right-card">
+        <div class="right-card-title">✏️ Correction (Art. 18, III)</div>
+        <div class="right-card-desc">Request correction of incomplete, inaccurate, or outdated personal data. Most data can be edited directly within the extension.</div>
+      </div>
+      <div class="right-card">
+        <div class="right-card-title">🗑️ Anonymization, Blocking, or Deletion (Art. 18, IV)</div>
+        <div class="right-card-desc">Request deletion of unnecessary or excessive data, or data processed in violation of the LGPD.</div>
+      </div>
+      <div class="right-card">
+        <div class="right-card-title">📦 Portability (Art. 18, V)</div>
+        <div class="right-card-desc">Request an export of your portfolio and transaction data in JSON or CSV format to transfer to another service.</div>
+      </div>
+      <div class="right-card">
+        <div class="right-card-title">🔔 Third-Party Info (Art. 18, VI)</div>
+        <div class="right-card-desc">Request information about third parties (public and private entities) with which we share your data.</div>
+      </div>
+      <div class="right-card">
+        <div class="right-card-title">🚫 Withdrawal of Consent (Art. 18, IX)</div>
+        <div class="right-card-desc">Withdraw consent for processing activities based on your consent (such as AI analysis) at any time.</div>
+      </div>
+    </div>
+    <h3>How to Exercise Your Rights</h3>
+    <p>Email <a href="mailto:privacy@getpurpai.com">privacy@getpurpai.com</a> with the subject line <strong>"Privacy Request — [Right Type]"</strong> from the email address on your account. We will respond within <strong>15 days</strong> as required by the LGPD. We may verify your identity before processing the request.</p>
+    <p>You also have the right to file a complaint with the <strong>Autoridade Nacional de Proteção de Dados (ANPD)</strong> at <a href="https://www.gov.br/anpd" target="_blank" rel="noopener noreferrer">gov.br/anpd</a>.</p>
+
+    <h3>Email Communications</h3>
+    <ul>
+      <li><strong>Transactional (mandatory):</strong> Verification codes, price alert notifications, billing receipts, security notices. Required for the Service to function.</li>
+      <li><strong>Marketing (optional):</strong> Product updates and announcements. You may unsubscribe at any time via the link in any marketing email or by contacting us.</li>
+    </ul>
+  </div>
+
+  <!-- Section 9 -->
+  <div class="section" id="p9">
+    <div class="section-tag">Section 09</div>
+    <h2>Children's Privacy</h2>
+    <p>Purp is not directed at or intended for use by persons under the age of 18. We do not knowingly collect personal data from minors. If we discover that a minor has created an account, we will delete the account and all associated data immediately. If you are a parent or guardian and believe your child has provided data to Purp, contact us at <a href="mailto:privacy@getpurpai.com">privacy@getpurpai.com</a>.</p>
+  </div>
+
+  <!-- Section 10 -->
+  <div class="section" id="p10">
+    <div class="section-tag">Section 10</div>
+    <h2>International Data Transfers</h2>
+    <p>Our backend infrastructure is hosted in the United States via Railway, and certain third-party service providers (Stripe, Google, Sentry) also process data in the USA. When your data is transferred outside Brazil, we ensure it is protected through contractual clauses equivalent to LGPD standards (Art. 33, LGPD).</p>
+    <p>By using the Service, you acknowledge that your data may be transferred to and processed in countries outside Brazil. We take appropriate safeguards to ensure your data is handled in accordance with this Privacy Policy and applicable law.</p>
+  </div>
+
+  <!-- Section 11 -->
+  <div class="section" id="p11">
+    <div class="section-tag">Section 11</div>
+    <h2>Third-Party Services &amp; Links</h2>
+    <p>Purp may reference links to third-party websites. These sites have their own privacy policies and we are not responsible for their practices. Market data displayed in Purp is sourced from third-party providers and constitutes publicly available market information, not your personal data.</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Provider</th><th>Role</th><th>Privacy Policy</th></tr></thead>
+        <tbody>
+          <tr><td><strong>Stripe, Inc.</strong></td><td>Payment processor</td><td><a href="https://stripe.com/privacy" target="_blank" rel="noopener noreferrer">stripe.com/privacy</a></td></tr>
+          <tr><td><strong>Google (Gemini)</strong></td><td>AI analysis engine</td><td><a href="https://policies.google.com/privacy" target="_blank" rel="noopener noreferrer">policies.google.com/privacy</a></td></tr>
+          <tr><td><strong>Sentry</strong></td><td>Error monitoring</td><td><a href="https://sentry.io/privacy/" target="_blank" rel="noopener noreferrer">sentry.io/privacy</a></td></tr>
+          <tr><td><strong>Railway</strong></td><td>Infrastructure</td><td><a href="https://railway.app/legal/privacy" target="_blank" rel="noopener noreferrer">railway.app/legal/privacy</a></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Section 12 -->
+  <div class="section" id="p12">
+    <div class="section-tag">Section 12</div>
+    <h2>Chrome Web Store Disclosure</h2>
+    <p>In compliance with Google Chrome Web Store policies, we disclose that the Purp extension:</p>
+    <ul>
+      <li><strong>Requests only the permissions necessary</strong> to provide portfolio tracking functionality. The extension does not access tab content, browsing history, or web page data.</li>
+      <li><strong>Does not collect or transmit browsing history</strong> or any data from websites you visit.</li>
+      <li><strong>Does not use data for advertising purposes.</strong> No user data is shared with ad networks.</li>
+      <li><strong>Does not sell personal data</strong> to third parties under any circumstances.</li>
+      <li><strong>Uses data solely</strong> to provide, maintain, and improve the portfolio tracking Service as described in this policy.</li>
+      <li><strong>Network communications</strong> are limited to our own API at <code>purp-production.up.railway.app</code> and the third-party services listed in this policy (Stripe, Gemini, Sentry).</li>
+    </ul>
+    <div class="notice notice-green">
+      <div class="notice-icon">✅</div>
+      <div>
+        <div class="notice-title">Single Purpose Disclosure</div>
+        The Purp Chrome extension has a single purpose: to allow users to track, analyze, and monitor their investment portfolio. All data collected is used exclusively to fulfill this purpose.
+      </div>
+    </div>
+  </div>
+
+  <!-- Section 13 -->
+  <div class="section" id="p13">
+    <div class="section-tag">Section 13</div>
+    <h2>Changes to This Privacy Policy</h2>
+    <p>We may update this policy to reflect changes in our practices, technology, or legal requirements. For material changes we will update the "Last updated" date, notify you by email at least 15 days before changes take effect (as required by the LGPD), and display an in-app notice for at least 15 days. Continued use of the Service after the effective date constitutes acceptance of the updated policy.</p>
+  </div>
+
+  <!-- Section 14 -->
+  <div class="section" id="p14">
+    <div class="section-tag">Section 14</div>
+    <h2>Contact &amp; Data Protection Officer</h2>
+    <p>For privacy questions, requests to exercise your LGPD rights, or to contact our Data Protection Officer (Encarregado de Dados), as required by Art. 41 of the LGPD:</p>
+    <div class="table-wrap">
+      <table>
+        <tbody>
+          <tr><td><strong>Company</strong></td><td>André Soluções LTDA</td></tr>
+          <tr><td><strong>CNPJ</strong></td><td>59.455.448/0001-42</td></tr>
+          <tr><td><strong>Address</strong></td><td>Sorocaba, São Paulo, Brasil</td></tr>
+          <tr><td><strong>Privacy / DPO</strong></td><td><a href="mailto:privacy@getpurpai.com">privacy@getpurpai.com</a></td></tr>
+          <tr><td><strong>Security</strong></td><td><a href="mailto:security@getpurpai.com">security@getpurpai.com</a></td></tr>
+          <tr><td><strong>General Support</strong></td><td><a href="mailto:support@getpurpai.com">support@getpurpai.com</a></td></tr>
+          <tr><td><strong>Website</strong></td><td><a href="https://getpurpai.com" target="_blank" rel="noopener">getpurpai.com</a></td></tr>
+          <tr><td><strong>ANPD</strong></td><td><a href="https://www.gov.br/anpd" target="_blank" rel="noopener noreferrer">gov.br/anpd</a> — to file a complaint with the Brazilian data protection authority</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>We aim to respond to all privacy requests within <strong>15 days</strong> as required by the LGPD.</p>
+  </div>
+
+  <div class="doc-footer">
+    <div>
+      <div class="footer-brand">
+        <div class="logo" style="width:28px;height:28px;font-size:13px;border-radius:8px;">P</div>
+        <span class="logo-text" style="font-size:16px;">Purp</span>
+      </div>
+      <div class="footer-info">
+        <strong>André Soluções LTDA</strong> · CNPJ 59.455.448/0001-42<br>
+        Sorocaba, São Paulo, Brasil<br>
+        © 2025 Purp. All rights reserved.
+      </div>
+    </div>
+    <div class="footer-nav">
+      <a href="/static/terms-of-service.html" target="_blank" rel="noopener noreferrer">Terms of Service</a>
+      <a href="https://getpurpai.com" target="_blank" rel="noopener">getpurpai.com</a>
+      <a href="mailto:privacy@getpurpai.com">privacy@getpurpai.com</a>
+    </div>
+  </div>
+
+</div>
+</body>
+</html>
