@@ -102,7 +102,8 @@ def create_user(
 
 
 def auth_headers(user_id: int):
-    return {"X-Auth-Token": main.create_token(user_id)}
+    token, _ = main.create_token(user_id)
+    return {"X-Auth-Token": token}
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

@@ -20,9 +20,9 @@
     <div class="header-search-wrap">
       <div class="header-search">
         <i data-lucide="search" width="16" height="16" class="search-icon"></i>
-        <input type="text" id="header-search-input" placeholder="Buscar ticker..." autocomplete="off" />
+        <input type="text" id="header-search-input" placeholder="Buscar ticker..." autocomplete="off" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="header-search-dropdown" aria-label="Buscar ativo por ticker ou nome" />
       </div>
-      <div id="header-search-dropdown" class="header-search-dropdown" aria-hidden="true"></div>
+      <div id="header-search-dropdown" class="header-search-dropdown" role="listbox" aria-hidden="true" aria-label="Sugestões de busca"></div>
     </div>
     <div class="header-actions">
       <div class="header-dropdown-wrap">
@@ -122,7 +122,7 @@
 
       <section class="widget widget-analysis" id="widget-analysis">
         <h3>Market Analysis</h3>
-        <p class="widget-empty-inline widget-analysis-empty">Ative o plano Investor para ver análises com IA.</p>
+        <p class="widget-empty-inline">Ative o plano Investor para ver análises com IA.</p>
       </section>
 
       <section class="widget widget-movers" id="widget-movers">
@@ -155,8 +155,8 @@
         <input type="hidden" id="tx-type" name="type" value="buy" />
         <div class="form-group">
           <label for="tx-ticker">Ticker</label>
-          <input type="text" id="tx-ticker" name="ticker" placeholder="AAPL, BTC..." autocomplete="off" />
-          <div id="tx-ticker-dropdown" class="tx-dropdown"></div>
+          <input type="text" id="tx-ticker" name="ticker" placeholder="AAPL, BTC..." autocomplete="off" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="tx-ticker-dropdown" aria-label="Símbolo do ativo" />
+          <div id="tx-ticker-dropdown" class="tx-dropdown" role="listbox" aria-label="Sugestões de ticker"></div>
         </div>
         <div class="form-group">
           <label for="tx-quantity">Quantidade</label>
@@ -248,6 +248,7 @@
           <button type="button" class="settings-toggle" id="settings-values-btn">Off</button>
         </div>
         <h3 class="settings-section">Dados</h3>
+        <button type="button" class="settings-action" id="settings-transactions-list"><i data-lucide="list" width="18" height="18"></i> Minhas vendas / Transações</button>
         <button type="button" class="settings-action" id="settings-export-csv"><i data-lucide="download" width="18" height="18"></i> Exportar portfólio (CSV)</button>
         <button type="button" class="settings-action" id="settings-export-fiscal"><i data-lucide="file-text" width="18" height="18"></i> Relatório fiscal (CSV)</button>
         <button type="button" class="settings-action" id="settings-import-csv"><i data-lucide="upload" width="18" height="18"></i> Importar portfólio (CSV)</button>

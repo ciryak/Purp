@@ -2039,7 +2039,12 @@ async def import_csv(
         try:
             sym = sanitize_symbol(tx["symbol"])
         except HTTPException as e:
-            errors.append(f"Row {i+1}: {e.detail} — skipped.")
+            detail = e.detail
+            if isinstance(detail, list):
+                detail = "; ".join(str(x.get("msg", x)) for x in detail) if detail else "Validation error"
+            else:
+                detail = str(detail) if detail else "Invalid symbol"
+            errors.append(f"Row {i+1}: {detail} — skipped.")
             continue
         amount = float(tx["amount"])
         price  = float(tx["price"])

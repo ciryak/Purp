@@ -132,6 +132,7 @@
     user: null,
     portfolioSort: "value",
     moversSort: "change-desc",
+    portfolioFromServer: false,
   };
   var _lastModalTrigger = null;
 
@@ -248,9 +249,11 @@
   }
 
   function render() {
-    var built = buildPositions(state.prices);
-    state.positions = built.positions;
-    state.totalValue = built.totalValue;
+    if (!state.portfolioFromServer) {
+      var built = buildPositions(state.prices);
+      state.positions = built.positions;
+      state.totalValue = built.totalValue;
+    }
 
     var positions = state.positions;
     var totalValue = state.totalValue;
@@ -405,17 +408,27 @@
       }
     }
 
-    var widgetAnalysis = document.querySelector("#widget-analysis .widget-empty-inline");
-    var widgetAnalysisContent = document.querySelector("#widget-analysis .widget-analysis-content");
-    if (widgetAnalysis || widgetAnalysisContent) {
+    var analysisContainer = document.getElementById("widget-analysis");
+    if (analysisContainer) {
+      var analysisSlot = analysisContainer.querySelector(".widget-analysis-content") || analysisContainer.querySelector(".widget-empty-inline");
+      if (!analysisSlot) {
+        var h3 = analysisContainer.querySelector("h3");
+        analysisSlot = h3 ? h3.nextElementSibling : null;
+      }
+      if (!analysisSlot) {
+        analysisSlot = document.createElement("div");
+        analysisContainer.appendChild(analysisSlot);
+      }
       if (state.marketAnalysisText) {
-        var content = (state.marketAnalysisText || "").replace(/</g, "&lt;");
-        if (widgetAnalysisContent) widgetAnalysisContent.innerHTML = content;
-        else if (widgetAnalysis) widgetAnalysis.outerHTML = "<div class=\"widget-analysis-content\">" + content + "</div>";
+        var analysisHtml = (state.marketAnalysisText || "").replace(/</g, "&lt;");
+        analysisSlot.className = "widget-analysis-content";
+        analysisSlot.innerHTML = analysisHtml;
       } else if (state.marketAnalysisText === false) {
-        var msg = "Faça upgrade para ver análise com IA.";
-        if (widgetAnalysisContent) widgetAnalysisContent.textContent = msg;
-        else if (widgetAnalysis) widgetAnalysis.textContent = msg;
+        analysisSlot.className = "widget-empty-inline";
+        analysisSlot.textContent = "Faça upgrade para ver análise com IA.";
+      } else {
+        analysisSlot.className = "widget-empty-inline";
+        analysisSlot.textContent = "Ative o plano Investor para ver análises com IA.";
       }
     }
 
@@ -612,25 +625,26 @@
     modal.setAttribute("aria-hidden", "false");
     var symbolInp = document.getElementById("alert-symbol");
     if (symbolInp) symbolInp.value = (prefillTicker || "").toUpperCase();
-    var listEl = document.getElementById("alerts-list");
     var wrapEl = document.getElementById("alerts-list-wrap");
     if (wrapEl) {
-      var p = wrapEl.querySelector("p.text-muted");
-      if (p) p.textContent = "Carregando…";
+      wrapEl.innerHTML = "<p class=\"text-muted\">Carregando…</p><div id=\"alerts-list\"></div>";
     }
-    if (listEl) listEl.innerHTML = "";
     fetchWithAuth("/alerts").then(function (r) { return r.ok ? r.json() : { alerts: [] }; }).then(function (data) {
       var alerts = data.alerts || [];
-      if (wrapEl) {
-        var p2 = wrapEl.querySelector("p.text-muted");
-        if (p2) p2.textContent = alerts.length === 0 ? "Nenhum alerta." : "";
-      }
-      if (listEl) {
-        listEl.innerHTML = alerts.map(function (a) {
+      if (!wrapEl) return;
+      var listHtml = "";
+      if (alerts.length === 0) {
+        listHtml = "<p class=\"text-muted\">Nenhum alerta.</p>";
+      } else {
+        listHtml = "<div id=\"alerts-list\">" + alerts.map(function (a) {
           var typeLabel = a.alert_type === "price_above" ? "Acima de" : a.alert_type === "price_below" ? "Abaixo de" : a.alert_type;
           var status = a.active ? "Ativo" : "Pausado";
           return "<div class=\"alert-item\" data-id=\"" + a.id + "\"><span class=\"alert-info\">" + (a.symbol || "") + " — " + typeLabel + " " + (a.target_value != null ? a.target_value : "") + "</span> <span class=\"alert-status\">" + status + "</span> <button type=\"button\" class=\"btn-small alert-toggle\" data-id=\"" + a.id + "\">" + (a.active ? "Pausar" : "Ativar") + "</button> <button type=\"button\" class=\"btn-small alert-delete\" data-id=\"" + a.id + "\">Excluir</button></div>";
-        }).join("");
+        }).join("") + "</div>";
+      }
+      wrapEl.innerHTML = listHtml;
+      var listEl = wrapEl.querySelector("#alerts-list");
+      if (listEl) {
         listEl.querySelectorAll(".alert-toggle").forEach(function (btn) {
           btn.addEventListener("click", function () {
             var id = parseInt(btn.getAttribute("data-id"), 10);
@@ -715,8 +729,10 @@
     }
   }
 
-  state.positions = buildPositions(state.prices).positions;
-  state.totalValue = buildPositions(state.prices).totalValue;
+  if (!state.portfolioFromServer) {
+    state.positions = buildPositions(state.prices).positions;
+    state.totalValue = buildPositions(state.prices).totalValue;
+  }
 
   function createIcons() {
     if (typeof lucide !== "undefined" && lucide.createIcons) lucide.createIcons();
@@ -797,6 +813,29 @@
     if (modalEl) modalEl.setAttribute("aria-hidden", "true");
   }
 
+  function showUnverifiedBanner() {
+    if (document.getElementById("unverified-banner")) return;
+    var banner = document.createElement("div");
+    banner.id = "unverified-banner";
+    banner.style.cssText = "background:#6d28d9;color:#fff;text-align:center;padding:10px 16px;font-size:14px;position:relative;z-index:39;display:flex;align-items:center;justify-content:center;gap:12px;flex-wrap:wrap;";
+    banner.innerHTML = "<span>Seu e-mail ainda não foi verificado.</span><button id=\"resend-verify-btn\" type=\"button\" style=\"background:#fff;color:#6d28d9;border:none;border-radius:6px;padding:5px 14px;font-size:13px;font-weight:600;cursor:pointer;\">Reenviar código</button><button type=\"button\" style=\"position:absolute;right:10px;top:50%;transform:translateY(-50%);background:none;border:none;color:#fff;font-size:18px;cursor:pointer;line-height:1;\" aria-label=\"Fechar\">&times;</button>";
+    var header = document.querySelector(".dashboard-header");
+    if (header && header.nextSibling) header.parentNode.insertBefore(banner, header.nextSibling);
+    else document.body.prepend(banner);
+    banner.querySelector("#resend-verify-btn").addEventListener("click", function () {
+      var btn = this;
+      btn.disabled = true;
+      btn.textContent = "Enviando…";
+      fetchWithAuth("/auth/resend-verification", { method: "POST" })
+        .then(function (r) { return r.json().catch(function () { return {}; }); })
+        .then(function () { btn.textContent = "E-mail enviado!"; })
+        .catch(function () { btn.textContent = "Erro. Tente novamente."; btn.disabled = false; });
+    });
+    banner.querySelector("[aria-label=\"Fechar\"]").addEventListener("click", function () {
+      banner.remove();
+    });
+  }
+
   document.addEventListener("DOMContentLoaded", function () {
     applyTheme(getTheme());
 
@@ -821,21 +860,82 @@
     fetchWithAuth("/auth/me")
       .then(function (r) { return r.ok ? r.json() : null; })
       .then(function (me) {
-        if (me) updateUserMenu(me);
+        state.user = me || getAuthUser() || state.user;
+        updateUserMenu(state.user);
+
+        if (me && me.is_verified === false) {
+          showUnverifiedBanner();
+        }
+
+        var promises = [];
+
+        if (me) {
+          promises.push(
+            fetchWithAuth("/portfolio/balance")
+              .then(function (r) { return r.ok ? r.json() : null; })
+              .then(function (data) {
+                if (data && Array.isArray(data.assets) && data.assets.length > 0) {
+                  var totalBal = data.total_balance_usd || 0;
+                  state.positions = data.assets.map(function (a) {
+                    return {
+                      ticker: (a.symbol || "").toUpperCase(),
+                      quantity: a.amount || 0,
+                      averagePrice: a.purchase_price || 0,
+                      currentPrice: a.current_price || 0,
+                      currentValue: a.position_value || 0,
+                      pnlAbsolute: a.profit || 0,
+                      pnlPercent: a.percent_change || 0,
+                      allocationPercent: totalBal > 0 ? ((a.position_value || 0) / totalBal) * 100 : 0,
+                    };
+                  });
+                  state.totalValue = totalBal;
+                  state.portfolioFromServer = true;
+                }
+              })
+              .catch(function () {})
+          );
+
+          promises.push(
+            fetchWithAuth("/watchlist")
+              .then(function (r) { return r.ok ? r.json() : null; })
+              .then(function (data) {
+                if (data && Array.isArray(data.items)) {
+                  var existing = {};
+                  state.tickers.forEach(function (t) { existing[t.toUpperCase()] = true; });
+                  data.items.forEach(function (item) {
+                    var sym = (item.symbol || "").toUpperCase();
+                    if (sym && !existing[sym]) {
+                      state.tickers.push(sym);
+                      existing[sym] = true;
+                    }
+                  });
+                  persist();
+                }
+              })
+              .catch(function () {})
+          );
+        }
+
         var syncOn = localStorage.getItem(SYNC_SERVER_KEY) === "true";
         if (syncOn) {
-          fetchWithAuth("/transactions").then(function (r) { return r.ok ? r.json() : []; }).then(function (arr) {
-            if (Array.isArray(arr) && arr.length > 0) {
-              state.transactions = arr.map(function (t) {
-                return { id: t.id, ticker: t.symbol || t.ticker, type: t.type || "buy", quantity: parseFloat(t.amount) || 0, price: parseFloat(t.price) || 0, date: t.date || "", notes: "" };
-              });
-              persist();
-            }
-            refreshPrices();
-          }).catch(function () { refreshPrices(); });
-        } else {
-          refreshPrices();
+          promises.push(
+            fetchWithAuth("/transactions")
+              .then(function (r) { return r.ok ? r.json() : []; })
+              .then(function (arr) {
+                if (Array.isArray(arr) && arr.length > 0) {
+                  state.transactions = arr.map(function (t) {
+                    return { id: t.id, ticker: t.symbol || t.ticker, type: t.type || "buy", quantity: parseFloat(t.amount) || 0, price: parseFloat(t.price) || 0, date: t.date || "", notes: "" };
+                  });
+                  persist();
+                }
+              })
+              .catch(function () {})
+          );
         }
+
+        Promise.all(promises).then(function () {
+          refreshPrices();
+        });
       })
       .catch(function () {
         refreshPrices();
@@ -905,32 +1005,106 @@
     });
 
     var tickerDropdown = document.getElementById("tx-ticker-dropdown");
-    var searchTimeout;
+    var txTickerSearchTimeout;
+    var txTickerActiveIndex = -1;
+
+    function txTickerSelectOption(ticker, price) {
+      if (!ticker) return;
+      ticker = ticker.toUpperCase();
+      txTicker.value = ticker;
+      if (price != null && !isNaN(price)) txPrice.value = price;
+      tickerDropdown.style.display = "none";
+      tickerDropdown.innerHTML = "";
+      if (txTicker.setAttribute) txTicker.setAttribute("aria-expanded", "false");
+      txTicker.removeAttribute("aria-activedescendant");
+      txTickerActiveIndex = -1;
+      try {
+        var prev = JSON.parse(localStorage.getItem(SEARCH_HISTORY_KEY) || "[]");
+        prev = [ticker].concat(prev.filter(function (x) { return x !== ticker; })).slice(0, 5);
+        localStorage.setItem(SEARCH_HISTORY_KEY, JSON.stringify(prev));
+      } catch (e) {}
+    }
+
+    function txTickerSetButtonsAndListeners(items) {
+      tickerDropdown.innerHTML = items.map(function (item, i) {
+        var t = item.ticker || item;
+        var label = item.label != null ? item.label : t;
+        return "<button type=\"button\" id=\"tx-ticker-opt-" + i + "\" role=\"option\" aria-selected=\"false\" data-ticker=\"" + t + "\" data-price=\"" + (item.price != null ? item.price : "") + "\">" + label + "</button>";
+      }).join("");
+      tickerDropdown.style.display = "block";
+      if (txTicker.setAttribute) txTicker.setAttribute("aria-expanded", "true");
+      txTickerActiveIndex = -1;
+      tickerDropdown.querySelectorAll("button").forEach(function (b) {
+        b.addEventListener("click", function () {
+          txTickerSelectOption(b.getAttribute("data-ticker"), parseFloat(b.getAttribute("data-price"), 10));
+        });
+      });
+    }
+
     if (txTicker) txTicker.addEventListener("input", function () {
       var q = txTicker.value.trim().toUpperCase();
-      if (q.length < 1) { tickerDropdown.innerHTML = ""; tickerDropdown.style.display = "none"; return; }
-      clearTimeout(searchTimeout);
-      searchTimeout = setTimeout(function () {
-        var recent = [];
-        try { recent = JSON.parse(localStorage.getItem(SEARCH_HISTORY_KEY) || "[]").slice(0, 5); } catch (e) {}
-        var list = recent.filter(function (s) { return s.indexOf(q) !== -1; });
-        if (list.length === 0) list = [q];
-        tickerDropdown.innerHTML = list.map(function (s) {
-          return "<button type=\"button\" data-ticker=\"" + s + "\">" + s + "</button>";
-        }).join("");
-        tickerDropdown.style.display = "block";
-        tickerDropdown.querySelectorAll("button").forEach(function (b) {
-          b.addEventListener("click", function () {
-            txTicker.value = b.getAttribute("data-ticker");
-            var p = state.prices[b.getAttribute("data-ticker")];
-            if (p != null) txPrice.value = p;
-            tickerDropdown.style.display = "none";
-          });
-        });
+      if (q.length < 1) { tickerDropdown.innerHTML = ""; tickerDropdown.style.display = "none"; if (txTicker.setAttribute) txTicker.setAttribute("aria-expanded", "false"); return; }
+      clearTimeout(txTickerSearchTimeout);
+      txTickerSearchTimeout = setTimeout(function () {
+        if (q.length >= 2) {
+          fetch(getApiBase() + "/search?q=" + encodeURIComponent(q))
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+              var list = Array.isArray(data) ? data : (data && data.results ? data.results : []);
+              var items = list.slice(0, 8).map(function (item) {
+                var sym = item.symbol || item.ticker || item;
+                var label = typeof sym === "string" ? sym : (item.name || item.symbol || item.ticker || "");
+                var tickerVal = typeof sym === "string" ? sym : (item.symbol || item.ticker || "");
+                var p = state.prices[tickerVal] != null ? state.prices[tickerVal] : (item.price != null ? item.price : null);
+                return { ticker: tickerVal, label: label || tickerVal, price: p };
+              });
+              if (items.length === 0) items = [{ ticker: q, label: q, price: state.prices[q] }];
+              txTickerSetButtonsAndListeners(items);
+            })
+            .catch(function () {
+              txTickerSetButtonsAndListeners([{ ticker: q, label: q, price: state.prices[q] }]);
+            });
+        } else {
+          var recent = [];
+          try { recent = JSON.parse(localStorage.getItem(SEARCH_HISTORY_KEY) || "[]").slice(0, 5); } catch (e) {}
+          var list = recent.filter(function (s) { return s.indexOf(q) !== -1; });
+          if (list.length === 0) list = [q];
+          txTickerSetButtonsAndListeners(list.map(function (s) { return { ticker: s, label: s, price: state.prices[s] }; }));
+        }
       }, 200);
     });
+    if (txTicker) txTicker.addEventListener("keydown", function (e) {
+      var hidden = tickerDropdown.style.display === "none" || !tickerDropdown.innerHTML;
+      var buttons = tickerDropdown.querySelectorAll("button[data-ticker]");
+      if (e.key === "Escape") {
+        tickerDropdown.style.display = "none";
+        tickerDropdown.innerHTML = "";
+        txTicker.setAttribute("aria-expanded", "false");
+        txTicker.removeAttribute("aria-activedescendant");
+        txTickerActiveIndex = -1;
+        return;
+      }
+      if (hidden || buttons.length === 0) return;
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        txTickerActiveIndex = txTickerActiveIndex >= buttons.length - 1 ? 0 : txTickerActiveIndex + 1;
+        buttons.forEach(function (b, i) { b.setAttribute("aria-selected", i === txTickerActiveIndex ? "true" : "false"); });
+        txTicker.setAttribute("aria-activedescendant", "tx-ticker-opt-" + txTickerActiveIndex);
+        buttons[txTickerActiveIndex].scrollIntoView({ block: "nearest" });
+      } else if (e.key === "ArrowUp") {
+        e.preventDefault();
+        txTickerActiveIndex = txTickerActiveIndex <= 0 ? buttons.length - 1 : txTickerActiveIndex - 1;
+        buttons.forEach(function (b, i) { b.setAttribute("aria-selected", i === txTickerActiveIndex ? "true" : "false"); });
+        txTicker.setAttribute("aria-activedescendant", "tx-ticker-opt-" + txTickerActiveIndex);
+        buttons[txTickerActiveIndex].scrollIntoView({ block: "nearest" });
+      } else if (e.key === "Enter" && txTickerActiveIndex >= 0 && buttons[txTickerActiveIndex]) {
+        e.preventDefault();
+        var b = buttons[txTickerActiveIndex];
+        txTickerSelectOption(b.getAttribute("data-ticker"), parseFloat(b.getAttribute("data-price"), 10));
+      }
+    });
     if (txTicker) txTicker.addEventListener("blur", function () {
-      setTimeout(function () { if (tickerDropdown) tickerDropdown.style.display = "none"; }, 150);
+      setTimeout(function () { if (tickerDropdown) { tickerDropdown.style.display = "none"; txTickerActiveIndex = -1; } }, 150);
     });
 
     txForm.addEventListener("submit", function (e) {
@@ -1123,6 +1297,34 @@
         })
         .catch(function (err) { alert(err.message || "Erro ao abrir checkout."); });
     });
+
+    function openTransactionsPanel() {
+      _lastModalTrigger = document.activeElement;
+      var transactionsPanel = document.getElementById("transactions-panel");
+      var listEl = document.getElementById("transactions-panel-list");
+      if (!transactionsPanel || !listEl) return;
+      var txs = (state.transactions || []).slice().sort(function (a, b) { return (b.date || "").localeCompare(a.date || ""); });
+      if (txs.length === 0) {
+        listEl.innerHTML = "<p class=\"text-muted\">Nenhuma transação. Toque em \"Nova transação\" para registrar.</p>";
+      } else {
+        listEl.innerHTML = txs.map(function (t) {
+          var typeClass = t.type === "buy" ? "tx-type-buy" : "tx-type-sell";
+          var typeLabel = t.type === "buy" ? "Compra" : "Venda";
+          var total = (t.quantity * t.price) || 0;
+          return "<div class=\"tx-item\"><div><span class=\"tx-date\">" + (t.date || "") + "</span> <span class=\"tx-ticker\">" + (t.ticker || "") + "</span> <span class=\"" + typeClass + "\">" + typeLabel + "</span></div><div>" + t.quantity + " × " + formatCurrency(t.price) + " = " + formatCurrency(total) + "</div></div>";
+        }).join("");
+      }
+      transactionsPanel.setAttribute("aria-hidden", "false");
+      createIcons();
+    }
+
+    var settingsTransactionsListBtn = document.getElementById("settings-transactions-list");
+    if (settingsTransactionsListBtn) {
+      settingsTransactionsListBtn.addEventListener("click", function () {
+        document.getElementById("settings-drawer").setAttribute("aria-hidden", "true");
+        openTransactionsPanel();
+      });
+    }
 
     var editProfileModal = document.getElementById("edit-profile-modal");
     if (editProfileModal) {
@@ -1336,32 +1538,57 @@
     });
 
     var searchInput = document.getElementById("header-search-input");
+    var searchDropdown = document.getElementById("header-search-dropdown");
     var searchDropdownTimeout;
+    var headerSearchActiveIndex = -1;
+
+    function headerSearchSelectTicker(ticker) {
+      ticker = (ticker || "").toUpperCase();
+      searchInput.value = "";
+      searchDropdown.setAttribute("aria-hidden", "true");
+      if (searchInput) searchInput.setAttribute("aria-expanded", "false");
+      if (searchInput) searchInput.removeAttribute("aria-activedescendant");
+      headerSearchActiveIndex = -1;
+      try {
+        var prev = JSON.parse(localStorage.getItem(SEARCH_HISTORY_KEY) || "[]");
+        prev = [ticker].concat(prev.filter(function (x) { return x !== ticker; })).slice(0, 5);
+        localStorage.setItem(SEARCH_HISTORY_KEY, JSON.stringify(prev));
+      } catch (e) {}
+      if (state.tickers.indexOf(ticker) === -1) {
+        state.tickers.push(ticker);
+        persist();
+        if (getAuthToken()) {
+          fetchWithAuth("/watchlist", { method: "POST", body: JSON.stringify({ symbol: ticker }) }).catch(function () {});
+        }
+        refreshPrices();
+      }
+      openAssetPanel(ticker);
+      createIcons();
+    }
+
+    function headerSearchSetButtonsAndListeners() {
+      var buttons = searchDropdown.querySelectorAll("button[data-ticker]");
+      headerSearchActiveIndex = -1;
+      buttons.forEach(function (b, i) {
+        b.id = "header-search-opt-" + i;
+        b.setAttribute("role", "option");
+        b.setAttribute("aria-selected", "false");
+        b.addEventListener("click", function () { headerSearchSelectTicker(b.getAttribute("data-ticker")); });
+      });
+    }
+
     if (searchInput) searchInput.addEventListener("input", function () {
       var q = this.value.trim();
-      var dropdown = document.getElementById("header-search-dropdown");
       if (q.length < 1) {
         var recent = [];
         try { recent = JSON.parse(localStorage.getItem(SEARCH_HISTORY_KEY) || "[]").slice(0, 5); } catch (e) {}
-        if (recent.length === 0) { dropdown.innerHTML = ""; dropdown.setAttribute("aria-hidden", "true"); return; }
-        dropdown.innerHTML = "<div class=\"recent-label\">Recentes</div>" + recent.map(function (s) {
+        if (recent.length === 0) { searchDropdown.innerHTML = ""; searchDropdown.setAttribute("aria-hidden", "true"); if (searchInput) searchInput.setAttribute("aria-expanded", "false"); return; }
+        searchDropdown.innerHTML = "<div class=\"recent-label\">Recentes</div>" + recent.map(function (s, i) {
           return "<button type=\"button\" data-ticker=\"" + s + "\">" + s + "</button>";
         }).join("");
-        dropdown.setAttribute("aria-hidden", "false");
-        dropdown.querySelectorAll("button").forEach(function (b) {
-          b.addEventListener("click", function () {
-            var ticker = b.getAttribute("data-ticker");
-            searchInput.value = "";
-            dropdown.setAttribute("aria-hidden", "true");
-            openAssetPanel(ticker);
-            try {
-              var prev = JSON.parse(localStorage.getItem(SEARCH_HISTORY_KEY) || "[]");
-              prev = [ticker].concat(prev.filter(function (x) { return x !== ticker; })).slice(0, 5);
-              localStorage.setItem(SEARCH_HISTORY_KEY, JSON.stringify(prev));
-            } catch (e) {}
-            createIcons();
-          });
-        });
+        searchDropdown.setAttribute("aria-hidden", "false");
+        if (searchInput) searchInput.setAttribute("aria-expanded", "true");
+        headerSearchSetButtonsAndListeners();
         return;
       }
       clearTimeout(searchDropdownTimeout);
@@ -1378,74 +1605,61 @@
                 return "<button type=\"button\" data-ticker=\"" + tickerVal + "\">" + (label || tickerVal) + "</button>";
               });
               if (items.length === 0) items = ["<button type=\"button\" data-ticker=\"" + q.toUpperCase() + "\">" + q.toUpperCase() + "</button>"];
-              dropdown.innerHTML = items.join("");
-              dropdown.setAttribute("aria-hidden", "false");
-              dropdown.querySelectorAll("button").forEach(function (b) {
-                b.addEventListener("click", function () {
-                  var ticker = (b.getAttribute("data-ticker") || "").toUpperCase();
-                  searchInput.value = "";
-                  dropdown.setAttribute("aria-hidden", "true");
-                  try {
-                    var prev = JSON.parse(localStorage.getItem(SEARCH_HISTORY_KEY) || "[]");
-                    prev = [ticker].concat(prev.filter(function (x) { return x !== ticker; })).slice(0, 5);
-                    localStorage.setItem(SEARCH_HISTORY_KEY, JSON.stringify(prev));
-                  } catch (e) {}
-                  if (state.tickers.indexOf(ticker) === -1) {
-                    state.tickers.push(ticker);
-                    persist();
-                    refreshPrices();
-                  }
-                  openAssetPanel(ticker);
-                  createIcons();
-                });
-              });
+              searchDropdown.innerHTML = items.join("");
+              searchDropdown.setAttribute("aria-hidden", "false");
+              if (searchInput) searchInput.setAttribute("aria-expanded", "true");
+              headerSearchSetButtonsAndListeners();
             })
             .catch(function () {
-              dropdown.innerHTML = "<button type=\"button\" data-ticker=\"" + q.toUpperCase() + "\">" + q.toUpperCase() + "</button>";
-              dropdown.setAttribute("aria-hidden", "false");
-              dropdown.querySelector("button").addEventListener("click", function () {
-                var ticker = q.toUpperCase();
-                try {
-                  var prev = JSON.parse(localStorage.getItem(SEARCH_HISTORY_KEY) || "[]");
-                  prev = [ticker].concat(prev.filter(function (x) { return x !== ticker; })).slice(0, 5);
-                  localStorage.setItem(SEARCH_HISTORY_KEY, JSON.stringify(prev));
-                } catch (e) {}
-                if (state.tickers.indexOf(ticker) === -1) {
-                  state.tickers.push(ticker);
-                  persist();
-                  refreshPrices();
-                }
-                searchInput.value = "";
-                dropdown.setAttribute("aria-hidden", "true");
-                openAssetPanel(ticker);
-                createIcons();
-              });
+              searchDropdown.innerHTML = "<button type=\"button\" data-ticker=\"" + q.toUpperCase() + "\">" + q.toUpperCase() + "</button>";
+              searchDropdown.setAttribute("aria-hidden", "false");
+              if (searchInput) searchInput.setAttribute("aria-expanded", "true");
+              headerSearchSetButtonsAndListeners();
             });
         }, 300);
         return;
       }
-      dropdown.innerHTML = "<button type=\"button\" data-ticker=\"" + q.toUpperCase() + "\">" + q.toUpperCase() + "</button>";
-      dropdown.setAttribute("aria-hidden", "false");
-      dropdown.querySelector("button").addEventListener("click", function () {
-        var ticker = this.getAttribute("data-ticker");
-        try {
-          var prev = JSON.parse(localStorage.getItem(SEARCH_HISTORY_KEY) || "[]");
-          prev = [ticker].concat(prev.filter(function (x) { return x !== ticker; })).slice(0, 5);
-          localStorage.setItem(SEARCH_HISTORY_KEY, JSON.stringify(prev));
-        } catch (e) {}
-        if (state.tickers.indexOf(ticker) === -1) {
-          state.tickers.push(ticker);
-          persist();
-          refreshPrices();
-        }
-        searchInput.value = "";
-        dropdown.setAttribute("aria-hidden", "true");
-        openAssetPanel(ticker);
-        createIcons();
-      });
+      searchDropdown.innerHTML = "<button type=\"button\" data-ticker=\"" + q.toUpperCase() + "\">" + q.toUpperCase() + "</button>";
+      searchDropdown.setAttribute("aria-hidden", "false");
+      if (searchInput) searchInput.setAttribute("aria-expanded", "true");
+      headerSearchSetButtonsAndListeners();
+    });
+    if (searchInput) searchInput.addEventListener("keydown", function (e) {
+      var hidden = searchDropdown.getAttribute("aria-hidden") === "true";
+      var buttons = searchDropdown.querySelectorAll("button[data-ticker]");
+      if (e.key === "Escape") {
+        searchDropdown.setAttribute("aria-hidden", "true");
+        if (searchInput) searchInput.setAttribute("aria-expanded", "false");
+        searchInput.removeAttribute("aria-activedescendant");
+        headerSearchActiveIndex = -1;
+        searchInput.blur();
+        return;
+      }
+      if (hidden || buttons.length === 0) return;
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        headerSearchActiveIndex = headerSearchActiveIndex >= buttons.length - 1 ? 0 : headerSearchActiveIndex + 1;
+        buttons.forEach(function (b, i) { b.setAttribute("aria-selected", i === headerSearchActiveIndex ? "true" : "false"); });
+        searchInput.setAttribute("aria-activedescendant", "header-search-opt-" + headerSearchActiveIndex);
+        buttons[headerSearchActiveIndex].scrollIntoView({ block: "nearest" });
+      } else if (e.key === "ArrowUp") {
+        e.preventDefault();
+        headerSearchActiveIndex = headerSearchActiveIndex <= 0 ? buttons.length - 1 : headerSearchActiveIndex - 1;
+        buttons.forEach(function (b, i) { b.setAttribute("aria-selected", i === headerSearchActiveIndex ? "true" : "false"); });
+        searchInput.setAttribute("aria-activedescendant", "header-search-opt-" + headerSearchActiveIndex);
+        buttons[headerSearchActiveIndex].scrollIntoView({ block: "nearest" });
+      } else if (e.key === "Enter" && headerSearchActiveIndex >= 0 && buttons[headerSearchActiveIndex]) {
+        e.preventDefault();
+        headerSearchSelectTicker(buttons[headerSearchActiveIndex].getAttribute("data-ticker"));
+      }
     });
     if (searchInput) searchInput.addEventListener("blur", function () {
-      setTimeout(function () { document.getElementById("header-search-dropdown").setAttribute("aria-hidden", "true"); }, 200);
+      setTimeout(function () {
+        searchDropdown.setAttribute("aria-hidden", "true");
+        if (searchInput) searchInput.setAttribute("aria-expanded", "false");
+        searchInput.removeAttribute("aria-activedescendant");
+        headerSearchActiveIndex = -1;
+      }, 200);
     });
 
     document.body.addEventListener("click", function () {
@@ -1493,6 +1707,13 @@
       var li = e.target.closest("li[data-ticker]");
       if (!li) return;
       openAssetPanel(li.getAttribute("data-ticker"));
+    });
+
+    document.querySelectorAll("[data-focus-watchlist]").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        var el = document.getElementById("widget-watchlist");
+        if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+      });
     });
 
     var portfolioSortEl = document.getElementById("portfolio-sort");
@@ -1745,21 +1966,7 @@
     var mobileNavTransactions = document.getElementById("mobile-nav-transactions");
     if (mobileNavTransactions && transactionsPanel) {
       mobileNavTransactions.addEventListener("click", function () {
-        _lastModalTrigger = document.activeElement;
-        var listEl = document.getElementById("transactions-panel-list");
-        var txs = (state.transactions || []).slice().sort(function (a, b) { return (b.date || "").localeCompare(a.date || ""); });
-        if (txs.length === 0) {
-          listEl.innerHTML = "<p class=\"text-muted\">Nenhuma transação. Toque em \"Nova transação\" para registrar.</p>";
-        } else {
-          listEl.innerHTML = txs.map(function (t) {
-            var typeClass = t.type === "buy" ? "tx-type-buy" : "tx-type-sell";
-            var typeLabel = t.type === "buy" ? "Compra" : "Venda";
-            var total = (t.quantity * t.price) || 0;
-            return "<div class=\"tx-item\"><div><span class=\"tx-date\">" + (t.date || "") + "</span> <span class=\"tx-ticker\">" + (t.ticker || "") + "</span> <span class=\"" + typeClass + "\">" + typeLabel + "</span></div><div>" + t.quantity + " × " + formatCurrency(t.price) + " = " + formatCurrency(total) + "</div></div>";
-          }).join("");
-        }
-        transactionsPanel.setAttribute("aria-hidden", "false");
-        createIcons();
+        openTransactionsPanel();
       });
       transactionsPanel.querySelector(".mobile-panel-backdrop").addEventListener("click", function () {
         focusBeforeHide(transactionsPanel, _lastModalTrigger);
