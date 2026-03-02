@@ -1032,7 +1032,7 @@ async function performSearch(q) {
       const sym2 = (item.symbol || '').substring(0, 2).toUpperCase();
       const iconSrc = assetIconUrl(item.icon, item.symbol);
       let iconHtml = iconSrc
-        ? `<img class="search-item-icon" src="${iconSrc}" alt="${item.symbol}" onerror="this.style.display='none';this.nextElementSibling.style.display='flex';"><div class="search-item-fb" style="display:none;">${sym2}</div>`
+        ? `<img class="search-item-icon" src="${iconSrc}" alt="${item.symbol}"><div class="search-item-fb" style="display:none;">${sym2}</div>`
         : `<div class="search-item-fb">${sym2}</div>`;
       const row = document.createElement('div');
       row.className = 'search-item';
@@ -1432,7 +1432,7 @@ async function fetchPortfolio() {
     const sym2     = (asset.symbol || '').substring(0, 2).toUpperCase();
     const iconSrc  = assetIconUrl(asset.icon, asset.symbol);
     let iconHtml = iconSrc
-      ? `<img class="asset-icon-img" src="${iconSrc}" alt="${asset.symbol}" onerror="this.style.display='none';this.nextElementSibling.style.display='flex';"><div class="asset-icon-fb" style="display:none;">${sym2}</div>`
+      ? `<img class="asset-icon-img" src="${iconSrc}" alt="${asset.symbol}"><div class="asset-icon-fb" style="display:none;">${sym2}</div>`
       : `<div class="asset-icon-fb">${sym2}</div>`;
     const wrapper = document.createElement('div');
     wrapper.className = 'asset-wrapper';
@@ -2459,6 +2459,20 @@ document.addEventListener('DOMContentLoaded', () => {
   injectStyles();
   injectPortfolioScoreStyles();
   updatePrivacyToggle();
+
+  // CSP: bind image error handlers (no inline onerror)
+  document.body.addEventListener('error', function(e) {
+    if (e.target && e.target.tagName === 'IMG') {
+      if (e.target.matches('[data-hide-on-error]')) {
+        e.target.style.display = 'none';
+        if (e.target.classList.contains('broker-logo') && e.target.nextElementSibling)
+          e.target.nextElementSibling.classList.remove('broker-fb');
+      } else if (e.target.matches('.search-item-icon, .asset-icon-img')) {
+        e.target.style.display = 'none';
+        if (e.target.nextElementSibling) e.target.nextElementSibling.style.display = 'flex';
+      }
+    }
+  }, true);
 
   document.addEventListener('keydown', (e) => {
     if (e.key !== 'Escape') return;
