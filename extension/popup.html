@@ -105,8 +105,8 @@
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9"/></svg>
       Sign Out
     </button>
-    <a class="nav-footer-link" href="https://purp-production.up.railway.app/static/privacy-policy.html" target="_blank" rel="noopener noreferrer">Privacy Policy</a>
-    <a class="nav-footer-link" href="https://purp-production.up.railway.app/static/terms-of-service.html" target="_blank" rel="noopener noreferrer">Terms of Use</a>
+    <a class="nav-footer-link" href="https://getpurpai.com/privacy-policy" target="_blank" rel="noopener noreferrer">Privacy Policy</a>
+    <a class="nav-footer-link" href="https://getpurpai.com/terms-of-service" target="_blank" rel="noopener noreferrer">Terms of Use</a>
     <a class="nav-footer-link" href="https://getpurpai.com" target="_blank" rel="noopener noreferrer">getpurpai.com</a>
   </nav>
 </header>
@@ -679,9 +679,37 @@
   </div>
 </div>
 
+<!-- ═══ NET WORTH MODAL ═══ -->
+<div id="modal-net-worth" class="modal-overlay">
+  <div class="modal-box">
+    <div class="modal-title">Add Net Worth Entry</div>
+    <div class="field-group">
+      <label class="field-label">Category</label>
+      <select id="nw-category" class="select-ctrl" title="Net worth category" style="width:100%;padding:9px 12px;font-size:12px;">
+        <option value="cash">Cash</option>
+        <option value="real_estate">Real Estate</option>
+        <option value="other_assets">Other Asset</option>
+        <option value="debts">Debt / Liability</option>
+      </select>
+    </div>
+    <div class="field-group">
+      <label class="field-label">Label</label>
+      <input type="text" id="nw-label" placeholder="e.g. Savings account, Car loan…">
+    </div>
+    <div class="field-group">
+      <label class="field-label">Value (USD) — use negative for debts</label>
+      <input type="number" id="nw-value" placeholder="5000" step="any">
+    </div>
+    <div class="modal-actions" style="margin-top:16px;">
+      <button class="btn-ghost" id="btn-nw-cancel">Cancel</button>
+      <button class="btn-primary" id="btn-nw-save">Save Entry</button>
+    </div>
+  </div>
+</div>
+
 <script src="bundle.min.js"></script>
 <script src="popup.js"></script>
-<script src="Verify-screen.JS"></script>
+<script src="verify-screen.js"></script>
 
 </body>
 </html>

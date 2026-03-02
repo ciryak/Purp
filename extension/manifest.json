@@ -1,12 +1,14 @@
 {
   "manifest_version": 3,
   "name": "Purp — AI Portfolio Tracker",
-  "version": "1.2",
-  "description": "Track your crypto & stock portfolio with Gemini AI insights.",
+  "version": "1.2.0",
+  "description": "Track stocks & crypto with AI insights. Portfolio score, tax tools, price alerts and market watch — all in one place.",
+  "homepage_url": "https://getpurpai.com",
   "permissions": ["storage", "alarms", "notifications", "tabs"],
   "host_permissions": [
     "https://purp-production.up.railway.app/*",
-    "https://*.sentry.io/*"
+    "https://*.sentry.io/*",
+    "https://getpurpai.com/*"
   ],
   "action": {
     "default_popup": "popup.html",
@@ -22,6 +24,6 @@
     "128": "icons/icon128.png"
   },
   "content_security_policy": {
-  "extension_pages": "script-src 'self'; object-src 'self'; connect-src 'self' https://*.sentry.io https://purp-production.up.railway.app; img-src 'self' https: data:"
+    "extension_pages": "script-src 'self'; object-src 'self'; style-src 'self' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; connect-src 'self' https://*.sentry.io https://purp-production.up.railway.app https://fonts.googleapis.com; img-src 'self' https: data:"
   }
 }

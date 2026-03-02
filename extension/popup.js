@@ -76,13 +76,13 @@ function apiErrorDetail(detail, fallback = 'Something went wrong. Please try aga
 }
 
 // ── Sentry ───────────────────────────────────────────────────────
-
-
+const SENTRY_DSN = "";
+if (SENTRY_DSN) {
   Sentry.init({
-    dsn: "SENTRY_DSN",
-    integrations: [new Sentry.BrowserTracing()],
-    tracesSampleRate: 1.0,
+    dsn: SENTRY_DSN,
+    tracesSampleRate: 0.2,
   });
+}
 
 function toggleAuthMode() {
   const loginForm = document.getElementById('login-form') || document.getElementById('login-screen');
@@ -1005,7 +1005,11 @@ async function loadDetailChart(symbol, period) {
 
 function renderSpark(canvasId, data, color) {
   if (typeof Chart === 'undefined') return;
-  const ctx = $(canvasId)?.getContext('2d');
+  const canvas = document.getElementById(canvasId);
+  if (!canvas) return;
+  const existing = Chart.getChart(canvas);
+  if (existing) existing.destroy();
+  const ctx = canvas.getContext('2d');
   if (!ctx || !data?.length) return;
   new Chart(ctx, {
     type: 'line',
